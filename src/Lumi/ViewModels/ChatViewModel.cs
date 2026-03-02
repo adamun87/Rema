@@ -1571,29 +1571,51 @@ public partial class ChatViewModel : ObservableObject
         var reasoningEffort = _dataStore.Data.Settings.ReasoningEffort;
         var effort = string.IsNullOrWhiteSpace(reasoningEffort) ? null : reasoningEffort;
 
+        if (mcpServers is { Count: > 0 })
+            StatusText = Loc.Status_ConnectingMcp;
+
+        // When MCP servers are configured, apply a timeout so a broken server
+        // doesn't block the UI indefinitely.
+        using var sessionCts = mcpServers is { Count: > 0 }
+            ? CancellationTokenSource.CreateLinkedTokenSource(ct)
+            : null;
+        sessionCts?.CancelAfter(TimeSpan.FromSeconds(60));
+        var sessionCt = sessionCts?.Token ?? ct;
+
         if (chat.CopilotSessionId is null)
         {
-            var session = await _copilotService.CreateSessionAsync(
-                systemPrompt, SelectedModel, workDir, skillDirs, customAgents, customTools, mcpServers, effort, ct);
-            chat.CopilotSessionId = session.SessionId;
-            _activeSession = session;
-            SubscribeToSession(session, chat);
+            try
+            {
+                var session = await _copilotService.CreateSessionAsync(
+                    systemPrompt, SelectedModel, workDir, skillDirs, customAgents, customTools, mcpServers, effort, sessionCt);
+                chat.CopilotSessionId = session.SessionId;
+                _activeSession = session;
+                SubscribeToSession(session, chat);
+            }
+            catch (OperationCanceledException) when (sessionCts is not null && sessionCts.IsCancellationRequested && !ct.IsCancellationRequested)
+            {
+                throw new TimeoutException("MCP server connection timed out. Check that your MCP servers are installed and responding.");
+            }
         }
         else
         {
             try
             {
                 var session = await _copilotService.ResumeSessionAsync(
-                    chat.CopilotSessionId, systemPrompt, SelectedModel, workDir, skillDirs, customAgents, customTools, mcpServers, effort, ct);
+                    chat.CopilotSessionId, systemPrompt, SelectedModel, workDir, skillDirs, customAgents, customTools, mcpServers, effort, sessionCt);
                 _activeSession = session;
                 SubscribeToSession(session, chat);
+            }
+            catch (OperationCanceledException) when (sessionCts is not null && sessionCts.IsCancellationRequested && !ct.IsCancellationRequested)
+            {
+                throw new TimeoutException("MCP server connection timed out. Check that your MCP servers are installed and responding.");
             }
             catch
             {
                 // Session expired or broken — fall back to a fresh session
                 StatusText = Loc.Status_SessionExpired;
                 var session = await _copilotService.CreateSessionAsync(
-                    systemPrompt, SelectedModel, workDir, skillDirs, customAgents, customTools, mcpServers, effort, ct);
+                    systemPrompt, SelectedModel, workDir, skillDirs, customAgents, customTools, mcpServers, effort, sessionCt);
                 chat.CopilotSessionId = session.SessionId;
                 _activeSession = session;
                 SubscribeToSession(session, chat);
@@ -1866,6 +1888,7 @@ public partial class ChatViewModel : ObservableObject
         await SaveCurrentChatAsync();
         UserMessageSent?.Invoke();
 
+        CancellationTokenSource? cts = null;
         try
         {
             // Cancel any previous in-flight request for this chat
@@ -1875,8 +1898,16 @@ public partial class ChatViewModel : ObservableObject
                 oldCts.Cancel();
                 oldCts.Dispose();
             }
-            var cts = new CancellationTokenSource();
+            cts = new CancellationTokenSource();
             _ctsSources[chatId] = cts;
+
+            var runtime = GetOrCreateRuntimeState(CurrentChat.Id);
+            runtime.IsBusy = true;
+            runtime.IsStreaming = true;
+            runtime.StatusText = Loc.Status_Thinking;
+            IsBusy = runtime.IsBusy;
+            IsStreaming = runtime.IsStreaming;
+            StatusText = runtime.StatusText;
 
             var needsSessionSetup = _activeSession?.SessionId != CurrentChat.CopilotSessionId
                                     || CurrentChat.CopilotSessionId is null;
@@ -1908,15 +1939,24 @@ public partial class ChatViewModel : ObservableObject
             if (attachments is { Count: > 0 })
                 sendOptions.Attachments = attachments.Cast<UserMessageDataAttachmentsItem>().ToList();
 
-            var runtime = GetOrCreateRuntimeState(CurrentChat.Id);
-            runtime.IsBusy = true;
-            runtime.IsStreaming = true;
-            runtime.StatusText = Loc.Status_Thinking;
-            IsBusy = runtime.IsBusy;
-            IsStreaming = runtime.IsStreaming;
-            StatusText = runtime.StatusText;
-
             await _activeSession!.SendAsync(sendOptions, cts.Token);
+        }
+        catch (OperationCanceledException) when (!cts.IsCancellationRequested)
+        {
+            // SDK cancelled internally (e.g. MCP server failure) — surface as error
+            var errorText = string.Format(Loc.Status_Error, "Session cancelled unexpectedly. MCP servers may have failed to connect.");
+            StatusText = errorText;
+            IsBusy = false;
+            IsStreaming = false;
+            HideTypingIndicator();
+            CloseCurrentToolGroup();
+            if (CurrentChat is not null)
+            {
+                var runtime = GetOrCreateRuntimeState(CurrentChat.Id);
+                runtime.IsBusy = false;
+                runtime.IsStreaming = false;
+                runtime.StatusText = StatusText;
+            }
         }
         catch (OperationCanceledException)
         {
@@ -1924,7 +1964,11 @@ public partial class ChatViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            var errorText = string.Format(Loc.Status_Error, ex.Message);
+            // Include inner exception details to surface Copilot SDK errors
+            var message = ex.InnerException is not null
+                ? $"{ex.Message} → {ex.InnerException.Message}"
+                : ex.Message;
+            var errorText = string.Format(Loc.Status_Error, message);
             StatusText = errorText;
             IsBusy = false;
             IsStreaming = false;
@@ -2487,9 +2531,10 @@ public partial class ChatViewModel : ObservableObject
             var agentServerIds = ActiveAgent.McpServerIds;
             allServers = allServers.Where(s => agentServerIds.Contains(s.Id)).ToList();
         }
-        // If the user has selected specific MCP servers via chips, use only those
-        else if (ActiveMcpServerNames.Count > 0)
+        else
         {
+            // Always respect the composer selection — if the user deselected
+            // all MCPs, ActiveMcpServerNames is empty and we should send none.
             allServers = allServers.Where(s => ActiveMcpServerNames.Contains(s.Name)).ToList();
         }
 
