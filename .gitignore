@@ -28,6 +28,9 @@ Thumbs.db
 ## App data (local runtime state)
 data.json
 
+## Test results
+TestResults/
+
 ## Benchmark output
 benchmark-*.json
 

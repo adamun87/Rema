@@ -20,6 +20,10 @@
     <Features>$(Features);runtime-async=on</Features>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Lumi.Tests" />
+  </ItemGroup>
+
   <!-- Windows: target Windows TFM so WinRT toast types are available in-process -->
   <PropertyGroup Condition="'$(OS)' == 'Windows_NT'">
     <TargetFramework>net11.0-windows10.0.22621.0</TargetFramework>

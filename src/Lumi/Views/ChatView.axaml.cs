@@ -270,6 +270,7 @@ public partial class ChatView : UserControl
             };
             _welcomeComposer.VoiceRequested += (_, _) => _ = ToggleVoiceAsync(_welcomeComposer, vm);
             WireClipboardImagePaste(_welcomeComposer, vm);
+            WireFileAutoComplete(_welcomeComposer, vm);
         }
 
         if (_activeComposer is not null)
@@ -307,6 +308,7 @@ public partial class ChatView : UserControl
             };
             _activeComposer.VoiceRequested += (_, _) => _ = ToggleVoiceAsync(_activeComposer, vm);
             WireClipboardImagePaste(_activeComposer, vm);
+            WireFileAutoComplete(_activeComposer, vm);
         }
 
         // Wire pending attachments list to the observable collection
@@ -2218,6 +2220,37 @@ public partial class ChatView : UserControl
 
         EventHandler<RoutedEventArgs> handler = (_, _) => _ = PasteClipboardImageAsync(vm, composer);
         eventInfo.AddEventHandler(composer, handler);
+    }
+
+    private CancellationTokenSource? _fileSearchCts;
+
+    private void WireFileAutoComplete(StrataChatComposer composer, ChatViewModel vm)
+    {
+        composer.FileQueryChanged += (_, args) =>
+        {
+            // Cancel any in-flight search
+            _fileSearchCts?.Cancel();
+            var cts = new CancellationTokenSource();
+            _fileSearchCts = cts;
+
+            _ = Task.Run(() =>
+            {
+                if (cts.Token.IsCancellationRequested) return;
+                var results = vm.SearchFiles(args.Query);
+                if (cts.Token.IsCancellationRequested) return;
+                Dispatcher.UIThread.Post(() =>
+                {
+                    if (cts.Token.IsCancellationRequested) return;
+                    composer.AvailableFiles = results;
+                });
+            }, cts.Token);
+        };
+
+        composer.FileSelected += (_, args) =>
+        {
+            vm.AddAttachment(args.FilePath);
+            composer.FocusInput();
+        };
     }
 
     private async Task PasteClipboardImageAsync(ChatViewModel vm, StrataChatComposer? composer)

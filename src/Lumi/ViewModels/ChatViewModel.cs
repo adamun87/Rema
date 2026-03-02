@@ -2028,6 +2028,43 @@ public partial class ChatViewModel : ObservableObject
         PendingAttachments.Remove(filePath);
     }
 
+    private readonly FileSearchService _fileSearchService = new();
+
+    /// <summary>
+    /// Searches for files in the current working directory matching the query.
+    /// Returns StrataComposerChip items where Name is the relative display path
+    /// and Glyph stores the full absolute path (for selection).
+    /// </summary>
+    public List<StrataTheme.Controls.StrataComposerChip> SearchFiles(string query, int maxResults = 20)
+    {
+        var workDir = GetEffectiveWorkingDirectory();
+        var isProjectDir = workDir != Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+        // Require at least 1 character of query for user home (too many files otherwise)
+        if (!isProjectDir && string.IsNullOrEmpty(query))
+            return [];
+
+        var maxDepth = isProjectDir ? 10 : 4;
+        return _fileSearchService.Search(workDir, query, maxResults, maxDepth)
+            .ConvertAll(r => new StrataTheme.Controls.StrataComposerChip(r.RelativePath, r.FullPath));
+    }
+
+    /// <summary>
+    /// Resolves the effective working directory, checking pending/active project
+    /// even before a chat is created (when CurrentChat is still null).
+    /// </summary>
+    private string GetEffectiveWorkingDirectory()
+    {
+        var pid = CurrentChat?.ProjectId ?? _pendingProjectId ?? ActiveProjectFilterId;
+        if (pid.HasValue)
+        {
+            var project = _dataStore.Data.Projects.FirstOrDefault(p => p.Id == pid.Value);
+            if (project is { WorkingDirectory: { Length: > 0 } dir } && Directory.Exists(dir))
+                return dir;
+        }
+        return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    }
+
     private List<UserMessageDataAttachmentsItemFile>? TakePendingAttachments()
     {
         if (PendingAttachments.Count == 0) return null;
