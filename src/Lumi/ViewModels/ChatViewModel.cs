@@ -73,7 +73,7 @@ public partial class ChatViewModel : ObservableObject
     }
 
     /// <summary>True while LoadChat is bulk-adding messages. The View skips CollectionChanged.Add during this.</summary>
-    public bool IsLoadingChat { get; private set; }
+    [ObservableProperty] private bool _isLoadingChat;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CurrentChatTitle))]
@@ -1637,6 +1637,9 @@ public partial class ChatViewModel : ObservableObject
 
             if (loadToken.IsCancellationRequested || !IsCurrentChatLoad(requestId, loadCts))
                 return;
+
+            // Yield so the UI thread can render the loading overlay before heavy synchronous work
+            await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Render);
 
             // Set the active session (don't dispose anything — background sessions keep running)
             _sessionCache.TryGetValue(chat.Id, out var cachedSession);
