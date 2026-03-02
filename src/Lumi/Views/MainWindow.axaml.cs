@@ -991,6 +991,9 @@ public partial class MainWindow : Window
             var p = project; // capture
             btn.Click += (_, _) => vm.SelectProjectFilterCommand.Execute(p);
             _projectFilterBar.Children.Add(btn);
+
+            if (isActive)
+                Dispatcher.UIThread.Post(() => btn.BringIntoView(), DispatcherPriority.Loaded);
         }
     }
 
