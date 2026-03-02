@@ -33,6 +33,7 @@ TestResults/
 
 ## Benchmark output
 benchmark-*.json
+bench-*.json
 
 ## Local MCP test harness (temporary)
 test-mcp/

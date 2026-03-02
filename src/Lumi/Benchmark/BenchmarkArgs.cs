@@ -20,6 +20,7 @@ internal sealed class BenchmarkArgs
     public bool Verbose { get; set; }
     public bool WarmUp { get; set; } = true;
     public int Iterations { get; set; } = 1;
+    public bool SimpleMode { get; set; }
 
     public static readonly IReadOnlyList<string> ValidScenarios =
     [
@@ -88,6 +89,10 @@ internal sealed class BenchmarkArgs
                 case "--iterations" or "-i":
                     if (int.TryParse(NextArg(), out var iter) && iter > 0)
                         result.Iterations = iter;
+                    break;
+
+                case "--simple":
+                    result.SimpleMode = true;
                     break;
 
                 case "--help" or "-h":
