@@ -547,6 +547,8 @@ public partial class ChatViewModel : ObservableObject
                         runtime.StatusText = "";
                         if (_activeSession == session)
                         {
+                            HideTypingIndicator();
+                            CloseCurrentToolGroup();
                             IsBusy = runtime.IsBusy;
                             IsStreaming = runtime.IsStreaming;
                             StatusText = runtime.StatusText;

@@ -108,7 +108,12 @@ public partial class ChatView : UserControl
         Dispatcher.UIThread.Post(() =>
         {
             _chatShell?.ResetAutoScroll();
-            _chatShell?.ScrollToEnd();
+            // Jump instantly to the last message so the chat opens at the bottom
+            var count = (_subscribedVm?.TranscriptItems.Count ?? 0);
+            if (count > 0)
+                _chatShell?.ScrollToIndex(count - 1, ScrollToAlignment.End);
+            else
+                _chatShell?.ScrollToEnd();
             // Focus after layout + render passes have completed
             Dispatcher.UIThread.Post(FocusComposer, DispatcherPriority.Input);
         }, DispatcherPriority.Loaded);
