@@ -12,6 +12,8 @@ public partial class AgentsViewModel : ObservableObject
 {
     private readonly DataStore _dataStore;
 
+    public event Action? AgentsChanged;
+
     [ObservableProperty] private LumiAgent? _selectedAgent;
     [ObservableProperty] private bool _isEditing;
     [ObservableProperty] private string _editName = "";
@@ -190,6 +192,7 @@ public partial class AgentsViewModel : ObservableObject
         _ = _dataStore.SaveAsync();
         IsEditing = false;
         RefreshList();
+        AgentsChanged?.Invoke();
     }
 
     [RelayCommand]
@@ -209,6 +212,7 @@ public partial class AgentsViewModel : ObservableObject
             IsEditing = false;
         }
         RefreshList();
+        AgentsChanged?.Invoke();
     }
 
     [RelayCommand]

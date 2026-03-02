@@ -387,12 +387,6 @@ public partial class MainWindow : Window
                 Dispatcher.UIThread.Post(() => AnimateSidebarTitle(chatId, newTitle));
             };
 
-            // Refresh composer MCP catalogs when MCP config changes (install/delete/toggle)
-            vm.McpServersVM.McpConfigChanged += () =>
-            {
-                Dispatcher.UIThread.Post(() => _chatView?.PopulateComposerCatalogs(vm.ChatVM));
-            };
-
             // Wire settings for density and font size
             vm.SettingsVM.PropertyChanged += (_, args) =>
             {
@@ -462,8 +456,7 @@ public partial class MainWindow : Window
                     // Refresh composer catalogs and re-attach list handlers when switching to chat tab
                     if (vm.SelectedNavIndex == 0)
                     {
-                        var chatView = this.FindControl<ChatView>("PageChat");
-                        chatView?.PopulateComposerCatalogs(vm.ChatVM);
+                        vm.ChatVM.RefreshComposerCatalogs();
 
                         Dispatcher.UIThread.Post(() =>
                         {

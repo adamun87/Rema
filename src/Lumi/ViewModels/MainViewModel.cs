@@ -88,9 +88,19 @@ public partial class MainViewModel : ObservableObject
             else if (args.PropertyName == nameof(SettingsViewModel.PreferredModel)
                      && !string.IsNullOrWhiteSpace(SettingsVM.PreferredModel))
                 ChatVM.SelectedModel = SettingsVM.PreferredModel;
+            else if (args.PropertyName == nameof(SettingsViewModel.SendWithEnter))
+                ChatVM.SendWithEnter = SettingsVM.SendWithEnter;
+            else if (args.PropertyName is nameof(SettingsViewModel.ShowTimestamps)
+                     or nameof(SettingsViewModel.ShowToolCalls)
+                     or nameof(SettingsViewModel.ShowReasoning)
+                     or nameof(SettingsViewModel.ExpandReasoningWhileStreaming))
+                ChatVM.RebuildTranscript();
             else if (args.PropertyName == nameof(SettingsViewModel.UserName))
                 UserName = SettingsVM.UserName;
         };
+
+        SkillsVM.SkillsChanged += () => ChatVM.RefreshComposerCatalogs();
+        AgentsVM.AgentsChanged += () => ChatVM.RefreshComposerCatalogs();
 
         SettingsVM.SettingsChanged += () =>
         {
@@ -109,16 +119,35 @@ public partial class MainViewModel : ObservableObject
         {
             LoadProjects();
             RefreshChatList();
+            ChatVM.RefreshComposerCatalogs();
         };
 
         McpServersVM.McpConfigChanged += () =>
         {
             ChatVM.InvalidateMcpSession();
             ChatVM.PopulateDefaultMcps();
+            ChatVM.RefreshComposerCatalogs();
+        };
+
+        ChatVM.ComposerProjectFilterRequested += projectId =>
+        {
+            if (projectId == SelectedProjectFilter)
+                return;
+
+            if (!projectId.HasValue)
+            {
+                ClearProjectFilterCommand.Execute(null);
+                return;
+            }
+
+            var project = _dataStore.Data.Projects.FirstOrDefault(p => p.Id == projectId.Value);
+            if (project is not null)
+                SelectProjectFilterCommand.Execute(project);
         };
 
         LoadProjects();
         RefreshChatList();
+        ChatVM.RefreshComposerCatalogs();
         _ = InitializeAsync();
     }
 

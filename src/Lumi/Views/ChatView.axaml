@@ -16,6 +16,15 @@
     <Style Selector="sc|StrataChatMessage:assistant /template/ Border#PART_ActionLayer">
       <Setter Property="IsVisible" Value="False" />
     </Style>
+    <Style Selector="Button#BrowserToggleButton.open">
+      <Setter Property="Background" Value="{DynamicResource Brush.AccentSubtle}" />
+    </Style>
+    <Style Selector="Button#BrowserToggleButton.open TextBlock#BrowserToggleText">
+      <Setter Property="Foreground" Value="{DynamicResource Brush.AccentDefault}" />
+    </Style>
+    <Style Selector="Button#BrowserToggleButton.open PathIcon#BrowserToggleIcon">
+      <Setter Property="Foreground" Value="{DynamicResource Brush.AccentDefault}" />
+    </Style>
   </UserControl.Styles>
 
   <UserControl.DataTemplates>
@@ -317,7 +326,7 @@
     </Panel>
 
     <!-- Welcome state (no active chat) -->
-    <Panel x:Name="WelcomePanel">
+    <Panel x:Name="WelcomePanel" IsVisible="{Binding IsWelcomeVisible}">
       <!-- Centered greeting (offset up to leave room for composer) -->
       <StackPanel x:Name="WelcomeGreeting" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16"
                   MaxWidth="480" Margin="0,0,0,120">
@@ -339,28 +348,46 @@
       <!-- Bottom-pinned composer -->
       <StackPanel VerticalAlignment="Bottom" Spacing="4" MaxWidth="680"
                   HorizontalAlignment="Stretch" Margin="24,0,24,20">
-        <sc:StrataAttachmentList x:Name="WelcomePendingAttachmentList"
-                                 ShowAddButton="False"
-                                 IsVisible="False" />
+        <sc:StrataAttachmentList ShowAddButton="False"
+                                 ItemsSource="{Binding PendingAttachmentItems}"
+                                 IsVisible="{Binding HasPendingAttachments}">
+          <sc:StrataAttachmentList.ItemTemplate>
+            <DataTemplate DataType="vm:FileAttachmentItem">
+              <sc:StrataFileAttachment FileName="{Binding FileName}"
+                                       FileSize="{Binding FileSize}"
+                                       Status="Completed"
+                                       IsRemovable="{Binding IsRemovable}" />
+            </DataTemplate>
+          </sc:StrataAttachmentList.ItemTemplate>
+        </sc:StrataAttachmentList>
         <sc:StrataChatComposer x:Name="WelcomeComposer"
                                Placeholder="{loc:Str Chat_Placeholder}"
                                PromptText="{Binding PromptText, Mode=TwoWay}"
                                IsBusy="{Binding IsBusy}"
+                               SendWithEnter="{Binding SendWithEnter}"
                                Models="{Binding AvailableModels}"
                                SelectedModel="{Binding SelectedModel, Mode=TwoWay}"
-                               QualityLevels="{x:Null}"
+                               QualityLevels="{Binding QualityLevels}"
                                SuggestionA="{loc:Str Chat_SuggestionA}"
                                SuggestionB="{loc:Str Chat_SuggestionB}"
                                SuggestionC="{loc:Str Chat_SuggestionC}"
+                               AgentName="{Binding SelectedAgentName}"
+                               AgentGlyph="{Binding SelectedAgentGlyph}"
+                               ProjectName="{Binding SelectedProjectName, Mode=TwoWay}"
                                SkillItems="{Binding ActiveSkillChips}"
-                               McpItems="{Binding ActiveMcpChips}" />
+                               McpItems="{Binding ActiveMcpChips}"
+                               AvailableAgents="{Binding AvailableAgentChips}"
+                               AvailableSkills="{Binding AvailableSkillChips}"
+                               AvailableMcps="{Binding AvailableMcpChips}"
+                               AvailableProjects="{Binding AvailableProjectChips}"
+                               AvailableFiles="{Binding AvailableFileSuggestions}" />
       </StackPanel>
     </Panel>
 
     <!-- Active chat -->
-    <Panel x:Name="ChatPanel" IsVisible="False">
+    <Panel x:Name="ChatPanel" IsVisible="{Binding IsChatVisible}">
       <!-- Loading overlay shown while chat history is being rebuilt -->
-      <Panel x:Name="LoadingOverlay" IsVisible="False" ZIndex="50">
+      <Panel x:Name="LoadingOverlay" IsVisible="{Binding IsLoadingChat}" ZIndex="50">
         <Border Background="{DynamicResource Brush.Surface0}" Opacity="0.85" />
         <sc:StrataTypingIndicator x:Name="LoadingIndicator"
                                   Label="{loc:Str Chat_Loading}"
@@ -374,21 +401,26 @@
           <DockPanel Margin="0,0,8,0">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6"
                         VerticalAlignment="Center" Margin="8,0,0,0">
-              <Border x:Name="ProjectBadge" IsVisible="False"
+              <Border IsVisible="{Binding HasProjectBadge}"
                       Background="{DynamicResource Brush.SurfaceSubtle}" CornerRadius="12" Padding="10,4">
-                <TextBlock x:Name="ProjectBadgeText" Classes="caption" FontWeight="SemiBold"
-                           Foreground="{DynamicResource Brush.TextSecondary}" />
+                <TextBlock Classes="caption" FontWeight="SemiBold"
+                           Foreground="{DynamicResource Brush.TextSecondary}"
+                           Text="{Binding ProjectBadgeText}" />
               </Border>
-              <Border x:Name="AgentBadge" IsVisible="False"
+              <Border IsVisible="{Binding HasAgentBadge}"
                       Background="{DynamicResource Brush.AccentSubtle}" CornerRadius="12" Padding="10,4">
-                <TextBlock x:Name="AgentBadgeText" Classes="caption" FontWeight="SemiBold"
-                           Foreground="{DynamicResource Brush.AccentDefault}" />
+                <TextBlock Classes="caption" FontWeight="SemiBold"
+                           Foreground="{DynamicResource Brush.AccentDefault}"
+                           Text="{Binding AgentBadgeText}" />
               </Border>
-              <Button x:Name="BrowserToggleButton" Classes="subtle" IsVisible="False"
+              <Button x:Name="BrowserToggleButton" Classes="subtle"
+                      IsVisible="{Binding ShowBrowserToggle}"
+                      Classes.open="{Binding IsBrowserOpen}"
+                      Command="{Binding ToggleBrowserVisibilityCommand}"
                       ToolTip.Tip="{loc:Str Browser_ShowBrowser}"
                       Padding="7,4" CornerRadius="12">
                 <StackPanel Orientation="Horizontal" Spacing="4">
-                  <PathIcon Width="12" Height="12"
+                  <PathIcon x:Name="BrowserToggleIcon" Width="12" Height="12"
                             Foreground="{DynamicResource Brush.TextSecondary}"
                             Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
                   <TextBlock x:Name="BrowserToggleText" Classes="caption" FontWeight="SemiBold"
@@ -416,22 +448,40 @@
 
         <sc:StrataChatShell.Composer>
           <StackPanel Spacing="4">
-            <sc:StrataAttachmentList x:Name="PendingAttachmentList"
-                                     ShowAddButton="False"
-                                     IsVisible="False" />
+            <sc:StrataAttachmentList ShowAddButton="False"
+                                     ItemsSource="{Binding PendingAttachmentItems}"
+                                     IsVisible="{Binding HasPendingAttachments}">
+              <sc:StrataAttachmentList.ItemTemplate>
+                <DataTemplate DataType="vm:FileAttachmentItem">
+                  <sc:StrataFileAttachment FileName="{Binding FileName}"
+                                           FileSize="{Binding FileSize}"
+                                           Status="Completed"
+                                           IsRemovable="{Binding IsRemovable}" />
+                </DataTemplate>
+              </sc:StrataAttachmentList.ItemTemplate>
+            </sc:StrataAttachmentList>
             <sc:StrataChatComposer x:Name="ActiveComposer"
                                   Placeholder="{loc:Str Chat_Placeholder}"
                                   PromptText="{Binding PromptText, Mode=TwoWay}"
                                   IsBusy="{Binding IsBusy}"
+                                  SendWithEnter="{Binding SendWithEnter}"
                                   Models="{Binding AvailableModels}"
                                   SelectedModel="{Binding SelectedModel, Mode=TwoWay}"
-                                  QualityLevels="{x:Null}"
+                                  QualityLevels="{Binding QualityLevels}"
                                   SuggestionA="{Binding SuggestionA}"
                                   SuggestionB="{Binding SuggestionB}"
                                   SuggestionC="{Binding SuggestionC}"
                                   IsSuggestionsGenerating="{Binding IsSuggestionsGenerating}"
+                                  AgentName="{Binding SelectedAgentName}"
+                                  AgentGlyph="{Binding SelectedAgentGlyph}"
+                                  ProjectName="{Binding SelectedProjectName, Mode=TwoWay}"
                                   SkillItems="{Binding ActiveSkillChips}"
-                                  McpItems="{Binding ActiveMcpChips}" />
+                                  McpItems="{Binding ActiveMcpChips}"
+                                  AvailableAgents="{Binding AvailableAgentChips}"
+                                  AvailableSkills="{Binding AvailableSkillChips}"
+                                  AvailableMcps="{Binding AvailableMcpChips}"
+                                  AvailableProjects="{Binding AvailableProjectChips}"
+                                  AvailableFiles="{Binding AvailableFileSuggestions}" />
           </StackPanel>
         </sc:StrataChatShell.Composer>
 

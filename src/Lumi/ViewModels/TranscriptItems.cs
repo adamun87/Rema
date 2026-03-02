@@ -352,16 +352,19 @@ public partial class TurnSummaryItem : TranscriptItem
 
 public partial class FileAttachmentItem : ObservableObject
 {
+    private readonly Action<string>? _removeAction;
+
     public string FilePath { get; }
     public string FileName { get; }
     public string? FileSize { get; }
     public bool IsRemovable { get; }
 
-    public FileAttachmentItem(string filePath, bool isRemovable = false)
+    public FileAttachmentItem(string filePath, bool isRemovable = false, Action<string>? removeAction = null)
     {
         FilePath = filePath;
         FileName = Path.GetFileName(filePath);
         IsRemovable = isRemovable;
+        _removeAction = removeAction;
 
         try
         {
@@ -377,6 +380,13 @@ public partial class FileAttachmentItem : ObservableObject
     {
         try { Process.Start(new ProcessStartInfo(FilePath) { UseShellExecute = true }); }
         catch { /* ignore if file doesn't exist */ }
+    }
+
+    [RelayCommand]
+    private void Remove()
+    {
+        if (IsRemovable)
+            _removeAction?.Invoke(FilePath);
     }
 }
 

@@ -12,6 +12,8 @@ public partial class SkillsViewModel : ObservableObject
 {
     private readonly DataStore _dataStore;
 
+    public event Action? SkillsChanged;
+
     [ObservableProperty] private Skill? _selectedSkill;
     [ObservableProperty] private bool _isEditing;
     [ObservableProperty] private string _editName = "";
@@ -96,6 +98,7 @@ public partial class SkillsViewModel : ObservableObject
         _dataStore.SyncSkillFiles();
         IsEditing = false;
         RefreshList();
+        SkillsChanged?.Invoke();
     }
 
     [RelayCommand]
@@ -116,6 +119,7 @@ public partial class SkillsViewModel : ObservableObject
             IsEditing = false;
         }
         RefreshList();
+        SkillsChanged?.Invoke();
     }
 
     partial void OnSearchQueryChanged(string value) => RefreshList();

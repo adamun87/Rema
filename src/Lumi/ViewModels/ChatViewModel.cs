@@ -114,7 +114,6 @@ public partial class ChatViewModel : ObservableObject
     public event Action? UserMessageSent;
     public event Action? ChatUpdated;
     public event Action<Guid, string>? ChatTitleChanged;
-    public event Action? AgentChanged;
     public event Action? BrowserHideRequested;
     /// <summary>Raised when a file-edit tool wants to show a diff in the preview island. Args: filePath, oldText, newText.</summary>
     public event Action<string, string?, string?>? DiffShowRequested;
@@ -185,6 +184,8 @@ public partial class ChatViewModel : ObservableObject
                 ResetTranscriptState();
             }
         };
+
+        InitializeMvvmUiState();
     }
 
     partial void OnIsBusyChanged(bool value)
@@ -1749,10 +1750,20 @@ public partial class ChatViewModel : ObservableObject
         ActiveSkillChips.Clear();
         ActiveMcpServerNames.Clear();
         ActiveMcpChips.Clear();
+        PendingAttachments.Clear();
+        PendingAttachmentItems.Clear();
+        AvailableFileSuggestions.Clear();
+        _fileSearchCts?.Cancel();
+        _fileSearchCts?.Dispose();
+        _fileSearchCts = null;
         PopulateDefaultMcps();
         _pendingProjectId = null;
         _pendingSkillInjections.Clear();
         StatusText = "";
+        ActiveAgent = null;
+
+        SyncComposerProjectSelectionFromState();
+        RefreshProjectBadge();
     }
 
     /// <summary>
@@ -2179,7 +2190,6 @@ public partial class ChatViewModel : ObservableObject
             CurrentChat.AgentId = agent?.Id;
             QueueSaveChat(CurrentChat, saveIndex: true);
         }
-        AgentChanged?.Invoke();
     }
 
     /// <summary>Assigns a project to the current (or next) chat. Called when a project filter is active.</summary>
@@ -2209,6 +2219,9 @@ public partial class ChatViewModel : ObservableObject
             _pendingProjectId = projectId;
             OnPropertyChanged(nameof(CurrentChat));
         }
+
+        SyncComposerProjectSelectionFromState();
+        RefreshProjectBadge();
     }
 
     private Guid? _pendingProjectId;
@@ -2217,7 +2230,20 @@ public partial class ChatViewModel : ObservableObject
     /// Current project filter from the shell sidebar. Used as a fallback when creating a new chat
     /// to avoid losing project context due UI timing or unchanged filter selections.
     /// </summary>
-    public Guid? ActiveProjectFilterId { get; set; }
+    private Guid? _activeProjectFilterId;
+    public Guid? ActiveProjectFilterId
+    {
+        get => _activeProjectFilterId;
+        set
+        {
+            if (_activeProjectFilterId == value)
+                return;
+
+            _activeProjectFilterId = value;
+            SyncComposerProjectSelectionFromState();
+            RefreshProjectBadge();
+        }
+    }
 
     /// <summary>Removes the project assignment from the current chat.</summary>
     public void ClearProjectId()
@@ -2243,6 +2269,9 @@ public partial class ChatViewModel : ObservableObject
             _pendingProjectId = null;
             OnPropertyChanged(nameof(CurrentChat));
         }
+
+        SyncComposerProjectSelectionFromState();
+        RefreshProjectBadge();
     }
 
     public void AddSkill(Skill skill)
@@ -2581,6 +2610,8 @@ public partial class ChatViewModel : ObservableObject
 
     partial void OnSelectedModelChanged(string? value)
     {
+        UpdateQualityLevels(value);
+
         if (string.IsNullOrWhiteSpace(value)) return;
         _dataStore.Data.Settings.PreferredModel = value;
         _ = SaveIndexAsync();
@@ -2798,13 +2829,21 @@ public partial class ChatViewModel : ObservableObject
 
     public void AddAttachment(string filePath)
     {
-        if (!PendingAttachments.Contains(filePath))
-            PendingAttachments.Add(filePath);
+        if (PendingAttachments.Contains(filePath))
+            return;
+
+        PendingAttachments.Add(filePath);
+        PendingAttachmentItems.Add(new FileAttachmentItem(filePath, isRemovable: true, removeAction: RemoveAttachment));
     }
 
     public void RemoveAttachment(string filePath)
     {
         PendingAttachments.Remove(filePath);
+
+        var pendingItem = PendingAttachmentItems.FirstOrDefault(item =>
+            string.Equals(item.FilePath, filePath, StringComparison.OrdinalIgnoreCase));
+        if (pendingItem is not null)
+            PendingAttachmentItems.Remove(pendingItem);
     }
 
     private readonly FileSearchService _fileSearchService = new();
@@ -2853,6 +2892,7 @@ public partial class ChatViewModel : ObservableObject
             DisplayName = Path.GetFileName(fp)
         }).ToList();
         PendingAttachments.Clear();
+        PendingAttachmentItems.Clear();
         return items;
     }
 
