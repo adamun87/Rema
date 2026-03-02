@@ -1566,8 +1566,8 @@ public partial class ChatViewModel : ObservableObject
 
         var customAgents = BuildCustomAgents();
         var customTools = BuildCustomTools();
-        var mcpServers = BuildMcpServers();
         var workDir = GetWorkingDirectory();
+        var mcpServers = BuildMcpServers(workDir);
         var reasoningEffort = _dataStore.Data.Settings.ReasoningEffort;
         var effort = string.IsNullOrWhiteSpace(reasoningEffort) ? null : reasoningEffort;
 
@@ -1579,7 +1579,7 @@ public partial class ChatViewModel : ObservableObject
         using var sessionCts = mcpServers is { Count: > 0 }
             ? CancellationTokenSource.CreateLinkedTokenSource(ct)
             : null;
-        sessionCts?.CancelAfter(TimeSpan.FromSeconds(60));
+        sessionCts?.CancelAfter(TimeSpan.FromSeconds(30));
         var sessionCt = sessionCts?.Token ?? ct;
 
         if (chat.CopilotSessionId is null)
@@ -2521,7 +2521,7 @@ public partial class ChatViewModel : ObservableObject
         return tools;
     }
 
-    private Dictionary<string, object>? BuildMcpServers()
+    private Dictionary<string, object>? BuildMcpServers(string workDir)
     {
         var allServers = _dataStore.Data.McpServers.Where(s => s.IsEnabled).ToList();
 
@@ -2564,6 +2564,7 @@ public partial class ChatViewModel : ObservableObject
                     Command = server.Command,
                     Args = server.Args.ToList(),
                     Type = "stdio",
+                    Cwd = workDir,
                     Tools = server.Tools.Count > 0 ? server.Tools.ToList() : ["*"]
                 };
                 if (server.Env.Count > 0)
