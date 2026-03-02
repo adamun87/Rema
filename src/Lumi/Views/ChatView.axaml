@@ -18,6 +18,267 @@
     </Style>
   </UserControl.Styles>
 
+  <UserControl.DataTemplates>
+
+    <!-- ── User message ─────────────────────────────── -->
+    <DataTemplate DataType="vm:UserMessageItem">
+      <sc:StrataChatMessage Role="User"
+                            Author="{Binding Author}"
+                            Timestamp="{Binding TimestampText}"
+                            IsEditable="True">
+        <sc:StrataChatMessage.Content>
+          <StackPanel Spacing="6">
+            <sc:StrataMarkdown Markdown="{Binding Content}" IsInline="True" />
+            <ItemsControl ItemsSource="{Binding Attachments}"
+                          IsVisible="{Binding HasAttachments}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="vm:FileAttachmentItem">
+                  <sc:StrataFileAttachment FileName="{Binding FileName}"
+                                           FileSize="{Binding FileSize}"
+                                           Status="Completed"
+                                           IsRemovable="False" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <ItemsControl ItemsSource="{Binding Skills}"
+                          IsVisible="{Binding HasSkills}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Border Background="{DynamicResource Brush.SurfaceSubtle}"
+                          CornerRadius="10" Padding="8,3" Margin="0,0,4,0">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                      <TextBlock Text="{Binding Glyph}" FontSize="11" VerticalAlignment="Center" />
+                      <TextBlock Text="{Binding Name}" Classes="caption"
+                                 Foreground="{DynamicResource Brush.TextSecondary}" />
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </sc:StrataChatMessage.Content>
+      </sc:StrataChatMessage>
+    </DataTemplate>
+
+    <!-- ── Assistant message ────────────────────────── -->
+    <DataTemplate DataType="vm:AssistantMessageItem">
+      <sc:StrataChatMessage Role="Assistant"
+                            Author="{Binding Author}"
+                            Timestamp="{Binding TimestampText}"
+                            IsStreaming="{Binding IsStreaming}">
+        <sc:StrataChatMessage.Content>
+          <StackPanel Spacing="6">
+            <sc:StrataMarkdown Markdown="{Binding Content}" IsInline="True" />
+
+            <!-- Skills section -->
+            <ItemsControl ItemsSource="{Binding Skills}"
+                          IsVisible="{Binding HasSkills}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Border Background="{DynamicResource Brush.SurfaceSubtle}"
+                          CornerRadius="10" Padding="8,3" Margin="0,0,4,0">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                      <TextBlock Text="{Binding Glyph}" FontSize="11" VerticalAlignment="Center" />
+                      <TextBlock Text="{Binding Name}" Classes="caption"
+                                 Foreground="{DynamicResource Brush.TextSecondary}" />
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- File attachments -->
+            <ItemsControl ItemsSource="{Binding FileAttachments}"
+                          IsVisible="{Binding HasFileAttachments}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="vm:FileAttachmentItem">
+                  <sc:StrataFileAttachment FileName="{Binding FileName}"
+                                           FileSize="{Binding FileSize}"
+                                           Status="Completed"
+                                           IsRemovable="False" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- Sources section -->
+            <sc:StrataThink Label="{Binding SourcesLabel}"
+                            IsVisible="{Binding HasSources}">
+              <sc:StrataThink.Content>
+                <ItemsControl ItemsSource="{Binding Sources}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><StackPanel Spacing="2" /></ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="vm:SourceItem">
+                      <Button Classes="subtle" HorizontalAlignment="Stretch"
+                              HorizontalContentAlignment="Left"
+                              Command="{Binding OpenCommand}"
+                              Padding="6,4" Cursor="Hand">
+                        <StackPanel>
+                          <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis"
+                                     Classes="caption" FontWeight="SemiBold" />
+                          <TextBlock Text="{Binding Domain}" Classes="caption"
+                                     Foreground="{DynamicResource Brush.TextTertiary}" />
+                        </StackPanel>
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </sc:StrataThink.Content>
+            </sc:StrataThink>
+
+            <!-- File changes section -->
+            <sc:StrataThink Label="{Binding FileChangesLabel}"
+                            IsVisible="{Binding HasFileChanges}">
+              <sc:StrataThink.Content>
+                <ItemsControl ItemsSource="{Binding FileChanges}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><StackPanel Spacing="2" /></ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="vm:FileChangeItem">
+                      <Button Classes="subtle" HorizontalAlignment="Stretch"
+                              HorizontalContentAlignment="Left"
+                              Command="{Binding ShowDiffCommand}"
+                              Padding="6,4" Cursor="Hand">
+                        <DockPanel>
+                          <TextBlock DockPanel.Dock="Left" Text="{Binding ActionIcon}" Margin="0,0,6,0"
+                                     FontSize="13" VerticalAlignment="Center" />
+                          <StackPanel>
+                            <TextBlock Text="{Binding FileName}" Classes="caption" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding Directory}" Classes="caption"
+                                       Foreground="{DynamicResource Brush.TextTertiary}"
+                                       TextTrimming="CharacterEllipsis"
+                                       IsVisible="{Binding Directory, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                          </StackPanel>
+                        </DockPanel>
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </sc:StrataThink.Content>
+            </sc:StrataThink>
+
+          </StackPanel>
+        </sc:StrataChatMessage.Content>
+      </sc:StrataChatMessage>
+    </DataTemplate>
+
+    <!-- ── Reasoning block ──────────────────────────── -->
+    <DataTemplate DataType="vm:ReasoningItem">
+      <sc:StrataThink Label="{loc:Str Tool_ReasoningLabel}"
+                      IsExpanded="{Binding IsExpanded}"
+                      IsActive="{Binding IsActive}">
+        <sc:StrataThink.Content>
+          <sc:StrataMarkdown Markdown="{Binding Content}" IsInline="True" />
+        </sc:StrataThink.Content>
+      </sc:StrataThink>
+    </DataTemplate>
+
+    <!-- ── Tool group (collapsible) ─────────────────── -->
+    <DataTemplate DataType="vm:ToolGroupItem">
+      <sc:StrataThink Label="{Binding Label}"
+                      Meta="{Binding Meta}"
+                      IsExpanded="{Binding IsExpanded}"
+                      IsActive="{Binding IsActive}"
+                      ProgressValue="{Binding ProgressValue}">
+        <sc:StrataThink.Content>
+          <ItemsControl ItemsSource="{Binding ToolCalls}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate><StackPanel Spacing="4" Width="440" /></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+          </ItemsControl>
+        </sc:StrataThink.Content>
+      </sc:StrataThink>
+    </DataTemplate>
+
+    <!-- ── Regular tool call (inside tool group) ────── -->
+    <DataTemplate DataType="vm:ToolCallItem">
+      <sc:StrataAiToolCall ToolName="{Binding ToolName}"
+                           Status="{Binding Status}"
+                           IsExpanded="{Binding IsExpanded}"
+                           InputParameters="{Binding InputParameters}"
+                           MoreInfo="{Binding MoreInfo}"
+                           DurationMs="{Binding DurationMs}">
+        <sc:StrataAiToolCall.HeaderAction>
+          <Button Classes="subtle" Command="{Binding ShowDiffCommand}"
+                  IsVisible="{Binding HasDiff}"
+                  Padding="5,0" MinHeight="0" Height="18"
+                  Cursor="Hand">
+            <StackPanel Orientation="Horizontal" Spacing="3">
+              <TextBlock Text="&#xE8A7;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                         FontSize="9" VerticalAlignment="Center" />
+              <TextBlock Text="{loc:Str ShowDiff}" FontSize="9" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+        </sc:StrataAiToolCall.HeaderAction>
+      </sc:StrataAiToolCall>
+    </DataTemplate>
+
+    <!-- ── Terminal preview (inside tool group) ─────── -->
+    <DataTemplate DataType="vm:TerminalPreviewItem">
+      <sc:StrataTerminalPreview ToolName="{Binding ToolName}"
+                                Command="{Binding Command}"
+                                Output="{Binding Output}"
+                                Status="{Binding Status}"
+                                DurationMs="{Binding DurationMs}"
+                                IsExpanded="{Binding IsExpanded}" />
+    </DataTemplate>
+
+    <!-- ── Todo progress (inside tool group) ────────── -->
+    <DataTemplate DataType="vm:TodoProgressItem">
+      <sc:StrataAiToolCall ToolName="{Binding ToolName}"
+                           Status="{Binding Status}"
+                           IsExpanded="{Binding IsExpanded}"
+                           InputParameters="{Binding InputParameters}"
+                           MoreInfo="{Binding MoreInfo}" />
+    </DataTemplate>
+
+    <!-- ── Question card ────────────────────────────── -->
+    <DataTemplate DataType="vm:QuestionItem">
+      <sc:StrataQuestionCard Question="{Binding Question}"
+                             Options="{Binding Options}"
+                             AllowFreeText="{Binding AllowFreeText}"
+                             SelectedAnswer="{Binding SelectedAnswer, Mode=TwoWay}"
+                             IsAnswered="{Binding IsAnswered, Mode=TwoWay}"
+                             Margin="0,4" />
+    </DataTemplate>
+
+    <!-- ── Typing indicator ─────────────────────────── -->
+    <DataTemplate DataType="vm:TypingIndicatorItem">
+      <sc:StrataTypingIndicator Label="{Binding Label}"
+                                IsActive="{Binding IsActive}" />
+    </DataTemplate>
+
+    <!-- ── Turn summary ─────────────────────────────── -->
+    <DataTemplate DataType="vm:TurnSummaryItem">
+      <sc:StrataTurnSummary Label="{Binding Label}"
+                            IsExpanded="{Binding IsExpanded}"
+                            HasFailures="{Binding HasFailures}">
+        <sc:StrataTurnSummary.Content>
+          <ItemsControl ItemsSource="{Binding InnerItems}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+          </ItemsControl>
+        </sc:StrataTurnSummary.Content>
+      </sc:StrataTurnSummary>
+    </DataTemplate>
+
+  </UserControl.DataTemplates>
+
   <Panel DragDrop.AllowDrop="True">
     <!-- Drop overlay -->
     <Panel x:Name="DropOverlay" IsVisible="False" IsHitTestVisible="False"
@@ -149,7 +410,8 @@
         </sc:StrataChatShell.Header>
 
         <sc:StrataChatShell.Transcript>
-          <sc:StrataChatTranscript />
+          <sc:StrataChatTranscript x:Name="Transcript"
+                                  ItemsSource="{Binding TranscriptItems}" />
         </sc:StrataChatShell.Transcript>
 
         <sc:StrataChatShell.Composer>
