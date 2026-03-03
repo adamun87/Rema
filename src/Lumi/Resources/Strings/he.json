@@ -127,6 +127,8 @@
   "Status_Truncated": "ההקשר קוצץ",
   "Status_Warning": "אזהרה: {0}",
   "Status_SessionExpired": "הפעלה פגה, מתחיל מחדש\u2026",
+  "Status_Resuming": "מחדש הפעלה\u2026",
+  "Status_Reconnecting": "מתחבר מחדש\u2026",
   "Status_ConnectingMcp": "מתחבר לשרתי MCP\u2026",
 
   "Author_Lumi": "לומי",

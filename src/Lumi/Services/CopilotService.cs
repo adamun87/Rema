@@ -36,115 +36,62 @@ public class CopilotService : IAsyncDisposable
         return _models;
     }
 
-    public async Task<CopilotSession> CreateSessionAsync(
-        string? systemPrompt = null,
-        string? model = null,
-        string? workingDirectory = null,
-        List<string>? skillDirectories = null,
-        List<CustomAgentConfig>? customAgents = null,
-        List<AIFunction>? tools = null,
-        Dictionary<string, object>? mcpServers = null,
-        string? reasoningEffort = null,
-        CancellationToken ct = default)
+    /// <summary>Creates a new Copilot session with the given configuration.</summary>
+    public async Task<CopilotSession> CreateSessionAsync(SessionConfig config, CancellationToken ct = default)
     {
         if (_client is null) throw new InvalidOperationException("Not connected");
-
-        var config = new SessionConfig
-        {
-            Model = model,
-            Streaming = true,
-            WorkingDirectory = workingDirectory,
-            ExcludedTools = ["web_fetch", "web_search"],
-            InfiniteSessions = new InfiniteSessionConfig
-            {
-                Enabled = true,
-            }
-        };
-
-        if (!string.IsNullOrWhiteSpace(reasoningEffort))
-            config.ReasoningEffort = reasoningEffort;
-
-        if (!string.IsNullOrWhiteSpace(systemPrompt))
-        {
-            config.SystemMessage = new SystemMessageConfig
-            {
-                Content = systemPrompt,
-                Mode = SystemMessageMode.Append
-            };
-        }
-
-        if (skillDirectories is { Count: > 0 })
-            config.SkillDirectories = skillDirectories;
-
-        if (customAgents is { Count: > 0 })
-            config.CustomAgents = customAgents;
-
-        if (tools is { Count: > 0 })
-            config.Tools = tools;
-
-        if (mcpServers is { Count: > 0 })
-            config.McpServers = mcpServers;
-
         return await _client.CreateSessionAsync(config, ct);
     }
 
+    /// <summary>Resumes an existing Copilot session by ID.</summary>
     public async Task<CopilotSession> ResumeSessionAsync(
-        string sessionId,
-        string? systemPrompt = null,
-        string? model = null,
-        string? workingDirectory = null,
-        List<string>? skillDirectories = null,
-        List<CustomAgentConfig>? customAgents = null,
-        List<AIFunction>? tools = null,
-        Dictionary<string, object>? mcpServers = null,
-        string? reasoningEffort = null,
-        CancellationToken ct = default)
+        string sessionId, ResumeSessionConfig config, CancellationToken ct = default)
     {
         if (_client is null) throw new InvalidOperationException("Not connected");
-
-        var config = new ResumeSessionConfig
-        {
-            Model = model,
-            Streaming = true,
-            WorkingDirectory = workingDirectory,
-            ExcludedTools = ["web_fetch", "web_search"],
-            InfiniteSessions = new InfiniteSessionConfig
-            {
-                Enabled = true,
-            }
-        };
-
-        if (!string.IsNullOrWhiteSpace(reasoningEffort))
-            config.ReasoningEffort = reasoningEffort;
-
-        if (!string.IsNullOrWhiteSpace(systemPrompt))
-        {
-            config.SystemMessage = new SystemMessageConfig
-            {
-                Content = systemPrompt,
-                Mode = SystemMessageMode.Append
-            };
-        }
-
-        if (skillDirectories is { Count: > 0 })
-            config.SkillDirectories = skillDirectories;
-
-        if (customAgents is { Count: > 0 })
-            config.CustomAgents = customAgents;
-
-        if (tools is { Count: > 0 })
-            config.Tools = tools;
-
-        if (mcpServers is { Count: > 0 })
-            config.McpServers = mcpServers;
-
         return await _client.ResumeSessionAsync(sessionId, config, ct);
+    }
+
+    /// <summary>Retrieves the event log for a session (for replay/restore).</summary>
+    public async Task<IReadOnlyList<SessionEvent>> GetSessionEventsAsync(
+        CopilotSession session, CancellationToken ct = default)
+    {
+        return await session.GetMessagesAsync(ct);
+    }
+
+    /// <summary>Lists all known sessions, optionally filtered.</summary>
+    public async Task<List<SessionMetadata>> ListSessionsAsync(
+        SessionListFilter? filter = null, CancellationToken ct = default)
+    {
+        if (_client is null) throw new InvalidOperationException("Not connected");
+        return await _client.ListSessionsAsync(filter, ct);
     }
 
     public async Task<GetAuthStatusResponse> GetAuthStatusAsync(CancellationToken ct = default)
     {
         if (_client is null) throw new InvalidOperationException("Not connected");
         return await _client.GetAuthStatusAsync(ct);
+    }
+
+    /// <summary>Lists built-in agents available in a session via the RPC Agent API.</summary>
+    public async Task<List<GitHub.Copilot.SDK.Rpc.Agent>> ListSessionAgentsAsync(
+        CopilotSession session, CancellationToken ct = default)
+    {
+        var result = await session.Rpc.Agent.ListAsync(ct);
+        return result.Agents;
+    }
+
+    /// <summary>Selects a built-in agent by name for all future turns in the session.</summary>
+    public async Task SelectSessionAgentAsync(
+        CopilotSession session, string agentName, CancellationToken ct = default)
+    {
+        await session.Rpc.Agent.SelectAsync(agentName, ct);
+    }
+
+    /// <summary>Deselects the current built-in agent, returning the session to default routing.</summary>
+    public async Task DeselectSessionAgentAsync(
+        CopilotSession session, CancellationToken ct = default)
+    {
+        await session.Rpc.Agent.DeselectAsync(ct);
     }
 
     /// <summary>
@@ -205,7 +152,8 @@ public class CopilotService : IAsyncDisposable
                 Content = "You are a title generator. Generate a concise title (3-6 words) for a chat conversation that started with the user message below. Respond with ONLY the title text, nothing else. No quotes, no punctuation at the end. Do not refuse or explain — just output the title.",
                 Mode = SystemMessageMode.Replace
             },
-            AvailableTools = []
+            AvailableTools = [],
+            OnPermissionRequest = PermissionHandler.ApproveAll,
         }, ct);
 
         try
@@ -219,12 +167,6 @@ public class CopilotService : IAsyncDisposable
         {
             await session.DisposeAsync();
         }
-    }
-
-    public async Task<List<SessionMetadata>> ListSessionsAsync(CancellationToken ct = default)
-    {
-        if (_client is null) throw new InvalidOperationException("Not connected");
-        return await _client.ListSessionsAsync(cancellationToken: ct);
     }
 
     /// <summary>
@@ -256,7 +198,8 @@ public class CopilotService : IAsyncDisposable
                 "editFile", "readFile", "listDirectory", "createFile", "deleteFile",
                 "runTerminalCommand", "getTerminalOutput",
                 "searchFiles", "getFileInfo",
-            ]
+            ],
+            OnPermissionRequest = PermissionHandler.ApproveAll,
         };
 
         return await _client.CreateSessionAsync(config, ct);
@@ -282,7 +225,8 @@ public class CopilotService : IAsyncDisposable
                 Content = "You generate follow-up suggestions for a chat assistant. Given the conversation below, produce exactly 3 short follow-up messages the user might want to send next. Each suggestion must be concise (under 60 characters) and contextually relevant. Output ONLY a JSON array of 3 strings, nothing else. Example: [\"Tell me more\", \"How do I implement this?\", \"What are the alternatives?\"]",
                 Mode = SystemMessageMode.Replace
             },
-            AvailableTools = []
+            AvailableTools = [],
+            OnPermissionRequest = PermissionHandler.ApproveAll,
         }, ct);
 
         try

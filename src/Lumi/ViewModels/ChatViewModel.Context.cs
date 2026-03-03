@@ -14,20 +14,49 @@ namespace Lumi.ViewModels;
 /// </summary>
 public partial class ChatViewModel
 {
-    /// <summary>Whether the agent can still be changed (only before the first message is sent).</summary>
-    public bool CanChangeAgent => CurrentChat is null || CurrentChat.Messages.Count == 0;
+    /// <summary>Whether the agent can still be changed. Always true — agents can now be switched mid-chat via SDK routing.</summary>
+    public bool CanChangeAgent => true;
 
     public void SetActiveAgent(LumiAgent? agent)
     {
-        // Don't allow switching agents once a chat has messages
-        if (!CanChangeAgent) return;
-
+        var previousAgent = ActiveAgent;
         ActiveAgent = agent;
         if (CurrentChat is not null)
         {
             CurrentChat.AgentId = agent?.Id;
             QueueSaveChat(CurrentChat, saveIndex: true);
         }
+
+        // If we have an active session, route through the SDK Agent API
+        if (_activeSession is not null)
+        {
+            if (agent is not null)
+                _ = SelectAgentOnSessionAsync(agent.Name);
+            else if (previousAgent is not null)
+                _ = DeselectAgentOnSessionAsync();
+        }
+    }
+
+    /// <summary>Calls session.Rpc.Agent.SelectAsync to route turns through the specified custom agent.</summary>
+    private async Task SelectAgentOnSessionAsync(string agentName)
+    {
+        if (_activeSession is null) return;
+        try
+        {
+            await _copilotService.SelectSessionAgentAsync(_activeSession, agentName);
+        }
+        catch { /* best effort — agent was still set locally via system prompt */ }
+    }
+
+    /// <summary>Calls session.Rpc.Agent.DeselectAsync to return the session to default routing.</summary>
+    private async Task DeselectAgentOnSessionAsync()
+    {
+        if (_activeSession is null) return;
+        try
+        {
+            await _copilotService.DeselectSessionAgentAsync(_activeSession);
+        }
+        catch { /* best effort */ }
     }
 
     /// <summary>Assigns a project to the current (or next) chat. Called when a project filter is active.</summary>
@@ -186,6 +215,11 @@ public partial class ChatViewModel
         {
             CurrentChat.ActiveMcpServerNames = new List<string>(ActiveMcpServerNames);
             QueueSaveChat(CurrentChat, saveIndex: true);
+
+            // MCP configuration is session-scoped in the Copilot SDK.
+            // Any add/remove must invalidate the current backend session so
+            // the next send recreates/resumes with the updated MCP server set.
+            InvalidateCurrentSession();
         }
     }
 

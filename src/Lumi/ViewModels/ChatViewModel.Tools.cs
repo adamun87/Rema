@@ -83,17 +83,16 @@ public partial class ChatViewModel
     {
         var allServers = _dataStore.Data.McpServers.Where(s => s.IsEnabled).ToList();
 
-        // If an active agent has MCP server IDs, use only those
+        // Always respect explicit composer selection first — if the user deselected
+        // all MCPs, ActiveMcpServerNames is empty and we should send none.
+        allServers = allServers.Where(s => ActiveMcpServerNames.Contains(s.Name)).ToList();
+
+        // If an active agent restricts MCP servers, apply that as an intersection
+        // with the user's current selection rather than overriding it.
         if (ActiveAgent is { McpServerIds.Count: > 0 })
         {
             var agentServerIds = ActiveAgent.McpServerIds;
             allServers = allServers.Where(s => agentServerIds.Contains(s.Id)).ToList();
-        }
-        else
-        {
-            // Always respect the composer selection — if the user deselected
-            // all MCPs, ActiveMcpServerNames is empty and we should send none.
-            allServers = allServers.Where(s => ActiveMcpServerNames.Contains(s.Name)).ToList();
         }
 
         if (allServers.Count == 0) return null;

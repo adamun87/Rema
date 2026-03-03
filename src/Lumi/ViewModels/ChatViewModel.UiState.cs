@@ -208,25 +208,20 @@ public partial class ChatViewModel
         if (string.Equals(ActiveAgent?.Name, value, StringComparison.Ordinal))
             return;
 
-        if (!CanChangeAgent)
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            SetActiveAgent(null);
+            return;
+        }
+
+        var agent = _dataStore.Data.Agents.FirstOrDefault(a => a.Name == value);
+        if (agent is null)
         {
             SyncComposerAgentSelectionFromState();
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(value))
-            SetActiveAgent(null);
-        else
-        {
-            var agent = _dataStore.Data.Agents.FirstOrDefault(a => a.Name == value);
-            if (agent is null)
-            {
-                SyncComposerAgentSelectionFromState();
-                return;
-            }
-
-            SetActiveAgent(agent);
-        }
+        SetActiveAgent(agent);
     }
 
     partial void OnSelectedProjectNameChanged(string? value)

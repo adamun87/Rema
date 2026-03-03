@@ -47,16 +47,12 @@ public partial class ChatViewModel : ObservableObject
     private readonly Dictionary<Guid, ChatMessage> _inProgressMessages = new();
     /// <summary>Per-chat runtime state sourced from live session events.</summary>
     private readonly Dictionary<Guid, ChatRuntimeState> _runtimeStates = new();
-    /// <summary>Chats awaiting title generation after the first assistant turn.</summary>
-    private readonly HashSet<Guid> _pendingTitleChats = new();
     /// <summary>Skills activated mid-chat (after session exists). Consumed on next SendMessage to inject into prompt.</summary>
     private readonly List<Guid> _pendingSkillInjections = new();
     /// <summary>Per-chat guard so suggestion generation is queued at most once concurrently.</summary>
     private readonly HashSet<Guid> _suggestionGenerationInFlightChats = new();
     /// <summary>Tracks the last assistant message ID that already produced suggestions per chat.</summary>
     private readonly Dictionary<Guid, Guid> _lastSuggestedAssistantMessageByChat = new();
-    /// <summary>Per-chat partial assistant content from aborted turns, injected as context in the next user message.</summary>
-    private readonly Dictionary<Guid, string> _abortedPartialContent = new();
 
     private sealed class ChatRuntimeState
     {
@@ -69,6 +65,8 @@ public partial class ChatViewModel : ObservableObject
         }
         public bool IsStreaming { get; set; }
         public string StatusText { get; set; } = "";
+        public long TotalInputTokens { get; set; }
+        public long TotalOutputTokens { get; set; }
     }
 
     /// <summary>True while LoadChat is bulk-adding messages. The View skips CollectionChanged.Add during this.</summary>
@@ -567,7 +565,6 @@ public partial class ChatViewModel : ObservableObject
                 case SessionTitleChangedEvent title:
                     Dispatcher.UIThread.Post(() =>
                     {
-                        var wasFirstTitle = _pendingTitleChats.Remove(chat.Id);
                         if (!_dataStore.Data.Settings.AutoGenerateTitles) return;
                         chat.Title = title.Data.Title;
                         chat.UpdatedAt = DateTimeOffset.Now;
@@ -575,8 +572,7 @@ public partial class ChatViewModel : ObservableObject
                             OnPropertyChanged(nameof(CurrentChatTitle));
                         if (_dataStore.Data.Settings.AutoSaveChats)
                             _ = SaveIndexAsync();
-                        if (wasFirstTitle)
-                            ChatTitleChanged?.Invoke(chat.Id, chat.Title);
+                        ChatTitleChanged?.Invoke(chat.Id, chat.Title);
                     });
                     break;
 
@@ -721,11 +717,8 @@ public partial class ChatViewModel : ObservableObject
                             IsStreaming = false;
                             StatusText = runtime.StatusText;
                         }
-                        // Remember partial content so the next message can inject it as context
-                        if (!string.IsNullOrWhiteSpace(partialContent))
-                            _abortedPartialContent[chat.Id] = partialContent;
-                        else
-                            _abortedPartialContent.Remove(chat.Id);
+                        // SDK session already records the aborted turn in its event log,
+                        // so the LLM will see the partial content on the next turn automatically.
                         QueueSaveChat(chat, saveIndex: false);
                     });
                     break;
@@ -750,6 +743,178 @@ public partial class ChatViewModel : ObservableObject
                             StatusText = "";
                         }
                     });
+                    break;
+
+                // ── New SDK event handlers ──
+
+                case AssistantIntentEvent intent:
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        if (!string.IsNullOrWhiteSpace(intent.Data.Intent))
+                        {
+                            runtime.StatusText = intent.Data.Intent;
+                            if (_activeSession == session)
+                                StatusText = runtime.StatusText;
+                        }
+                    });
+                    break;
+
+                case SubagentSelectedEvent:
+                    // Informational only — the subagent was selected but hasn't started yet.
+                    // No UI action needed; SubagentStartedEvent will create the tool entry.
+                    break;
+
+                case SubagentDeselectedEvent:
+                    // Informational only — the subagent was deselected after finishing.
+                    break;
+
+                case SubagentStartedEvent subStart:
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        var displayName = subStart.Data.AgentDisplayName ?? subStart.Data.AgentName ?? "Agent";
+                        runtime.StatusText = $"⚡ {displayName}";
+
+                        // The SDK fires ToolExecutionStartEvent before SubagentStartedEvent
+                        // with the same ToolCallId — reuse that message instead of duplicating.
+                        var existing = chat.Messages.LastOrDefault(m => m.ToolCallId == subStart.Data.ToolCallId);
+                        if (existing is not null)
+                        {
+                            existing.ToolName = $"agent:{subStart.Data.AgentName}";
+                            existing.Content = subStart.Data.AgentDescription ?? "";
+                            existing.Author = displayName;
+                            if (_activeSession == session)
+                            {
+                                var vm = Messages.LastOrDefault(m => m.Message.ToolCallId == subStart.Data.ToolCallId);
+                                vm?.NotifyContentChanged();
+                                StatusText = runtime.StatusText;
+                            }
+                        }
+                        else
+                        {
+                            // Fallback: no prior ToolExecutionStartEvent — create the message
+                            var toolMsg = new ChatMessage
+                            {
+                                Role = "tool",
+                                ToolCallId = subStart.Data.ToolCallId,
+                                ToolName = $"agent:{subStart.Data.AgentName}",
+                                ToolStatus = "InProgress",
+                                Content = subStart.Data.AgentDescription ?? "",
+                                Author = displayName
+                            };
+                            chat.Messages.Add(toolMsg);
+                            if (_activeSession == session)
+                            {
+                                Messages.Add(new ChatMessageViewModel(toolMsg));
+                                StatusText = runtime.StatusText;
+                                ScrollToEndRequested?.Invoke();
+                            }
+                        }
+                    });
+                    break;
+
+                case SubagentCompletedEvent subEnd:
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        // Mark ALL messages with this ToolCallId as Completed
+                        // (covers both ToolExecutionStart and SubagentStarted entries).
+                        foreach (var msg in chat.Messages.Where(m => m.ToolCallId == subEnd.Data.ToolCallId))
+                            msg.ToolStatus = "Completed";
+                        if (_activeSession == session)
+                        {
+                            foreach (var vm in Messages.Where(m => m.Message.ToolCallId == subEnd.Data.ToolCallId))
+                                vm.NotifyToolStatusChanged();
+                        }
+                    });
+                    break;
+
+                case SubagentFailedEvent subFail:
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        // Mark ALL messages with this ToolCallId as Failed
+                        foreach (var msg in chat.Messages.Where(m => m.ToolCallId == subFail.Data.ToolCallId))
+                        {
+                            msg.ToolStatus = "Failed";
+                            msg.ToolOutput = subFail.Data.Error;
+                        }
+                        if (_activeSession == session)
+                        {
+                            foreach (var vm in Messages.Where(m => m.Message.ToolCallId == subFail.Data.ToolCallId))
+                                vm.NotifyToolStatusChanged();
+                        }
+                    });
+                    break;
+
+                case AssistantUsageEvent usage:
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        // Track usage data in runtime state for display/debug metrics.
+                        var d = usage.Data;
+                        runtime.TotalInputTokens += (long)(d.InputTokens ?? 0);
+                        runtime.TotalOutputTokens += (long)(d.OutputTokens ?? 0);
+                        if (_activeSession == session)
+                            OnPropertyChanged(nameof(CurrentChat));
+                    });
+                    break;
+
+                case SkillInvokedEvent skillInvoked:
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        if (!string.IsNullOrWhiteSpace(skillInvoked.Data.Name))
+                        {
+                            var skill = FindSkillByName(skillInvoked.Data.Name);
+                            _transcriptBuilder.PendingFetchedSkillRefs.Add(new SkillReference
+                            {
+                                Name = skillInvoked.Data.Name,
+                                Glyph = skill?.IconGlyph ?? "\u26A1"
+                            });
+                        }
+                    });
+                    break;
+
+                case SessionTaskCompleteEvent taskComplete:
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        if (_activeSession == session && !string.IsNullOrWhiteSpace(taskComplete.Data.Summary))
+                        {
+                            runtime.StatusText = $"✓ {taskComplete.Data.Summary}";
+                            StatusText = runtime.StatusText;
+                        }
+                    });
+                    break;
+
+                case SessionResumeEvent resume:
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        runtime.StatusText = "";
+                        if (_activeSession == session)
+                            StatusText = "";
+                    });
+                    break;
+
+                case SessionModelChangeEvent modelChange:
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        if (_activeSession == session && !string.IsNullOrWhiteSpace(modelChange.Data.NewModel))
+                        {
+                            if (!AvailableModels.Contains(modelChange.Data.NewModel))
+                                AvailableModels.Add(modelChange.Data.NewModel);
+                            SelectedModel = modelChange.Data.NewModel;
+                        }
+                    });
+                    break;
+
+                case SessionSnapshotRewindEvent:
+                    // Server-side history rewind (e.g., from message editing) — no UI action needed
+                    break;
+
+                case SessionContextChangedEvent:
+                case SessionModeChangedEvent:
+                case SessionPlanChangedEvent:
+                case SessionWorkspaceFileChangedEvent:
+                case PendingMessagesModifiedEvent:
+                case SessionHandoffEvent:
+                case SessionInfoEvent:
+                    // Acknowledged but no UI action needed currently
                     break;
             }
         });
@@ -777,10 +942,8 @@ public partial class ChatViewModel : ObservableObject
         }
         _inProgressMessages.Remove(chatId);
         _runtimeStates.Remove(chatId);
-        _pendingTitleChats.Remove(chatId);
         _suggestionGenerationInFlightChats.Remove(chatId);
         _lastSuggestedAssistantMessageByChat.Remove(chatId);
-        _abortedPartialContent.Remove(chatId);
     }
 
     private ChatRuntimeState GetOrCreateRuntimeState(Guid chatId)
@@ -821,7 +984,7 @@ public partial class ChatViewModel : ObservableObject
 
     /// <summary>Creates or resumes a Copilot session for the given chat, building
     /// system prompt, tools, agents, skill dirs, and MCP servers as needed.</summary>
-    private async Task EnsureSessionAsync(Chat chat, CancellationToken ct)
+    private async Task<bool> EnsureSessionAsync(Chat chat, CancellationToken ct, bool allowCreateFallback = true)
     {
         var allSkills = _dataStore.Data.Skills;
         var activeSkills = ActiveSkillIds.Count > 0
@@ -848,6 +1011,45 @@ public partial class ChatViewModel : ObservableObject
         var reasoningEffort = _dataStore.Data.Settings.ReasoningEffort;
         var effort = string.IsNullOrWhiteSpace(reasoningEffort) ? null : reasoningEffort;
 
+        // Native user input handler — wired to the existing question card UI
+        UserInputHandler userInputHandler = async (request, invocation) =>
+        {
+            var questionId = Guid.NewGuid().ToString("N");
+            var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _pendingQuestions[questionId] = tcs;
+
+            var optionsStr = request.Choices is { Count: > 0 } ? string.Join(",", request.Choices) : "";
+            var freeText = request.AllowFreeform ?? true;
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                _transcriptBuilder.AddQuestionToTranscript(questionId, request.Question, optionsStr, freeText);
+                QuestionAsked?.Invoke(questionId, request.Question, optionsStr, freeText);
+                ScrollToEndRequested?.Invoke();
+            });
+
+            var answer = await tcs.Task;
+            _pendingQuestions.Remove(questionId);
+            return new GitHub.Copilot.SDK.UserInputResponse { Answer = answer, WasFreeform = true };
+        };
+
+        // Session hooks for lifecycle events
+        var hooks = new GitHub.Copilot.SDK.SessionHooks
+        {
+            OnPreToolUse = async (input, invocation) =>
+            {
+                // Auto-allow all tools (permission UI can be added later)
+                return new GitHub.Copilot.SDK.PreToolUseHookOutput { PermissionDecision = "allow" };
+            },
+            OnErrorOccurred = async (input, invocation) =>
+            {
+                // Retry transient errors, abort on persistent ones
+                if (input.Recoverable)
+                    return new GitHub.Copilot.SDK.ErrorOccurredHookOutput { ErrorHandling = "retry", RetryCount = 2 };
+                return new GitHub.Copilot.SDK.ErrorOccurredHookOutput { ErrorHandling = "abort" };
+            }
+        };
+
         if (mcpServers is { Count: > 0 })
             StatusText = Loc.Status_ConnectingMcp;
 
@@ -861,43 +1063,79 @@ public partial class ChatViewModel : ObservableObject
 
         if (chat.CopilotSessionId is null)
         {
+            if (!allowCreateFallback)
+                return false;
+
             try
             {
-                var session = await _copilotService.CreateSessionAsync(
-                    systemPrompt, SelectedModel, workDir, skillDirs, customAgents, customTools, mcpServers, effort, sessionCt);
-                chat.CopilotSessionId = session.SessionId;
-                _activeSession = session;
-                SubscribeToSession(session, chat);
+                var createConfig = SessionConfigBuilder.Build(
+                    systemPrompt, SelectedModel, workDir, skillDirs, customAgents, customTools,
+                    mcpServers, effort, userInputHandler, onPermission: null, hooks);
+                var createdSession = await _copilotService.CreateSessionAsync(createConfig, sessionCt);
+                chat.CopilotSessionId = createdSession.SessionId;
+                _activeSession = createdSession;
+                SubscribeToSession(createdSession, chat);
+                return true;
             }
             catch (OperationCanceledException) when (sessionCts is not null && sessionCts.IsCancellationRequested && !ct.IsCancellationRequested)
             {
                 throw new TimeoutException("MCP server connection timed out. Check that your MCP servers are installed and responding.");
             }
         }
-        else
+
+        // Try to resume with retry for transient errors
+        const int maxRetries = 2;
+        Exception? lastError = null;
+
+        for (var attempt = 0; attempt <= maxRetries; attempt++)
         {
             try
             {
+                StatusText = attempt > 0 ? Loc.Status_Reconnecting : Loc.Status_Resuming;
+                var resumeConfig = SessionConfigBuilder.BuildForResume(
+                    systemPrompt, SelectedModel, workDir, skillDirs, customAgents, customTools,
+                    mcpServers, effort, userInputHandler, onPermission: null, hooks);
                 var session = await _copilotService.ResumeSessionAsync(
-                    chat.CopilotSessionId, systemPrompt, SelectedModel, workDir, skillDirs, customAgents, customTools, mcpServers, effort, sessionCt);
+                    chat.CopilotSessionId, resumeConfig, sessionCt);
                 _activeSession = session;
                 SubscribeToSession(session, chat);
+                return true; // Resume succeeded
             }
             catch (OperationCanceledException) when (sessionCts is not null && sessionCts.IsCancellationRequested && !ct.IsCancellationRequested)
             {
                 throw new TimeoutException("MCP server connection timed out. Check that your MCP servers are installed and responding.");
             }
-            catch
+            catch (Exception ex)
             {
-                // Session expired or broken — fall back to a fresh session
-                StatusText = Loc.Status_SessionExpired;
-                var session = await _copilotService.CreateSessionAsync(
-                    systemPrompt, SelectedModel, workDir, skillDirs, customAgents, customTools, mcpServers, effort, sessionCt);
-                chat.CopilotSessionId = session.SessionId;
-                _activeSession = session;
-                SubscribeToSession(session, chat);
-                await SaveCurrentChatAsync();
+                lastError = ex;
+                if (attempt < maxRetries)
+                {
+                    await Task.Delay(500 * (attempt + 1), ct);
+                    continue;
+                }
             }
+        }
+
+        // All retries failed.
+        StatusText = Loc.Status_SessionExpired;
+        if (!allowCreateFallback)
+            return false;
+
+        try
+        {
+            var createConfig = SessionConfigBuilder.Build(
+                systemPrompt, SelectedModel, workDir, skillDirs, customAgents, customTools,
+                mcpServers, effort, userInputHandler, onPermission: null, hooks);
+            var createdSession = await _copilotService.CreateSessionAsync(createConfig, sessionCt);
+            chat.CopilotSessionId = createdSession.SessionId;
+            _activeSession = createdSession;
+            SubscribeToSession(createdSession, chat);
+            await SaveCurrentChatAsync();
+            return true;
+        }
+        catch (OperationCanceledException) when (sessionCts is not null && sessionCts.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            throw new TimeoutException("MCP server connection timed out. Check that your MCP servers are installed and responding.");
         }
     }
 
@@ -1149,11 +1387,7 @@ public partial class ChatViewModel : ObservableObject
             _pendingProjectId = null;
             _dataStore.Data.Chats.Add(chat);
             CurrentChat = chat;
-            if (_dataStore.Data.Settings.AutoGenerateTitles)
-            {
-                _pendingTitleChats.Add(chat.Id);
-                _ = GenerateChatTitleAsync(chat, prompt);
-            }
+            // SDK generates titles automatically via SessionTitleChangedEvent
             await SaveCurrentChatAsync();
             ChatUpdated?.Invoke();
         }
@@ -1201,19 +1435,15 @@ public partial class ChatViewModel : ObservableObject
                                     || CurrentChat.CopilotSessionId is null;
 
             if (needsSessionSetup)
+            {
                 await EnsureSessionAsync(CurrentChat, cts.Token);
 
-            var sendOptions = new MessageOptions { Prompt = prompt };
-
-            // If the previous turn was aborted, inject partial content so the LLM knows what it wrote
-            if (_abortedPartialContent.TryGetValue(CurrentChat.Id, out var abortedContent))
-            {
-                _abortedPartialContent.Remove(CurrentChat.Id);
-                sendOptions.Prompt = prompt
-                    + "\n\n<system_notification>Your previous response was interrupted by the user. "
-                    + "Here is what you had written before being stopped:\n"
-                    + abortedContent + "\n</system_notification>";
+                // If a custom agent is selected, route the session through it via the SDK Agent API
+                if (ActiveAgent is not null && _activeSession is not null)
+                    await _copilotService.SelectSessionAgentAsync(_activeSession, ActiveAgent.Name, cts.Token);
             }
+
+            var sendOptions = new MessageOptions { Prompt = prompt };
 
             // Inject newly activated skills as context in the message (explicit activation in existing chat)
             if (_pendingSkillInjections.Count > 0)
@@ -1418,31 +1648,6 @@ public partial class ChatViewModel : ObservableObject
         };
     }
 
-    private async Task GenerateChatTitleAsync(Chat chat, string userMessage)
-    {
-        try
-        {
-            var title = await _copilotService.GenerateTitleAsync(userMessage);
-            if (string.IsNullOrWhiteSpace(title)) { _pendingTitleChats.Remove(chat.Id); return; }
-
-            await Dispatcher.UIThread.InvokeAsync(async () =>
-            {
-                _pendingTitleChats.Remove(chat.Id);
-                chat.Title = title.Trim();
-                chat.UpdatedAt = DateTimeOffset.Now;
-                if (CurrentChat?.Id == chat.Id)
-                    OnPropertyChanged(nameof(CurrentChatTitle));
-                await SaveIndexAsync();
-                ChatTitleChanged?.Invoke(chat.Id, chat.Title);
-            });
-        }
-        catch
-        {
-            // Silently fail — the default truncated title is already set
-            _pendingTitleChats.Remove(chat.Id);
-        }
-    }
-
     private void QueueSuggestionGenerationForLatestAssistant(Chat chat)
     {
         if (_suggestionGenerationInFlightChats.Contains(chat.Id))
@@ -1628,6 +1833,10 @@ public partial class ChatViewModel : ObservableObject
         while (CurrentChat.Messages.Count > idx)
             CurrentChat.Messages.RemoveAt(CurrentChat.Messages.Count - 1);
 
+        // Preserve the retained transcript (before the edited user turn) so we can
+        // rebuild context safely if we need to recreate the backend session.
+        var retainedContext = CurrentChat.Messages.ToList();
+
         // Rebuild the UI without the removed messages
         _transcriptBuilder.IsRebuildingTranscript = true;
         Messages.Clear();
@@ -1643,11 +1852,10 @@ public partial class ChatViewModel : ObservableObject
         _pendingSearchSources.Clear();
         _transcriptBuilder.PendingFetchedSkillRefs.Clear();
 
-        // Invalidate the session only if the message was edited — the server-side
-        // history contains the unedited exchange and must be discarded.
-        // For pure regenerate (same content), the session can be reused.
-        if (wasEdited)
-            InvalidateCurrentSession();
+        // For edits: there is currently no public SDK API to rewind/remove prior
+        // turns from the server-side history. To avoid leaking the pre-edit prompt,
+        // we recreate the backend session and pass only the retained transcript.
+        // For regenerates (same content): reuse the existing session as-is.
 
         // Re-add the user message as a fresh entry
         var newUserMsg = new ChatMessage
@@ -1698,8 +1906,37 @@ public partial class ChatViewModel : ObservableObject
 
             var needsSessionSetup = _activeSession?.SessionId != CurrentChat.CopilotSessionId
                                     || CurrentChat.CopilotSessionId is null;
+
+            // Editing must not keep old server-side context. Recreate session first.
+            if (wasEdited)
+            {
+                InvalidateCurrentSession();
+                needsSessionSetup = true;
+            }
+
             if (needsSessionSetup)
-                await EnsureSessionAsync(CurrentChat, cts.Token);
+            {
+                var ok = wasEdited
+                    ? await EnsureSessionAsync(CurrentChat, cts.Token, allowCreateFallback: true)
+                    : await EnsureSessionAsync(CurrentChat, cts.Token, allowCreateFallback: false);
+
+                if (!ok)
+                {
+                    StatusText = "Session expired. Please start a new chat.";
+                    var errorMsg = new ChatMessage
+                    {
+                        Role = "error",
+                        Author = Loc.Author_Lumi,
+                        Content = "Session expired. Please start a new chat to continue."
+                    };
+                    CurrentChat.Messages.Add(errorMsg);
+                    var msgVm = new ChatMessageViewModel(errorMsg);
+                    Messages.Add(msgVm);
+                    _transcriptBuilder.ProcessMessageToTranscript(msgVm);
+                    ScrollToEndRequested?.Invoke();
+                    return;
+                }
+            }
 
             var runtime = GetOrCreateRuntimeState(CurrentChat.Id);
             runtime.IsBusy = true;
@@ -1709,7 +1946,11 @@ public partial class ChatViewModel : ObservableObject
             IsStreaming = runtime.IsStreaming;
             StatusText = runtime.StatusText;
 
-            await _activeSession!.SendAsync(new MessageOptions { Prompt = prompt }, cts.Token);
+            var resendPrompt = wasEdited
+                ? BuildEditedReplayPrompt(retainedContext, prompt)
+                : prompt;
+
+            await _activeSession!.SendAsync(new MessageOptions { Prompt = resendPrompt }, cts.Token);
         }
         catch (OperationCanceledException)
         {
@@ -1747,6 +1988,42 @@ public partial class ChatViewModel : ObservableObject
                 ScrollToEndRequested?.Invoke();
             }
         }
+    }
+
+    private static string BuildEditedReplayPrompt(List<ChatMessage> retainedContext, string editedPrompt)
+    {
+        if (retainedContext.Count == 0)
+            return editedPrompt;
+
+        var lines = new List<string>
+        {
+            "The user edited an earlier message. Use ONLY the corrected conversation context below.",
+            "Ignore any previous conversation state not included here.",
+            "",
+            "Conversation so far:"
+        };
+
+        foreach (var msg in retainedContext)
+        {
+            if (string.IsNullOrWhiteSpace(msg.Content))
+                continue;
+
+            string role = msg.Role switch
+            {
+                "assistant" => "Assistant",
+                "system" => "System",
+                _ => "User"
+            };
+
+            if (msg.Role is "user" or "assistant" or "system")
+                lines.Add($"{role}: {msg.Content.Trim()}");
+        }
+
+        lines.Add("");
+        lines.Add("Latest user message (edited):");
+        lines.Add(editedPrompt);
+
+        return string.Join("\n", lines);
     }
 
 }

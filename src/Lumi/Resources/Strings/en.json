@@ -127,6 +127,8 @@
   "Status_Truncated": "Context trimmed",
   "Status_Warning": "Warning: {0}",
   "Status_SessionExpired": "Session expired, starting fresh\u2026",
+  "Status_Resuming": "Resuming session\u2026",
+  "Status_Reconnecting": "Reconnecting\u2026",
   "Status_ConnectingMcp": "Connecting MCP servers\u2026",
 
   "Author_Lumi": "Lumi",
