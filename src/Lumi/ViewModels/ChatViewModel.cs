@@ -544,7 +544,6 @@ public partial class ChatViewModel : ObservableObject
                             StatusText = runtime.StatusText;
                         }
                         QueueSaveChat(chat, saveIndex: true);
-                        QueueAutonomousMemoryCheckpoint(chat);
                     });
                     break;
 
@@ -559,6 +558,12 @@ public partial class ChatViewModel : ObservableObject
                                 : $"{chatTitle} — {Loc.Notification_ResponseReady}";
                             NotificationService.ShowIfInactive(agentName, body);
                         }
+
+                        // Memory checkpoint + suggestions only when session is truly idle.
+                        // Running these on every AssistantTurnEndEvent creates a storm of
+                        // background sessions that can starve the CLI process and stall
+                        // all active sessions.
+                        QueueAutonomousMemoryCheckpoint(chat);
 
                         // Generate follow-up suggestions once the full assistant response is done.
                         if (_activeSession == session && CurrentChat?.Id == chat.Id)

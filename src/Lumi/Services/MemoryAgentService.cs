@@ -21,6 +21,10 @@ public sealed class MemoryAgentService
     private readonly Dictionary<Guid, string> _lastCheckpointByChat = new();
     private readonly Dictionary<Guid, SemaphoreSlim> _checkpointLocks = new();
 
+    /// <summary>Global limit on concurrent background sessions (memory + suggestions)
+    /// to prevent overwhelming the CLI process when multiple chats run in parallel.</summary>
+    private static readonly SemaphoreSlim _globalSessionGate = new(2, 2);
+
     private const string DefaultCategory = "General";
 
     private static void Log(string message) => Debug.WriteLine($"[MemoryAgent] {message}");
@@ -110,23 +114,38 @@ public sealed class MemoryAgentService
 
     private async Task RunMemoryAgentAsync(MemoryAgentCheckpoint checkpoint, CancellationToken cancellationToken)
     {
-        var model = await PickLightweightModelAsync(cancellationToken).ConfigureAwait(false);
-
-        var memoryTools = BuildMemoryTools(checkpoint.ChatId, source: "auto");
-        var session = await _copilotService.CreateLightweightSessionAsync(
-            BuildSystemPrompt(), model, memoryTools, cancellationToken).ConfigureAwait(false);
+        // Limit concurrent background sessions to avoid starving the CLI process
+        // when multiple chats run in parallel.
+        if (!await _globalSessionGate.WaitAsync(TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false))
+        {
+            Log("Skipped checkpoint — global session limit reached");
+            return;
+        }
 
         try
         {
-            var prompt = BuildCheckpointPrompt(checkpoint);
-            await session.SendAndWaitAsync(
-                new MessageOptions { Prompt = prompt },
-                TimeSpan.FromSeconds(90),
-                cancellationToken).ConfigureAwait(false);
+            var model = await PickLightweightModelAsync(cancellationToken).ConfigureAwait(false);
+
+            var memoryTools = BuildMemoryTools(checkpoint.ChatId, source: "auto");
+            var session = await _copilotService.CreateLightweightSessionAsync(
+                BuildSystemPrompt(), model, memoryTools, cancellationToken).ConfigureAwait(false);
+
+            try
+            {
+                var prompt = BuildCheckpointPrompt(checkpoint);
+                await session.SendAndWaitAsync(
+                    new MessageOptions { Prompt = prompt },
+                    TimeSpan.FromSeconds(90),
+                    cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                await session.DisposeAsync().ConfigureAwait(false);
+            }
         }
         finally
         {
-            await session.DisposeAsync().ConfigureAwait(false);
+            _globalSessionGate.Release();
         }
     }
 
