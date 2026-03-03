@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.ComponentModel;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -16,7 +14,6 @@ using GitHub.Copilot.SDK;
 using Lumi.Localization;
 using Lumi.Models;
 using Lumi.Services;
-using Microsoft.Extensions.AI;
 using StrataTheme.Controls;
 
 using ChatMessage = Lumi.Models.ChatMessage;
@@ -36,9 +33,9 @@ public partial class ChatViewModel : ObservableObject
     private long _chatLoadRequestId;
     /// <summary>Maps chat ID → CancellationTokenSource for per-chat cancellation.</summary>
     private readonly Dictionary<Guid, CancellationTokenSource> _ctsSources = new();
-    private readonly HashSet<string> _shownFileChips = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<SearchSource> _pendingSearchSources = [];
-    private readonly List<SkillReference> _pendingFetchedSkillRefs = [];
+
+    private readonly TranscriptBuilder _transcriptBuilder;
 
     /// <summary>The CopilotSession for the currently displayed chat. Events for this session update the UI.</summary>
     private CopilotSession? _activeSession;
@@ -58,6 +55,8 @@ public partial class ChatViewModel : ObservableObject
     private readonly HashSet<Guid> _suggestionGenerationInFlightChats = new();
     /// <summary>Tracks the last assistant message ID that already produced suggestions per chat.</summary>
     private readonly Dictionary<Guid, Guid> _lastSuggestedAssistantMessageByChat = new();
+    /// <summary>Per-chat partial assistant content from aborted turns, injected as context in the next user message.</summary>
+    private readonly Dictionary<Guid, string> _abortedPartialContent = new();
 
     private sealed class ChatRuntimeState
     {
@@ -93,8 +92,6 @@ public partial class ChatViewModel : ObservableObject
     /// <summary>Flat list of transcript items for the virtualized chat panel. Bound to StrataChatTranscript.ItemsSource.</summary>
     [ObservableProperty] private ObservableCollection<TranscriptItem> _transcriptItems = [];
 
-    /// <summary>During rebuild, items are added here instead of TranscriptItems to avoid N individual CollectionChanged events.</summary>
-    private IList<TranscriptItem>? _rebuildTarget;
     public ObservableCollection<string> AvailableModels { get; } = [];
     public ObservableCollection<string> PendingAttachments { get; } = [];
 
@@ -133,28 +130,6 @@ public partial class ChatViewModel : ObservableObject
     /// <summary>Pending question completions keyed by question ID.</summary>
     private readonly Dictionary<string, TaskCompletionSource<string>> _pendingQuestions = new();
 
-    // ── Transcript building state ──
-    private ToolGroupItem? _currentToolGroup;
-    private int _currentToolGroupCount;
-    private TodoProgressItem? _currentTodoToolCall;
-    private TodoProgressState? _currentTodoProgress;
-    private int _todoUpdateCount;
-    private string? _currentIntentText;
-    private TypingIndicatorItem? _typingIndicator;
-    private readonly Dictionary<string, TerminalPreviewItem> _terminalPreviewsByToolCallId = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, long> _toolStartTimes = [];
-    private readonly List<FileAttachmentItem> _pendingToolFileChips = [];
-    private readonly List<FileChangeItem> _pendingFileEdits = [];
-    private bool _isRebuildingTranscript;
-
-    private sealed class TodoProgressState
-    {
-        public string ToolStatus { get; set; } = "InProgress";
-        public int Total { get; set; }
-        public int Completed { get; set; }
-        public int Failed { get; set; }
-    }
-
     /// <summary>Raised when the view should rebuild DataTemplates (e.g. settings changed).</summary>
     public event Action? TranscriptRebuilt;
 
@@ -167,7 +142,14 @@ public partial class ChatViewModel : ObservableObject
         _codingToolService = new CodingToolService(copilotService, GetCurrentCancellationToken);
         _selectedModel = dataStore.Data.Settings.PreferredModel;
 
-        // Seed with preferred model so the ComboBox has an initial selection
+        _transcriptBuilder = new TranscriptBuilder(
+            dataStore,
+            showDiffAction: (path, old, @new) => DiffShowRequested?.Invoke(path, old, @new),
+            submitQuestionAnswerAction: SubmitQuestionAnswer,
+            resendFromMessageAction: ResendFromMessageAsync);
+        _transcriptBuilder.SetLiveTarget(_transcriptItems);
+
+        // Seed with preferred modelso the ComboBox has an initial selection
         if (!string.IsNullOrWhiteSpace(_selectedModel))
             AvailableModels.Add(_selectedModel);
 
@@ -177,17 +159,17 @@ public partial class ChatViewModel : ObservableObject
         // Wire messages → transcript items
         Messages.CollectionChanged += (_, args) =>
         {
-            if (IsLoadingChat || _isRebuildingTranscript) return;
+            if (IsLoadingChat || _transcriptBuilder.IsRebuildingTranscript) return;
 
             if (args.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Add && args.NewItems is not null)
             {
                 foreach (ChatMessageViewModel msgVm in args.NewItems)
-                    ProcessMessageToTranscript(msgVm);
+                    _transcriptBuilder.ProcessMessageToTranscript(msgVm);
             }
             else if (args.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset)
             {
                 TranscriptItems.Clear();
-                ResetTranscriptState();
+                _transcriptBuilder.ResetState();
             }
         };
 
@@ -197,15 +179,21 @@ public partial class ChatViewModel : ObservableObject
     partial void OnIsBusyChanged(bool value)
     {
         if (value)
-            ShowTypingIndicator(StatusText);
+            _transcriptBuilder.ShowTypingIndicator(StatusText);
         else
-            HideTypingIndicator();
+            _transcriptBuilder.HideTypingIndicator();
     }
 
     partial void OnStatusTextChanged(string value)
     {
         if (IsBusy)
-            UpdateTypingIndicatorLabel(value);
+            _transcriptBuilder.UpdateTypingIndicatorLabel(value);
+    }
+
+    internal void RebuildTranscript()
+    {
+        TranscriptItems = _transcriptBuilder.Rebuild(Messages);
+        TranscriptRebuilt?.Invoke();
     }
 
     /// <summary>Subscribes to events on a CopilotSession. Each subscription captures its own
@@ -309,10 +297,10 @@ public partial class ChatViewModel : ObservableObject
                                     streamingMsg.Sources.AddRange(_pendingSearchSources);
                                     _pendingSearchSources.Clear();
                                 }
-                                if (_pendingFetchedSkillRefs.Count > 0)
+                                if (_transcriptBuilder.PendingFetchedSkillRefs.Count > 0)
                                 {
-                                    streamingMsg.ActiveSkills.AddRange(_pendingFetchedSkillRefs);
-                                    _pendingFetchedSkillRefs.Clear();
+                                    streamingMsg.ActiveSkills.AddRange(_transcriptBuilder.PendingFetchedSkillRefs);
+                                    _transcriptBuilder.PendingFetchedSkillRefs.Clear();
                                 }
                                 chat.Messages.Add(streamingMsg);
                                 _inProgressMessages.Remove(chat.Id);
@@ -391,14 +379,14 @@ public partial class ChatViewModel : ObservableObject
                         {
                             terminalRootByToolCallId[startToolCallId] = startToolCallId;
                         }
-                        else if (IsTerminalStreamingTool(toolStart.Data.ToolName)
+                        else if (ToolDisplayHelper.IsTerminalStreamingTool(toolStart.Data.ToolName)
                                  && !string.IsNullOrWhiteSpace(toolStart.Data.ParentToolCallId))
                         {
-                            terminalRootByToolCallId[startToolCallId] = ResolveRootTerminalToolCallId(
+                            terminalRootByToolCallId[startToolCallId] = ToolDisplayHelper.ResolveRootTerminalToolCallId(
                                 toolStart.Data.ParentToolCallId!, toolParentById, terminalRootByToolCallId);
                         }
 
-                        var displayName = FormatToolDisplayName(toolStart.Data.ToolName, toolStart.Data.Arguments?.ToString());
+                        var displayName = ToolDisplayHelper.FormatToolStatusName(toolStart.Data.ToolName, toolStart.Data.Arguments?.ToString());
                         runtime.StatusText = string.Format(Loc.Status_Running, displayName);
                         var toolMsg = new ChatMessage
                         {
@@ -427,16 +415,16 @@ public partial class ChatViewModel : ObservableObject
 
                         var partialToolCallId = partial.Data.ToolCallId;
                         var partialToolName = chat.Messages.LastOrDefault(m => m.ToolCallId == partialToolCallId)?.ToolName;
-                        if (!IsTerminalStreamingTool(partialToolName)
+                        if (!ToolDisplayHelper.IsTerminalStreamingTool(partialToolName)
                             && !terminalRootByToolCallId.ContainsKey(partialToolCallId))
                             return;
 
-                        var rootToolCallId = ResolveRootTerminalToolCallId(partialToolCallId, toolParentById, terminalRootByToolCallId);
-                        var output = CleanTerminalOutput(partial.Data.PartialOutput);
+                        var rootToolCallId = ToolDisplayHelper.ResolveRootTerminalToolCallId(partialToolCallId, toolParentById, terminalRootByToolCallId);
+                        var output = ToolDisplayHelper.CleanTerminalOutput(partial.Data.PartialOutput);
                         if (!string.IsNullOrWhiteSpace(output))
                         {
-                            ApplyTerminalOutput(chat, rootToolCallId, output, replaceExistingOutput: false);
-                            UpdateTerminalOutput(rootToolCallId, output, false);
+                            ToolDisplayHelper.ApplyTerminalOutput(chat, rootToolCallId, output, replaceExistingOutput: false);
+                            _transcriptBuilder.UpdateTerminalOutput(rootToolCallId, output, false);
                         }
                     });
                     break;
@@ -449,16 +437,16 @@ public partial class ChatViewModel : ObservableObject
 
                         var progressToolCallId = progress.Data.ToolCallId;
                         var progressToolName = chat.Messages.LastOrDefault(m => m.ToolCallId == progressToolCallId)?.ToolName;
-                        if (!IsTerminalStreamingTool(progressToolName)
+                        if (!ToolDisplayHelper.IsTerminalStreamingTool(progressToolName)
                             && !terminalRootByToolCallId.ContainsKey(progressToolCallId))
                             return;
 
-                        var rootToolCallId = ResolveRootTerminalToolCallId(progressToolCallId, toolParentById, terminalRootByToolCallId);
-                        var output = CleanTerminalOutput(progress.Data.ProgressMessage);
+                        var rootToolCallId = ToolDisplayHelper.ResolveRootTerminalToolCallId(progressToolCallId, toolParentById, terminalRootByToolCallId);
+                        var output = ToolDisplayHelper.CleanTerminalOutput(progress.Data.ProgressMessage);
                         if (!string.IsNullOrWhiteSpace(output))
                         {
-                            ApplyTerminalOutput(chat, rootToolCallId, output, replaceExistingOutput: false);
-                            UpdateTerminalOutput(rootToolCallId, output, false);
+                            ToolDisplayHelper.ApplyTerminalOutput(chat, rootToolCallId, output, replaceExistingOutput: false);
+                            _transcriptBuilder.UpdateTerminalOutput(rootToolCallId, output, false);
                         }
                     });
                     break;
@@ -497,7 +485,7 @@ public partial class ChatViewModel : ObservableObject
                                     if (!string.IsNullOrEmpty(skillName))
                                     {
                                         var skill = FindSkillByName(skillName);
-                                        _pendingFetchedSkillRefs.Add(new SkillReference
+                                        _transcriptBuilder.PendingFetchedSkillRefs.Add(new SkillReference
                                         {
                                             Name = skillName,
                                             Glyph = skill?.IconGlyph ?? "\u26A1"
@@ -505,7 +493,7 @@ public partial class ChatViewModel : ObservableObject
                                     }
                                 }
 
-                                if ((IsFileCreationTool(toolName) || toolName == "powershell")
+                                if ((ToolDisplayHelper.IsFileCreationTool(toolName) || toolName == "powershell")
                                     && toolEnd.Data.Result?.Contents is { Length: > 0 } contents)
                                 {
                                     foreach (var item in contents)
@@ -513,25 +501,25 @@ public partial class ChatViewModel : ObservableObject
                                         if (item is ToolExecutionCompleteDataResultContentsItemResourceLink rl
                                             && !string.IsNullOrEmpty(rl.Uri))
                                         {
-                                            var fp = UriToLocalPath(rl.Uri);
-                                            if (fp is not null && File.Exists(fp) && IsUserFacingFile(fp) && _shownFileChips.Add(fp))
+                                            var fp = ToolDisplayHelper.UriToLocalPath(rl.Uri);
+                                            if (fp is not null && File.Exists(fp) && ToolDisplayHelper.IsUserFacingFile(fp) && _transcriptBuilder.ShownFileChips.Add(fp))
                                             {
-                                                _pendingToolFileChips.Add(new FileAttachmentItem(fp));
+                                                _transcriptBuilder.PendingToolFileChips.Add(new FileAttachmentItem(fp));
                                             }
                                         }
                                     }
                                 }
                             }
 
-                            if (IsTerminalStreamingTool(toolName) && _activeSession == session)
+                            if (ToolDisplayHelper.IsTerminalStreamingTool(toolName) && _activeSession == session)
                             {
-                                var rootToolCallId = ResolveRootTerminalToolCallId(
+                                var rootToolCallId = ToolDisplayHelper.ResolveRootTerminalToolCallId(
                                     toolEnd.Data.ToolCallId, toolParentById, terminalRootByToolCallId);
-                                var output = ExtractTerminalOutput(toolEnd.Data.Result);
+                                var output = ToolDisplayHelper.ExtractTerminalOutput(toolEnd.Data.Result);
                                 if (!string.IsNullOrWhiteSpace(output))
                                 {
-                                    ApplyTerminalOutput(chat, rootToolCallId, output, replaceExistingOutput: true);
-                                    UpdateTerminalOutput(rootToolCallId, output, true);
+                                    ToolDisplayHelper.ApplyTerminalOutput(chat, rootToolCallId, output, replaceExistingOutput: true);
+                                    _transcriptBuilder.UpdateTerminalOutput(rootToolCallId, output, true);
                                     QueueSaveChat(chat, saveIndex: false);
                                 }
                             }
@@ -547,8 +535,8 @@ public partial class ChatViewModel : ObservableObject
                         runtime.StatusText = "";
                         if (_activeSession == session)
                         {
-                            HideTypingIndicator();
-                            CloseCurrentToolGroup();
+                            _transcriptBuilder.HideTypingIndicator();
+                            _transcriptBuilder.CloseCurrentToolGroup();
                             IsBusy = runtime.IsBusy;
                             IsStreaming = runtime.IsStreaming;
                             StatusText = runtime.StatusText;
@@ -625,8 +613,8 @@ public partial class ChatViewModel : ObservableObject
                         if (_activeSession == session)
                         {
                             // Clean up typing indicator and tool groups
-                            HideTypingIndicator();
-                            CloseCurrentToolGroup();
+                            _transcriptBuilder.HideTypingIndicator();
+                            _transcriptBuilder.CloseCurrentToolGroup();
 
                             StatusText = runtime.StatusText;
                             IsBusy = runtime.IsBusy;
@@ -641,7 +629,7 @@ public partial class ChatViewModel : ObservableObject
                             };
                             chat.Messages.Add(errorMsg);
                             Messages.Add(new ChatMessageViewModel(errorMsg));
-                            ProcessMessageToTranscript(Messages[^1]);
+                            _transcriptBuilder.ProcessMessageToTranscript(Messages[^1]);
                             ScrollToEndRequested?.Invoke();
                         }
                     });
@@ -687,11 +675,13 @@ public partial class ChatViewModel : ObservableObject
                     Dispatcher.UIThread.Post(() =>
                     {
                         // SDK-initiated abort — clean up streaming state
+                        string? partialContent = null;
                         if (streamingMsg is not null)
                         {
                             streamingMsg.IsStreaming = false;
                             if (!string.IsNullOrWhiteSpace(streamingMsg.Content))
                             {
+                                partialContent = streamingMsg.Content;
                                 chat.Messages.Add(streamingMsg);
                                 if (_activeSession == session)
                                 {
@@ -731,6 +721,12 @@ public partial class ChatViewModel : ObservableObject
                             IsStreaming = false;
                             StatusText = runtime.StatusText;
                         }
+                        // Remember partial content so the next message can inject it as context
+                        if (!string.IsNullOrWhiteSpace(partialContent))
+                            _abortedPartialContent[chat.Id] = partialContent;
+                        else
+                            _abortedPartialContent.Remove(chat.Id);
+                        QueueSaveChat(chat, saveIndex: false);
                     });
                     break;
 
@@ -784,728 +780,7 @@ public partial class ChatViewModel : ObservableObject
         _pendingTitleChats.Remove(chatId);
         _suggestionGenerationInFlightChats.Remove(chatId);
         _lastSuggestedAssistantMessageByChat.Remove(chatId);
-    }
-
-    // ── Transcript building ──────────────────────────────
-
-    /// <summary>
-    /// Rebuilds TranscriptItems from the current Messages collection.
-    /// Called when loading a chat or when display settings change.
-    /// </summary>
-    public void RebuildTranscript()
-    {
-        _isRebuildingTranscript = true;
-        var tempItems = new List<TranscriptItem>();
-        _rebuildTarget = tempItems;
-        ResetTranscriptState();
-
-        foreach (var msg in Messages)
-            ProcessMessageToTranscript(msg);
-
-        CloseCurrentToolGroup();
-        CollapseAllCompletedTurns();
-
-        _rebuildTarget = null;
-        // Single binding update: triggers one Reset on the virtualizing panel
-        // instead of N individual Add notifications.
-        TranscriptItems = new ObservableCollection<TranscriptItem>(tempItems);
-        _isRebuildingTranscript = false;
-        TranscriptRebuilt?.Invoke();
-    }
-
-    private void ResetTranscriptState()
-    {
-        _currentToolGroup = null;
-        _currentToolGroupCount = 0;
-        _currentTodoToolCall = null;
-        _currentTodoProgress = null;
-        _todoUpdateCount = 0;
-        _currentIntentText = null;
-        _typingIndicator = null;
-        _terminalPreviewsByToolCallId.Clear();
-        _toolStartTimes.Clear();
-        _pendingToolFileChips.Clear();
-        _pendingFileEdits.Clear();
-        _pendingFetchedSkillRefs.Clear();
-        _shownFileChips.Clear();
-    }
-
-    /// <summary>Processes a single ChatMessageViewModel into the appropriate TranscriptItem(s).</summary>
-    private void ProcessMessageToTranscript(ChatMessageViewModel msgVm)
-    {
-        var showToolCalls = _dataStore.Data.Settings.ShowToolCalls;
-        var showReasoning = _dataStore.Data.Settings.ShowReasoning;
-        var showTimestamps = _dataStore.Data.Settings.ShowTimestamps;
-        var expandReasoning = _dataStore.Data.Settings.ExpandReasoningWhileStreaming;
-
-        if (msgVm.Role == "tool")
-            ProcessToolMessage(msgVm, showToolCalls, showTimestamps);
-        else if (msgVm.Role == "reasoning")
-            ProcessReasoningMessage(msgVm, showReasoning, expandReasoning);
-        else
-            ProcessChatMessage(msgVm, showTimestamps);
-    }
-
-    private void ProcessToolMessage(ChatMessageViewModel msgVm, bool showToolCalls, bool showTimestamps)
-    {
-        var toolName = msgVm.ToolName ?? "";
-        var initialStatus = msgVm.ToolStatus switch
-        {
-            "Completed" => StrataAiToolCallStatus.Completed,
-            "Failed" => StrataAiToolCallStatus.Failed,
-            _ => StrataAiToolCallStatus.InProgress
-        };
-
-        // Invisible tool calls
-        if (toolName is "stop_powershell" or "write_powershell" or "read_powershell")
-            return;
-
-        // Question card — rendered as QuestionItem
-        if (toolName is "ask_question")
-        {
-            if (_isRebuildingTranscript)
-            {
-                var question = ToolDisplayHelper.ExtractJsonField(msgVm.Content, "question") ?? "";
-                var opts = ToolDisplayHelper.ExtractJsonField(msgVm.Content, "options") ?? "";
-                var answer = msgVm.Message.ToolOutput;
-                if (!string.IsNullOrEmpty(answer) && answer.StartsWith("User answered: "))
-                    answer = answer["User answered: ".Length..];
-
-                CloseCurrentToolGroup();
-                var card = new QuestionItem("replay_" + msgVm.Message.Id, question, opts, false, SubmitQuestionAnswer);
-                if (!string.IsNullOrEmpty(answer))
-                {
-                    card.SelectedAnswer = answer;
-                    card.IsAnswered = true;
-                }
-                InsertBeforeTypingIndicator(card);
-            }
-            // Live question cards are created via the QuestionAsked event
-            return;
-        }
-
-        // announce_file — collect for file chip display
-        if (toolName == "announce_file")
-        {
-            var filePath = ToolDisplayHelper.ExtractJsonField(msgVm.Content, "filePath");
-            if (filePath is not null && File.Exists(filePath) && _shownFileChips.Add(filePath))
-                _pendingToolFileChips.Add(new FileAttachmentItem(filePath));
-            return;
-        }
-
-        // fetch_skill — collect skill reference
-        if (toolName == "fetch_skill")
-        {
-            var skillName = ToolDisplayHelper.ExtractJsonField(msgVm.Content, "name");
-            if (!string.IsNullOrEmpty(skillName))
-            {
-                var skill = FindSkillByName(skillName);
-                _pendingFetchedSkillRefs.Add(new SkillReference
-                {
-                    Name = skillName,
-                    Glyph = skill?.IconGlyph ?? "\u26A1"
-                });
-            }
-            return;
-        }
-
-        // report_intent — capture intent text for group label
-        if (toolName == "report_intent")
-        {
-            var intentText = ToolDisplayHelper.ExtractJsonField(msgVm.Content, "intent");
-            if (!string.IsNullOrEmpty(intentText))
-            {
-                _currentIntentText = intentText;
-                if (showToolCalls)
-                {
-                    EnsureCurrentToolGroup(initialStatus);
-                    UpdateToolGroupLabel();
-                }
-            }
-            return;
-        }
-
-        // Todo progress
-        if (toolName is "update_todo" or "manage_todo_list")
-        {
-            if (!showToolCalls) return;
-
-            var steps = ToolDisplayHelper.ParseTodoSteps(msgVm.Content);
-            if (steps.Count == 0) return;
-
-            EnsureCurrentToolGroup(initialStatus);
-            _todoUpdateCount++;
-            UpsertTodoProgressToolCall(steps, msgVm.ToolStatus ?? "InProgress");
-
-            if (_currentToolGroup is not null && initialStatus == StrataAiToolCallStatus.InProgress && !_isRebuildingTranscript)
-                _currentToolGroup.IsExpanded = true;
-
-            UpdateToolGroupLabel();
-
-            if (!_isRebuildingTranscript)
-            {
-                var capturedGroup = _currentToolGroup;
-                var capturedTodoProgress = _currentTodoProgress;
-                var capturedTodoToolCall = _currentTodoToolCall;
-                msgVm.PropertyChanged += (_, args) =>
-                {
-                    if (args.PropertyName == nameof(ChatMessageViewModel.ToolStatus) && capturedTodoProgress is not null)
-                    {
-                        capturedTodoProgress.ToolStatus = msgVm.ToolStatus ?? "InProgress";
-                        if (capturedTodoToolCall is not null)
-                        {
-                            capturedTodoToolCall.Status = msgVm.ToolStatus switch
-                            {
-                                "Completed" => StrataAiToolCallStatus.Completed,
-                                "Failed" => StrataAiToolCallStatus.Failed,
-                                _ => StrataAiToolCallStatus.InProgress
-                            };
-                        }
-                        UpdateToolGroupState(capturedGroup);
-                    }
-                };
-            }
-            return;
-        }
-
-        if (!showToolCalls) return;
-
-        var (friendlyName, friendlyInfo) = ToolDisplayHelper.GetFriendlyToolDisplay(toolName, msgVm.Author, msgVm.Content);
-        friendlyName = $"{ToolDisplayHelper.GetToolGlyph(toolName)} {friendlyName}";
-
-        var toolCallId = msgVm.Message.ToolCallId;
-        if (toolCallId is not null && initialStatus == StrataAiToolCallStatus.InProgress)
-            _toolStartTimes[toolCallId] = Stopwatch.GetTimestamp();
-
-        // Powershell → terminal preview
-        if (toolName == "powershell")
-        {
-            var command = ToolDisplayHelper.ExtractJsonField(msgVm.Content, "command") ?? "";
-            var termPreview = new TerminalPreviewItem(friendlyName, command, initialStatus)
-            {
-                Output = msgVm.Message.ToolOutput ?? string.Empty,
-                IsExpanded = !_isRebuildingTranscript,
-            };
-            if (toolCallId is not null)
-                _terminalPreviewsByToolCallId[toolCallId] = termPreview;
-
-            EnsureCurrentToolGroup(initialStatus);
-            var capturedTermGroup = _currentToolGroup!;
-
-            if (!_isRebuildingTranscript)
-            {
-                msgVm.PropertyChanged += (_, args) =>
-                {
-                    if (args.PropertyName != nameof(ChatMessageViewModel.ToolStatus)) return;
-                    termPreview.Status = msgVm.ToolStatus switch
-                    {
-                        "Completed" => StrataAiToolCallStatus.Completed,
-                        "Failed" => StrataAiToolCallStatus.Failed,
-                        _ => StrataAiToolCallStatus.InProgress
-                    };
-                    if (toolCallId is not null && termPreview.Status is not StrataAiToolCallStatus.InProgress
-                        && _toolStartTimes.TryGetValue(toolCallId, out var startTick))
-                    {
-                        termPreview.DurationMs = Stopwatch.GetElapsedTime(startTick).TotalMilliseconds;
-                        _toolStartTimes.Remove(toolCallId);
-                    }
-                    UpdateToolGroupState(capturedTermGroup);
-                };
-            }
-            _currentToolGroup!.ToolCalls.Add(termPreview);
-            _currentToolGroupCount++;
-
-            if (_currentToolGroup is not null && initialStatus == StrataAiToolCallStatus.InProgress && !_isRebuildingTranscript)
-                _currentToolGroup.IsExpanded = true;
-
-            UpdateToolGroupLabel();
-            return;
-        }
-
-        // Regular tool call
-        var toolCall = new ToolCallItem(friendlyName, initialStatus)
-        {
-            InputParameters = ToolDisplayHelper.FormatToolArgsFriendly(toolName, msgVm.Content),
-            MoreInfo = friendlyInfo,
-        };
-
-        // File-edit tools: collect diff data (skip failed tools — the edit didn't apply)
-        if (ToolDisplayHelper.IsFileEditTool(toolName) && initialStatus != StrataAiToolCallStatus.Failed)
-        {
-            var diffs = ToolDisplayHelper.ExtractAllDiffs(toolName, msgVm.Content);
-            foreach (var d in diffs)
-                _pendingFileEdits.Add(new FileChangeItem(d.FilePath, toolName, d.OldText, d.NewText, ShowDiff));
-
-            if (diffs.Count > 0)
-            {
-                var capturedDiff = diffs[0];
-                toolCall = new ToolCallItem(friendlyName, initialStatus)
-                {
-                    InputParameters = toolCall.InputParameters,
-                    MoreInfo = toolCall.MoreInfo,
-                    HasDiff = true,
-                    DiffFilePath = capturedDiff.FilePath,
-                    DiffOldText = capturedDiff.OldText,
-                    DiffNewText = capturedDiff.NewText,
-                    ShowDiffAction = ShowDiff,
-                };
-            }
-        }
-
-        EnsureCurrentToolGroup(initialStatus);
-        var capturedToolGroup = _currentToolGroup!;
-
-        if (!_isRebuildingTranscript)
-        {
-            msgVm.PropertyChanged += (_, args) =>
-            {
-                if (args.PropertyName != nameof(ChatMessageViewModel.ToolStatus)) return;
-                toolCall.Status = msgVm.ToolStatus switch
-                {
-                    "Completed" => StrataAiToolCallStatus.Completed,
-                    "Failed" => StrataAiToolCallStatus.Failed,
-                    _ => StrataAiToolCallStatus.InProgress
-                };
-                if (toolCallId is not null && toolCall.Status is not StrataAiToolCallStatus.InProgress
-                    && _toolStartTimes.TryGetValue(toolCallId, out var startTick))
-                {
-                    toolCall.DurationMs = Stopwatch.GetElapsedTime(startTick).TotalMilliseconds;
-                    _toolStartTimes.Remove(toolCallId);
-                }
-                // Remove pending file edits if this file-edit tool failed
-                if (toolCall.Status == StrataAiToolCallStatus.Failed && toolCall.HasDiff && toolCall.DiffFilePath is not null)
-                    _pendingFileEdits.RemoveAll(fe => fe.FilePath == toolCall.DiffFilePath);
-                UpdateToolGroupState(capturedToolGroup);
-            };
-        }
-        _currentToolGroup!.ToolCalls.Add(toolCall);
-        _currentToolGroupCount++;
-        UpdateToolGroupLabel();
-    }
-
-    private void ProcessReasoningMessage(ChatMessageViewModel msgVm, bool showReasoning, bool expandWhileStreaming)
-    {
-        CloseCurrentToolGroup();
-        if (!showReasoning) return;
-
-        var item = new ReasoningItem(msgVm, expandWhileStreaming);
-        InsertBeforeTypingIndicator(item);
-    }
-
-    private void ProcessChatMessage(ChatMessageViewModel msgVm, bool showTimestamps)
-    {
-        CloseCurrentToolGroup();
-
-        if (msgVm.Role == "user")
-        {
-            var item = new UserMessageItem(msgVm, showTimestamps, msg => _ = ResendFromMessageAsync(msg));
-            InsertBeforeTypingIndicator(item);
-        }
-        else if (msgVm.Role == "error")
-        {
-            var item = new ErrorMessageItem(msgVm, showTimestamps);
-            InsertBeforeTypingIndicator(item);
-        }
-        else // assistant or system
-        {
-            var item = new AssistantMessageItem(msgVm, showTimestamps);
-
-            // For completed messages during rebuild, apply extras immediately
-            if (!msgVm.IsStreaming && (_pendingToolFileChips.Count > 0 || _pendingFileEdits.Count > 0
-                || msgVm.Message.Sources.Count > 0 || msgVm.Message.ActiveSkills.Count > 0))
-            {
-                item.ApplyExtras(
-                    _pendingToolFileChips.Count > 0 ? _pendingToolFileChips.ToList() : null,
-                    _pendingFileEdits.Count > 0 ? _pendingFileEdits.ToList() : null);
-                _pendingToolFileChips.Clear();
-                _pendingFileEdits.Clear();
-                _pendingFetchedSkillRefs.Clear();
-            }
-
-            // For streaming messages, apply extras when streaming ends
-            if (msgVm.IsStreaming)
-            {
-                var capturedItem = item;
-                msgVm.PropertyChanged += (_, args) =>
-                {
-                    if (args.PropertyName == nameof(ChatMessageViewModel.IsStreaming) && !msgVm.IsStreaming)
-                    {
-                        capturedItem.ApplyExtras(
-                            _pendingToolFileChips.Count > 0 ? _pendingToolFileChips.ToList() : null,
-                            _pendingFileEdits.Count > 0 ? _pendingFileEdits.ToList() : null);
-                        _pendingToolFileChips.Clear();
-                        _pendingFileEdits.Clear();
-                        _pendingFetchedSkillRefs.Clear();
-
-                        // Collapse completed turn blocks after assistant finishes
-                        CollapseCompletedTurnBlocks(capturedItem);
-                    }
-                };
-            }
-
-            InsertBeforeTypingIndicator(item);
-        }
-    }
-
-    private void EnsureCurrentToolGroup(StrataAiToolCallStatus initialStatus)
-    {
-        if (_currentToolGroup is not null) return;
-
-        _currentToolGroupCount = 0;
-        _currentTodoToolCall = null;
-        _currentTodoProgress = null;
-
-        _currentToolGroup = new ToolGroupItem(
-            _currentIntentText is not null ? _currentIntentText + "\u2026" : Loc.ToolGroup_Working)
-        {
-            IsActive = initialStatus == StrataAiToolCallStatus.InProgress,
-            ProgressValue = -1,
-        };
-
-        InsertBeforeTypingIndicator(_currentToolGroup);
-    }
-
-    private void CloseCurrentToolGroup()
-    {
-        if (_currentToolGroup is null) return;
-
-        if (_currentToolGroupCount == 0)
-        {
-            if (_rebuildTarget is not null)
-                _rebuildTarget.Remove(_currentToolGroup);
-            else
-                TranscriptItems.Remove(_currentToolGroup);
-        }
-        else
-            UpdateToolGroupLabel();
-
-        _currentToolGroup = null;
-        _currentToolGroupCount = 0;
-        _currentTodoToolCall = null;
-        _currentTodoProgress = null;
-        _todoUpdateCount = 0;
-        _currentIntentText = null;
-        _terminalPreviewsByToolCallId.Clear();
-    }
-
-    private void UpdateToolGroupLabel()
-    {
-        if (_currentToolGroup is null) return;
-        UpdateToolGroupState(_currentToolGroup);
-    }
-
-    /// <summary>
-    /// Updates a specific tool group's label, meta, progress, and IsActive state
-    /// based on the current status of its tool calls. Safe to call after the group
-    /// is no longer the _currentToolGroup (e.g., from late PropertyChanged callbacks).
-    /// </summary>
-    private void UpdateToolGroupState(ToolGroupItem? group)
-    {
-        if (group is null) return;
-
-        // For the current group, use the richer state (todo progress, intent text, etc.)
-        var isCurrent = ReferenceEquals(group, _currentToolGroup);
-
-        if (isCurrent && _currentTodoProgress is not null && _currentTodoProgress.Total > 0)
-        {
-            var todoDone = _currentTodoProgress.Completed + _currentTodoProgress.Failed;
-            var running = Math.Max(0, _currentTodoProgress.Total - todoDone);
-
-            group.Label = Loc.ToolTodo_Title;
-            group.Meta = _currentTodoProgress.Failed > 0
-                ? string.Format(Loc.ToolTodo_MetaWithFailed, _currentTodoProgress.Completed, _currentTodoProgress.Total, _currentTodoProgress.Failed)
-                : string.Format(Loc.ToolTodo_Meta, _currentTodoProgress.Completed, _currentTodoProgress.Total);
-
-            if (_todoUpdateCount > 1)
-                group.Meta += " · " + string.Format(Loc.ToolTodo_Updates, _todoUpdateCount);
-
-            var progress = Math.Clamp((todoDone * 100d) / _currentTodoProgress.Total, 0d, 100d);
-            group.ProgressValue = _isRebuildingTranscript ? -1 : progress;
-            group.IsActive = running > 0 && _currentTodoProgress.ToolStatus != "Failed";
-
-            if (!group.IsActive || _isRebuildingTranscript)
-                group.IsExpanded = false;
-            return;
-        }
-
-        var toolCount = isCurrent ? _currentToolGroupCount : group.ToolCalls.Count;
-        var completedCount = 0;
-        var failedCount = 0;
-        foreach (var call in group.ToolCalls)
-        {
-            if (call is ToolCallItem tc)
-            {
-                if (tc.Status == StrataAiToolCallStatus.Completed) completedCount++;
-                else if (tc.Status == StrataAiToolCallStatus.Failed) failedCount++;
-            }
-            else if (call is TerminalPreviewItem tp)
-            {
-                if (tp.Status == StrataAiToolCallStatus.Completed) completedCount++;
-                else if (tp.Status == StrataAiToolCallStatus.Failed) failedCount++;
-            }
-            else if (call is TodoProgressItem todo)
-            {
-                if (todo.Status == StrataAiToolCallStatus.Completed) completedCount++;
-                else if (todo.Status == StrataAiToolCallStatus.Failed) failedCount++;
-            }
-        }
-
-        if (toolCount <= 0)
-        {
-            group.Meta = null;
-            group.ProgressValue = -1;
-            group.IsActive = true;
-            group.Label = isCurrent && _currentIntentText is not null
-                ? _currentIntentText + "\u2026" : Loc.ToolGroup_Working;
-            return;
-        }
-
-        var intentText = isCurrent ? _currentIntentText : null;
-        var allDone = completedCount + failedCount == toolCount && toolCount > 0;
-        if (allDone)
-        {
-            group.Label = intentText is not null
-                ? (failedCount > 0 ? string.Format(Loc.ToolGroup_FinishedWithFailed, intentText, failedCount) : intentText)
-                : (failedCount > 0 ? string.Format(Loc.ToolGroup_FinishedFailed, failedCount)
-                    : toolCount == 1 ? Loc.ToolGroup_Finished : string.Format(Loc.ToolGroup_FinishedCount, toolCount));
-            group.IsActive = false;
-            group.Meta = failedCount > 0
-                ? string.Format(Loc.ToolGroup_MetaFailed, completedCount, toolCount, failedCount)
-                : string.Format(Loc.ToolGroup_MetaDone, completedCount, toolCount);
-            if (_isRebuildingTranscript) group.IsExpanded = false;
-        }
-        else
-        {
-            group.IsActive = true;
-            group.Label = intentText is not null
-                ? intentText + "\u2026"
-                : (toolCount == 1 ? Loc.ToolGroup_Working : string.Format(Loc.ToolGroup_WorkingCount, toolCount));
-            var runningCount = Math.Max(0, toolCount - completedCount - failedCount);
-            group.Meta = runningCount > 0
-                ? string.Format(Loc.ToolGroup_MetaRunning, completedCount, toolCount, runningCount)
-                : string.Format(Loc.ToolGroup_MetaDone, completedCount, toolCount);
-            if (_isRebuildingTranscript) group.IsExpanded = false;
-        }
-
-        var genericProgress = toolCount > 0
-            ? Math.Clamp(((completedCount + failedCount) * 100d) / toolCount, 0d, 100d) : -1;
-        group.ProgressValue = _isRebuildingTranscript ? -1 : genericProgress;
-    }
-
-    private void UpsertTodoProgressToolCall(List<ToolDisplayHelper.TodoStepSnapshot> steps, string toolStatus)
-    {
-        var total = steps.Count;
-        var completed = steps.Count(s => string.Equals(s.Status, "completed", StringComparison.OrdinalIgnoreCase));
-        var failed = steps.Count(s => string.Equals(s.Status, "failed", StringComparison.OrdinalIgnoreCase));
-        var detailsMd = ToolDisplayHelper.BuildTodoDetailsMarkdown(steps);
-
-        if (_currentTodoProgress is null)
-        {
-            _currentTodoProgress = new TodoProgressState
-            {
-                ToolStatus = toolStatus,
-                Total = total,
-                Completed = completed,
-                Failed = failed,
-            };
-        }
-        else
-        {
-            _currentTodoProgress.ToolStatus = toolStatus;
-            _currentTodoProgress.Total = total;
-            _currentTodoProgress.Completed = completed;
-            _currentTodoProgress.Failed = failed;
-        }
-
-        if (_currentTodoToolCall is null)
-        {
-            _currentTodoToolCall = new TodoProgressItem($"✅ {Loc.ToolTodo_Title}", StrataAiToolCallStatus.InProgress)
-            {
-                InputParameters = detailsMd,
-            };
-            _currentToolGroup?.ToolCalls.Add(_currentTodoToolCall);
-        }
-        else
-        {
-            _currentTodoToolCall.InputParameters = detailsMd;
-        }
-    }
-
-    /// <summary>Collapses consecutive tool groups + reasoning before an assistant message into a TurnSummaryItem.</summary>
-    private void CollapseCompletedTurnBlocks(AssistantMessageItem assistantItem)
-    {
-        var target = _rebuildTarget ?? (IList<TranscriptItem>)TranscriptItems;
-        var idx = target.IndexOf(assistantItem);
-        if (idx <= 0) return;
-
-        var blocksToMerge = new List<TranscriptItem>();
-        for (int i = idx - 1; i >= 0; i--)
-        {
-            if (target[i] is ToolGroupItem or ReasoningItem)
-                blocksToMerge.Add(target[i]);
-            else
-                break;
-        }
-
-        if (blocksToMerge.Count < 2) return;
-        blocksToMerge.Reverse();
-
-        int totalToolCalls = 0, failedCount = 0;
-        bool hasReasoning = false, hasTodoProgress = false;
-        string? todoMeta = null;
-
-        foreach (var block in blocksToMerge)
-        {
-            if (block is ToolGroupItem tg)
-            {
-                foreach (var call in tg.ToolCalls)
-                {
-                    if (call is ToolCallItem tc)
-                    {
-                        totalToolCalls++;
-                        if (tc.Status == StrataAiToolCallStatus.Failed) failedCount++;
-                        if (!string.IsNullOrWhiteSpace(tc.ToolName) && tc.ToolName.Contains(Loc.ToolTodo_Title, StringComparison.CurrentCultureIgnoreCase))
-                        {
-                            hasTodoProgress = true;
-                            todoMeta = tg.Meta ?? tc.MoreInfo;
-                        }
-                    }
-                    else if (call is TerminalPreviewItem tp)
-                    {
-                        totalToolCalls++;
-                        if (tp.Status == StrataAiToolCallStatus.Failed) failedCount++;
-                    }
-                }
-            }
-            else hasReasoning = true;
-        }
-
-        string label;
-        if (hasTodoProgress)
-            label = !string.IsNullOrWhiteSpace(todoMeta) ? $"{Loc.ToolTodo_Title} · {todoMeta}" : Loc.ToolTodo_Title;
-        else if (hasReasoning && totalToolCalls > 0)
-            label = totalToolCalls == 1 ? Loc.TurnSummary_ReasonedAndOneAction : string.Format(Loc.TurnSummary_ReasonedAndActions, totalToolCalls);
-        else if (totalToolCalls > 0)
-            label = totalToolCalls == 1 ? Loc.ToolGroup_FinishedOne : string.Format(Loc.ToolGroup_FinishedCount, totalToolCalls);
-        else
-            label = Loc.TurnSummary_ReasonedAndOneAction;
-
-        if (failedCount > 0)
-            label += " " + string.Format(Loc.ToolGroup_FinishedFailed, failedCount);
-
-        int firstIdx = target.IndexOf(blocksToMerge[0]);
-        foreach (var block in blocksToMerge)
-            target.Remove(block);
-
-        var summary = new TurnSummaryItem(label)
-        {
-            IsExpanded = hasTodoProgress && !_isRebuildingTranscript,
-            HasFailures = failedCount > 0,
-        };
-        foreach (var block in blocksToMerge)
-            summary.InnerItems.Add(block);
-
-        target.Insert(firstIdx, summary);
-    }
-
-    private void CollapseAllCompletedTurns()
-    {
-        // Collect assistant items, process last-to-first so index shifts don't affect earlier items
-        var target = _rebuildTarget ?? (IList<TranscriptItem>)TranscriptItems;
-        var assistantItems = new List<AssistantMessageItem>();
-        for (int i = 0; i < target.Count; i++)
-        {
-            if (target[i] is AssistantMessageItem a)
-                assistantItems.Add(a);
-        }
-        for (int i = assistantItems.Count - 1; i >= 0; i--)
-            CollapseCompletedTurnBlocks(assistantItems[i]);
-    }
-
-    /// <summary>Shows or updates the typing indicator at the bottom of the transcript.</summary>
-    private void ShowTypingIndicator(string? label)
-    {
-        if (_typingIndicator is null)
-        {
-            _typingIndicator = new TypingIndicatorItem(label ?? Loc.Status_Thinking);
-            TranscriptItems.Add(_typingIndicator);
-        }
-        else
-        {
-            _typingIndicator.Label = label ?? Loc.Status_Thinking;
-            _typingIndicator.IsActive = true;
-            // Reposition to end if not already there
-            var count = TranscriptItems.Count;
-            if (count == 0 || TranscriptItems[count - 1] != _typingIndicator)
-            {
-                TranscriptItems.Remove(_typingIndicator);
-                TranscriptItems.Add(_typingIndicator);
-            }
-        }
-    }
-
-    private void HideTypingIndicator()
-    {
-        if (_typingIndicator is not null)
-        {
-            TranscriptItems.Remove(_typingIndicator);
-            _typingIndicator = null;
-        }
-    }
-
-    private void UpdateTypingIndicatorLabel(string? label)
-    {
-        if (_typingIndicator is not null && !string.IsNullOrEmpty(label))
-            _typingIndicator.Label = label;
-    }
-
-    private void InsertBeforeTypingIndicator(TranscriptItem item)
-    {
-        if (_rebuildTarget is not null)
-        {
-            _rebuildTarget.Add(item);
-            return;
-        }
-
-        if (_typingIndicator is not null)
-        {
-            var idx = TranscriptItems.IndexOf(_typingIndicator);
-            if (idx >= 0)
-            {
-                TranscriptItems.Insert(idx, item);
-                return;
-            }
-        }
-
-        TranscriptItems.Add(item);
-    }
-
-    /// <summary>Updates a terminal preview's output. Called from SubscribeToSession event handlers.</summary>
-    public void UpdateTerminalOutput(string rootToolCallId, string output, bool replaceExistingOutput)
-    {
-        if (string.IsNullOrEmpty(output)) return;
-
-        if (!_terminalPreviewsByToolCallId.TryGetValue(rootToolCallId, out var target))
-            return;
-
-        if (replaceExistingOutput || string.IsNullOrEmpty(target.Output))
-        {
-            target.Output = output;
-            return;
-        }
-
-        if (output.StartsWith(target.Output, StringComparison.Ordinal))
-            target.Output = output;
-        else if (!target.Output.EndsWith(output, StringComparison.Ordinal))
-            target.Output = target.Output + "\n" + output;
-    }
-
-    /// <summary>Creates a QuestionItem and inserts it into the transcript. Called from the QuestionAsked event.</summary>
-    private void AddQuestionToTranscript(string questionId, string question, string options, bool allowFreeText)
-    {
-        CloseCurrentToolGroup();
-        var card = new QuestionItem(questionId, question, options, allowFreeText, SubmitQuestionAnswer);
-        InsertBeforeTypingIndicator(card);
+        _abortedPartialContent.Remove(chatId);
     }
 
     private ChatRuntimeState GetOrCreateRuntimeState(Guid chatId)
@@ -1568,7 +843,7 @@ public partial class ChatViewModel : ObservableObject
 
         var customAgents = BuildCustomAgents();
         var customTools = BuildCustomTools();
-        var workDir = GetWorkingDirectory();
+        var workDir = GetEffectiveWorkingDirectory();
         var mcpServers = BuildMcpServers(workDir);
         var reasoningEffort = _dataStore.Data.Settings.ReasoningEffort;
         var effort = string.IsNullOrWhiteSpace(reasoningEffort) ? null : reasoningEffort;
@@ -1672,7 +947,7 @@ public partial class ChatViewModel : ObservableObject
             // Clear pending state from any previous chat
             _pendingSkillInjections.Clear();
             _pendingSearchSources.Clear();
-            _pendingFetchedSkillRefs.Clear();
+            _transcriptBuilder.PendingFetchedSkillRefs.Clear();
 
             // Restore real runtime state for this session/chat
             var runtime = GetOrCreateRuntimeState(chat.Id);
@@ -1789,7 +1064,7 @@ public partial class ChatViewModel : ObservableObject
 
         Messages.Clear();
         TranscriptItems.Clear();
-        ResetTranscriptState();
+        _transcriptBuilder.ResetState();
         CurrentChat = null;
         IsBusy = false;
         IsStreaming = false;
@@ -1821,14 +1096,24 @@ public partial class ChatViewModel : ObservableObject
     {
         if (CurrentChat is not null)
         {
-            // Remove from session cache so LoadChatAsync doesn't restore the stale session
-            _sessionCache.Remove(CurrentChat.Id);
-            CurrentChat.CopilotSessionId = null;
-            _activeSession = null;
-            // New session will include all active skills in the system prompt,
-            // so clear pending injections to avoid duplication
+            InvalidateCurrentSession();
             _pendingSkillInjections.Clear();
         }
+    }
+
+    /// <summary>Discards the current chat's session so a fresh one is created on the next message.</summary>
+    private void InvalidateCurrentSession()
+    {
+        if (CurrentChat is null) return;
+        var chatId = CurrentChat.Id;
+
+        if (_sessionCache.TryGetValue(chatId, out var session))
+        {
+            _ = _copilotService.DeleteSessionAsync(session.SessionId);
+            _sessionCache.Remove(chatId);
+        }
+        CurrentChat.CopilotSessionId = null;
+        _activeSession = null;
     }
 
     [RelayCommand]
@@ -1858,7 +1143,8 @@ public partial class ChatViewModel : ObservableObject
                 Title = prompt.Length > 40 ? prompt[..40].Trim() + "…" : prompt,
                 AgentId = ActiveAgent?.Id,
                 ProjectId = _pendingProjectId ?? ActiveProjectFilterId,
-                ActiveSkillIds = new List<Guid>(ActiveSkillIds)
+                ActiveSkillIds = new List<Guid>(ActiveSkillIds),
+                ActiveMcpServerNames = new List<string>(ActiveMcpServerNames)
             };
             _pendingProjectId = null;
             _dataStore.Data.Chats.Add(chat);
@@ -1919,6 +1205,16 @@ public partial class ChatViewModel : ObservableObject
 
             var sendOptions = new MessageOptions { Prompt = prompt };
 
+            // If the previous turn was aborted, inject partial content so the LLM knows what it wrote
+            if (_abortedPartialContent.TryGetValue(CurrentChat.Id, out var abortedContent))
+            {
+                _abortedPartialContent.Remove(CurrentChat.Id);
+                sendOptions.Prompt = prompt
+                    + "\n\n<system_notification>Your previous response was interrupted by the user. "
+                    + "Here is what you had written before being stopped:\n"
+                    + abortedContent + "\n</system_notification>";
+            }
+
             // Inject newly activated skills as context in the message (explicit activation in existing chat)
             if (_pendingSkillInjections.Count > 0)
             {
@@ -1950,8 +1246,8 @@ public partial class ChatViewModel : ObservableObject
             StatusText = errorText;
             IsBusy = false;
             IsStreaming = false;
-            HideTypingIndicator();
-            CloseCurrentToolGroup();
+            _transcriptBuilder.HideTypingIndicator();
+            _transcriptBuilder.CloseCurrentToolGroup();
             if (CurrentChat is not null)
             {
                 var runtime = GetOrCreateRuntimeState(CurrentChat.Id);
@@ -1976,8 +1272,8 @@ public partial class ChatViewModel : ObservableObject
             IsStreaming = false;
 
             // Clean up typing indicator and tool groups
-            HideTypingIndicator();
-            CloseCurrentToolGroup();
+            _transcriptBuilder.HideTypingIndicator();
+            _transcriptBuilder.CloseCurrentToolGroup();
 
             if (CurrentChat is not null)
             {
@@ -1996,7 +1292,7 @@ public partial class ChatViewModel : ObservableObject
                 CurrentChat.Messages.Add(errorMsg);
                 var msgVm = new ChatMessageViewModel(errorMsg);
                 Messages.Add(msgVm);
-                ProcessMessageToTranscript(msgVm);
+                _transcriptBuilder.ProcessMessageToTranscript(msgVm);
                 ScrollToEndRequested?.Invoke();
             }
         }
@@ -2265,869 +1561,8 @@ public partial class ChatViewModel : ObservableObject
         }
     }
 
-    /// <summary>Whether the agent can still be changed (only before the first message is sent).</summary>
-    public bool CanChangeAgent => CurrentChat is null || CurrentChat.Messages.Count == 0;
-
-    public void SetActiveAgent(LumiAgent? agent)
-    {
-        // Don't allow switching agents once a chat has messages
-        if (!CanChangeAgent) return;
-
-        ActiveAgent = agent;
-        if (CurrentChat is not null)
-        {
-            CurrentChat.AgentId = agent?.Id;
-            QueueSaveChat(CurrentChat, saveIndex: true);
-        }
-    }
-
-    /// <summary>Assigns a project to the current (or next) chat. Called when a project filter is active.</summary>
-    public void SetProjectId(Guid projectId)
-    {
-        if (CurrentChat is not null)
-        {
-            var changed = CurrentChat.ProjectId != projectId;
-            CurrentChat.ProjectId = projectId;
-            QueueSaveChat(CurrentChat, saveIndex: true);
-            if (changed)
-                OnPropertyChanged(nameof(CurrentChat));
-
-            // If project context changed on an existing chat, force a fresh Copilot session
-            // so the next turn uses the updated project system prompt.
-            if (changed && CurrentChat.CopilotSessionId is not null)
-            {
-                _sessionCache.Remove(CurrentChat.Id);
-                CurrentChat.CopilotSessionId = null;
-                _activeSession = null;
-                _pendingSkillInjections.Clear();
-            }
-        }
-        else
-        {
-            // Will be applied when the chat is created in SendMessage
-            _pendingProjectId = projectId;
-            OnPropertyChanged(nameof(CurrentChat));
-        }
-
-        SyncComposerProjectSelectionFromState();
-        RefreshProjectBadge();
-    }
-
-    private Guid? _pendingProjectId;
-
-    /// <summary>
-    /// Current project filter from the shell sidebar. Used as a fallback when creating a new chat
-    /// to avoid losing project context due UI timing or unchanged filter selections.
-    /// </summary>
-    private Guid? _activeProjectFilterId;
-    public Guid? ActiveProjectFilterId
-    {
-        get => _activeProjectFilterId;
-        set
-        {
-            if (_activeProjectFilterId == value)
-                return;
-
-            _activeProjectFilterId = value;
-            SyncComposerProjectSelectionFromState();
-            RefreshProjectBadge();
-        }
-    }
-
-    /// <summary>Removes the project assignment from the current chat.</summary>
-    public void ClearProjectId()
-    {
-        if (CurrentChat is not null)
-        {
-            var changed = CurrentChat.ProjectId is not null;
-            CurrentChat.ProjectId = null;
-            QueueSaveChat(CurrentChat, saveIndex: true);
-            if (changed)
-                OnPropertyChanged(nameof(CurrentChat));
-
-            if (changed && CurrentChat.CopilotSessionId is not null)
-            {
-                _sessionCache.Remove(CurrentChat.Id);
-                CurrentChat.CopilotSessionId = null;
-                _activeSession = null;
-                _pendingSkillInjections.Clear();
-            }
-        }
-        else
-        {
-            _pendingProjectId = null;
-            OnPropertyChanged(nameof(CurrentChat));
-        }
-
-        SyncComposerProjectSelectionFromState();
-        RefreshProjectBadge();
-    }
-
-    public void AddSkill(Skill skill)
-    {
-        if (ActiveSkillIds.Contains(skill.Id)) return;
-        ActiveSkillIds.Add(skill.Id);
-        ActiveSkillChips.Add(new StrataTheme.Controls.StrataComposerChip(skill.Name, skill.IconGlyph));
-        // If added to an existing chat with a session, inject via next message instead of system prompt
-        if (CurrentChat?.CopilotSessionId is not null)
-            _pendingSkillInjections.Add(skill.Id);
-        SyncActiveSkillsToChat();
-    }
-
-    /// <summary>Registers a skill ID without adding a chip (composer already added it).</summary>
-    public void RegisterSkillIdByName(string name)
-    {
-        var skill = _dataStore.Data.Skills.FirstOrDefault(s => s.Name == name);
-        if (skill is null || ActiveSkillIds.Contains(skill.Id)) return;
-        ActiveSkillIds.Add(skill.Id);
-        // If added to an existing chat with a session, inject via next message
-        if (CurrentChat?.CopilotSessionId is not null)
-            _pendingSkillInjections.Add(skill.Id);
-        SyncActiveSkillsToChat();
-    }
-
-    private void SyncActiveSkillsToChat()
-    {
-        if (CurrentChat is not null)
-        {
-            CurrentChat.ActiveSkillIds = new List<Guid>(ActiveSkillIds);
-            QueueSaveChat(CurrentChat, saveIndex: true);
-        }
-    }
-
-    public void RemoveSkillByName(string name)
-    {
-        var skill = _dataStore.Data.Skills.FirstOrDefault(s => s.Name == name);
-        if (skill is null) return;
-        ActiveSkillIds.Remove(skill.Id);
-        var chip = ActiveSkillChips.OfType<StrataTheme.Controls.StrataComposerChip>()
-            .FirstOrDefault(c => c.Name == name);
-        if (chip is not null) ActiveSkillChips.Remove(chip);
-        SyncActiveSkillsToChat();
-    }
-
-    public void AddMcpServer(string name)
-    {
-        if (ActiveMcpServerNames.Contains(name)) return;
-        var server = _dataStore.Data.McpServers.FirstOrDefault(s => s.Name == name);
-        if (server is null) return;
-        ActiveMcpServerNames.Add(name);
-        ActiveMcpChips.Add(new StrataTheme.Controls.StrataComposerChip(name));
-        SyncActiveMcpsToChat();
-    }
-
-    /// <summary>Registers an MCP server name without adding a chip (composer already added it).</summary>
-    public void RegisterMcpByName(string name)
-    {
-        if (ActiveMcpServerNames.Contains(name)) return;
-        var server = _dataStore.Data.McpServers.FirstOrDefault(s => s.Name == name);
-        if (server is null) return;
-        ActiveMcpServerNames.Add(name);
-        SyncActiveMcpsToChat();
-    }
-
-    public void RemoveMcpByName(string name)
-    {
-        ActiveMcpServerNames.Remove(name);
-        var chip = ActiveMcpChips.OfType<StrataTheme.Controls.StrataComposerChip>()
-            .FirstOrDefault(c => c.Name == name);
-        if (chip is not null) ActiveMcpChips.Remove(chip);
-        SyncActiveMcpsToChat();
-    }
-
-    public void SyncActiveMcpsToChat()
-    {
-        if (CurrentChat is not null)
-        {
-            CurrentChat.ActiveMcpServerNames = new List<string>(ActiveMcpServerNames);
-            QueueSaveChat(CurrentChat, saveIndex: true);
-        }
-    }
-
-    /// <summary>Populate ActiveMcpChips and ActiveMcpServerNames with all enabled MCP servers (default state).</summary>
-    public void PopulateDefaultMcps()
-    {
-        IsLoadingChat = true;
-        try
-        {
-            ActiveMcpServerNames.Clear();
-            ActiveMcpChips.Clear();
-            foreach (var server in _dataStore.Data.McpServers.Where(s => s.IsEnabled))
-            {
-                ActiveMcpServerNames.Add(server.Name);
-                ActiveMcpChips.Add(new StrataTheme.Controls.StrataComposerChip(server.Name));
-            }
-        }
-        finally
-        {
-            IsLoadingChat = false;
-        }
-    }
-
-    private List<CustomAgentConfig> BuildCustomAgents()
-    {
-        var agents = new List<CustomAgentConfig>();
-        foreach (var agent in _dataStore.Data.Agents)
-        {
-            // Skip the currently active agent (already in main system prompt)
-            if (ActiveAgent?.Id == agent.Id) continue;
-
-            var agentConfig = new CustomAgentConfig
-            {
-                Name = agent.Name,
-                DisplayName = agent.Name,
-                Description = agent.Description,
-                Prompt = agent.SystemPrompt,
-            };
-
-            if (agent.ToolNames.Count > 0)
-                agentConfig.Tools = agent.ToolNames;
-
-            agents.Add(agentConfig);
-        }
-        return agents;
-    }
-
-    private static readonly HashSet<string> CodingToolNames = ["code_review", "generate_tests", "explain_code", "analyze_project"];
-    private static readonly HashSet<string> BrowserToolNames = ["browser", "browser_look", "browser_find", "browser_do", "browser_js"];
-    private static readonly HashSet<string> UIToolNames = ["ui_list_windows", "ui_inspect", "ui_find", "ui_click", "ui_type", "ui_press_keys", "ui_read"];
-
-    private CancellationToken GetCurrentCancellationToken()
-    {
-        if (CurrentChat is { } chat && _ctsSources.TryGetValue(chat.Id, out var cts))
-            return cts.Token;
-        return CancellationToken.None;
-    }
-
-    private bool ActiveAgentAllows(HashSet<string> toolGroup)
-    {
-        // No active agent or no restrictions → allow everything
-        if (ActiveAgent is not { ToolNames.Count: > 0 } agent) return true;
-        return agent.ToolNames.Exists(toolGroup.Contains);
-    }
-
-    private List<AIFunction> BuildCustomTools()
-    {
-        var tools = new List<AIFunction>();
-        tools.AddRange(BuildMemoryTools());
-        tools.Add(BuildAnnounceFileTool());
-        tools.Add(BuildFetchSkillTool());
-        tools.Add(BuildAskQuestionTool());
-        tools.AddRange(BuildWebTools());
-        if (ActiveAgentAllows(BrowserToolNames))
-            tools.AddRange(BuildBrowserTools());
-        if (ActiveAgentAllows(CodingToolNames))
-            tools.AddRange(_codingToolService.BuildCodingTools());
-        if (OperatingSystem.IsWindows() && ActiveAgentAllows(UIToolNames))
-            tools.AddRange(BuildUIAutomationTools());
-        return tools;
-    }
-
-    private Dictionary<string, object>? BuildMcpServers(string workDir)
-    {
-        var allServers = _dataStore.Data.McpServers.Where(s => s.IsEnabled).ToList();
-
-        // If an active agent has MCP server IDs, use only those
-        if (ActiveAgent is { McpServerIds.Count: > 0 })
-        {
-            var agentServerIds = ActiveAgent.McpServerIds;
-            allServers = allServers.Where(s => agentServerIds.Contains(s.Id)).ToList();
-        }
-        else
-        {
-            // Always respect the composer selection — if the user deselected
-            // all MCPs, ActiveMcpServerNames is empty and we should send none.
-            allServers = allServers.Where(s => ActiveMcpServerNames.Contains(s.Name)).ToList();
-        }
-
-        if (allServers.Count == 0) return null;
-
-        var dict = new Dictionary<string, object>();
-        foreach (var server in allServers)
-        {
-            if (server.ServerType == "remote")
-            {
-                var remote = new McpRemoteServerConfig
-                {
-                    Url = server.Url,
-                    Type = "sse",
-                    Tools = server.Tools.Count > 0 ? server.Tools.ToList() : ["*"]
-                };
-                if (server.Headers.Count > 0)
-                    remote.Headers = new Dictionary<string, string>(server.Headers);
-                if (server.Timeout.HasValue)
-                    remote.Timeout = server.Timeout.Value;
-                dict[server.Name] = remote;
-            }
-            else
-            {
-                var local = new McpLocalServerConfig
-                {
-                    Command = server.Command,
-                    Args = server.Args.ToList(),
-                    Type = "stdio",
-                    Cwd = workDir,
-                    Tools = server.Tools.Count > 0 ? server.Tools.ToList() : ["*"]
-                };
-                if (server.Env.Count > 0)
-                    local.Env = new Dictionary<string, string>(server.Env);
-                if (server.Timeout.HasValue)
-                    local.Timeout = server.Timeout.Value;
-                dict[server.Name] = local;
-            }
-        }
-        return dict;
-    }
-
-    private List<AIFunction> BuildWebTools()
-    {
-        return
-        [
-            AIFunctionFactory.Create(
-                async ([Description("The search query to look up on the web")] string query,
-                 [Description("Number of results to return (default 5, max 10)")] int count = 5) =>
-                {
-                    count = Math.Clamp(count, 1, 10);
-                    var (text, results) = await WebSearchService.SearchWithResultsAsync(query, count);
-                    if (results.Count > 0)
-                    {
-                        Dispatcher.UIThread.Post(() =>
-                        {
-                            foreach (var r in results)
-                                _pendingSearchSources.Add(new SearchSource { Title = r.Title, Snippet = r.Snippet, Url = r.Url });
-
-                        });
-                    }
-                    return text;
-                },
-                "lumi_search",
-                "Search the web for information. Returns titles, snippets, and URLs from search results. Use this to find current information, answer factual questions, research topics, find product reviews, or discover relevant web pages to fetch."),
-
-            AIFunctionFactory.Create(
-                ([Description("The full URL to fetch (must start with http:// or https://)")] string url) =>
-                {
-                    return WebFetchService.FetchAsync(url);
-                },
-                "lumi_fetch",
-                "Fetch a webpage and return its text content. If this fails, do NOT retry the same URL — try a different source instead. After 2 consecutive failures, stop and answer with what you have."),
-        ];
-    }
-
-    private List<AIFunction> BuildBrowserTools()
-    {
-        return
-        [
-            AIFunctionFactory.Create(
-                ([Description("The full URL to navigate to (e.g. https://mail.google.com)")] string url) =>
-                {
-                    Dispatcher.UIThread.Post(() => { HasUsedBrowser = true; BrowserShowRequested?.Invoke(); });
-                    return _browserService.OpenAndSnapshotAsync(url);
-                },
-                "browser",
-                "Open a URL in the browser and return the page with numbered interactive elements and a text preview. The browser has persistent cookies/sessions — the user may already be logged in. Returns element numbers you can use with browser_do. If the URL triggers a file download (e.g. an export URL), the download is detected automatically and reported instead of a page snapshot."),
-
-            AIFunctionFactory.Create(
-                ([Description("Optional text filter to narrow elements (e.g. 'button', 'download', 'search', 'Export'). Omit to see all.")] string? filter = null) =>
-                {
-                    return _browserService.LookAsync(filter);
-                },
-                "browser_look",
-                "Returns the current page state: numbered interactive elements and text preview. Use filter to narrow results."),
-
-            AIFunctionFactory.Create(
-                ([Description("What to find on the page (e.g. 'download', 'export csv', 'save', 'submit').")]
-                    string query,
-                 [Description("Maximum matches to return (1-50).")]
-                    int limit = 12) =>
-                {
-                    return _browserService.FindElementsAsync(query, limit, preferDialog: true);
-                },
-                "browser_find",
-                "Find and rank interactive elements by query. Matches against text, aria-label, tooltip, title, and href. Returns stable element indices usable with browser_do."),
-
-            AIFunctionFactory.Create(
-                ([Description("Action to perform: click, type, press, select, scroll, back, wait, download")] string action,
-                 [Description("Target: element number from browser/browser_look (e.g. '3'), button text (e.g. 'Export'), CSS selector (e.g. '.btn'), key name (for press), direction (for scroll), or file pattern (for download)")] string? target = null,
-                 [Description("Value: text to type (for type action), option text (for select), pixels (for scroll)")] string? value = null) =>
-                {
-                    var act = (action ?? "").Trim().ToLowerInvariant();
-                    if (act is "click" or "type" or "press" or "select" or "download" or "back")
-                        Dispatcher.UIThread.Post(() => { HasUsedBrowser = true; BrowserShowRequested?.Invoke(); });
-                    return _browserService.DoAsync(action ?? "", target, value);
-                },
-                "browser_do",
-                "Interact with the page. Actions: click (target: element #, text, or CSS selector), type (target: element # or selector, value: text), press (target: key name), select (target: element # or selector, value: option text), scroll (target: up/down), back, wait (target: CSS selector), download (target: file glob pattern — checks for a pending download, does NOT trigger one)."),
-
-            AIFunctionFactory.Create(
-                ([Description("JavaScript code to execute in the page context")] string script) =>
-                {
-                    return _browserService.EvaluateAsync(script);
-                },
-                "browser_js",
-                "Run JavaScript in the browser page context."),
-        ];
-    }
-
-    /// <summary>Raised when a browser tool requests the browser panel to be visible.</summary>
-    public event Action? BrowserShowRequested;
-
-    /// <summary>True if browser tools have been used in the current session.</summary>
-    [ObservableProperty] bool _hasUsedBrowser;
-
-    /// <summary>True when the browser panel is currently visible.</summary>
-    [ObservableProperty] bool _isBrowserOpen;
-
-    /// <summary>Allows the view to request the browser panel to be shown.</summary>
-    public void RequestShowBrowser() => BrowserShowRequested?.Invoke();
-
-    /// <summary>Toggles the browser panel visibility.</summary>
-    public void ToggleBrowser()
-    {
-        if (IsBrowserOpen)
-            BrowserHideRequested?.Invoke();
-        else
-            BrowserShowRequested?.Invoke();
-    }
-
-    /// <summary>True when the diff preview panel is currently visible.</summary>
-    [ObservableProperty] bool _isDiffOpen;
-
-    /// <summary>Shows a file diff in the preview island.</summary>
-    public void ShowDiff(string filePath, string? oldText, string? newText)
-        => DiffShowRequested?.Invoke(filePath, oldText, newText);
-
-    /// <summary>Hides the diff preview island.</summary>
-    public void HideDiff() => DiffHideRequested?.Invoke();
-
-    partial void OnSelectedModelChanged(string? value)
-    {
-        UpdateQualityLevels(value);
-
-        if (string.IsNullOrWhiteSpace(value)) return;
-        _dataStore.Data.Settings.PreferredModel = value;
-        _ = SaveIndexAsync();
-    }
-
-    private List<AIFunction> BuildUIAutomationTools()
-    {
-        return
-        [
-            AIFunctionFactory.Create(
-                () => _uiAutomation.ListWindows(),
-                "ui_list_windows",
-                "List all visible windows on the user's desktop. Returns window titles, process names, and PIDs. Call this first to find which window to target."),
-
-            AIFunctionFactory.Create(
-                ([Description("Window title (partial match) to inspect. The window will be auto-focused.")] string title,
-                 [Description("How deep to walk the UI tree (1-5, default 3). Use 2 for overview, 3-4 for detail.")] int depth = 3) =>
-                {
-                    depth = Math.Clamp(depth, 1, 5);
-                    return _uiAutomation.InspectWindow(title, depth);
-                },
-                "ui_inspect",
-                "Inspect the UI element tree of a window (auto-focuses it). Returns numbered elements tagged with [clickable], [editable], [toggleable] etc. Use element numbers with ui_click, ui_type, ui_press_keys, and ui_read. Prefer this over ui_find for first contact with a window."),
-
-            AIFunctionFactory.Create(
-                ([Description("Window title (partial match) to search in")] string title,
-                 [Description("Search query — matches against element name, automation ID, control type, class name, and help text")] string query) =>
-                    _uiAutomation.FindElements(title, query),
-                "ui_find",
-                "Find UI elements in a window matching a search query. Returns numbered elements you can interact with. Use when you know what you're looking for (e.g. 'Save', 'OK', 'Edit') instead of browsing the whole tree."),
-
-            AIFunctionFactory.Create(
-                ([Description("Element number from ui_inspect or ui_find")] int elementId) =>
-                    _uiAutomation.ClickElement(elementId),
-                "ui_click",
-                "Click a UI element by its number. Uses the best interaction pattern: Invoke for buttons, Toggle for checkboxes, Select for list items/tabs, Expand for combo boxes, or mouse click as fallback. After clicking, the UI may change — re-run ui_inspect to get fresh element numbers if needed."),
-
-            AIFunctionFactory.Create(
-                ([Description("Element number from ui_inspect or ui_find")] int elementId,
-                 [Description("Text to type or set in the element")] string text) =>
-                    _uiAutomation.TypeText(elementId, text),
-                "ui_type",
-                "Type or set text in a UI element by its number. Uses the Value pattern for text fields, or falls back to keyboard input."),
-
-            AIFunctionFactory.Create(
-                ([Description("Key combination to send, e.g. 'Ctrl+N', 'Ctrl+S', 'Alt+F4', 'Enter', 'Tab', 'Ctrl+Shift+T'. Single keys: A-Z, 0-9, F1-F12, Enter, Tab, Escape, Delete, Home, End, PageUp, PageDown, Up, Down, Left, Right, Space.")] string keys,
-                 [Description("Optional: element number to focus before sending keys. If omitted, keys go to the currently focused window.")] int? elementId = null) =>
-                    _uiAutomation.SendKeys(keys, elementId),
-                "ui_press_keys",
-                "Send keyboard shortcuts or key presses to the focused window. Use for shortcuts like Ctrl+N (new), Ctrl+S (save), Ctrl+Z (undo), Alt+F4 (close), Tab/Enter (navigate forms), arrow keys, etc. Optionally target a specific element by number."),
-
-            AIFunctionFactory.Create(
-                ([Description("Element number from ui_inspect or ui_find")] int elementId) =>
-                    _uiAutomation.ReadElement(elementId),
-                "ui_read",
-                "Read detailed information about a UI element: type, name, value, toggle state, selection state, supported interactions, bounds, and more."),
-        ];
-    }
-
-    private AIFunction BuildAnnounceFileTool()
-    {
-        return AIFunctionFactory.Create(
-            ([Description("Absolute path of the file that was created, converted, or produced for the user")] string filePath) =>
-            {
-                if (File.Exists(filePath) && IsUserFacingFile(filePath))
-                {
-                    Dispatcher.UIThread.Post(() =>
-                    {
-                        _shownFileChips.Add(filePath);
-                    });
-                }
-                return $"File announced: {filePath}";
-            },
-            "announce_file",
-            "Show a file attachment chip to the user for a file you created or produced. Call this ONCE for each final deliverable file (e.g. the PDF, DOCX, PPTX, image, etc.). Do NOT call for intermediate/temporary files like scripts.");
-    }
-
-    private AIFunction BuildFetchSkillTool()
-    {
-        return AIFunctionFactory.Create(
-            ([Description("The exact name of the skill to retrieve (as listed in Available Skills)")] string name) =>
-            {
-                var skill = _dataStore.Data.Skills
-                    .FirstOrDefault(s => s.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
-                if (skill is null)
-                    return $"Skill not found: {name}. Check the Available Skills list for exact names.";
-                return $"# {skill.Name}\n\n{skill.Content}";
-            },
-            "fetch_skill",
-            "Retrieve the full content of a skill by name. Use this when the user asks to use a skill, or when their request closely matches a skill's description. The skill content contains detailed instructions on how to perform the task.");
-    }
-
-    private AIFunction BuildAskQuestionTool()
-    {
-        return AIFunctionFactory.Create(
-            async ([Description("The question to ask the user")] string question,
-             [Description("Comma-separated list of option labels for the user to choose from")] string options,
-             [Description("Whether to allow the user to type a free-text answer in addition to the options. Default: true")] bool? allowFreeText) =>
-            {
-                var freeText = allowFreeText ?? true;
-                var questionId = Guid.NewGuid().ToString("N");
-                var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-                _pendingQuestions[questionId] = tcs;
-
-                Dispatcher.UIThread.Post(() =>
-                {
-                    AddQuestionToTranscript(questionId, question, options, freeText);
-                    QuestionAsked?.Invoke(questionId, question, options, freeText);
-                    ScrollToEndRequested?.Invoke();
-                });
-
-                var answer = await tcs.Task;
-                _pendingQuestions.Remove(questionId);
-
-                // Persist the answer on the tool message so it survives reload
-                var resultText = $"User answered: {answer}";
-                Dispatcher.UIThread.Post(() =>
-                {
-                    var chat = CurrentChat;
-                    if (chat is not null)
-                    {
-                        var toolMsg = chat.Messages.LastOrDefault(m =>
-                            m.ToolName == "ask_question" && m.ToolStatus == "InProgress");
-                        if (toolMsg is not null)
-                            toolMsg.ToolOutput = resultText;
-                    }
-                });
-
-                return resultText;
-            },
-            "ask_question",
-            "Ask the user a question with predefined options to choose from. Use this when you need the user to pick from a set of choices (e.g. selecting a template, confirming a direction, choosing between alternatives). The answer will be returned as text. Only use this for genuinely useful choices — don't ask unnecessary questions.");
-    }
-
-    /// <summary>Called by the View when the user selects an answer on a question card.</summary>
-    public void SubmitQuestionAnswer(string questionId, string answer)
-    {
-        if (_pendingQuestions.TryGetValue(questionId, out var tcs))
-            tcs.TrySetResult(answer);
-    }
-
-    private List<AIFunction> BuildMemoryTools()
-    {
-        return _memoryAgentService.BuildRecallMemoryTools();
-    }
-
-    /// <summary>Returns StrataComposerChip items for all agents (for composer autocomplete).</summary>
-    public List<StrataTheme.Controls.StrataComposerChip> GetAgentChips()
-    {
-        return _dataStore.Data.Agents
-            .Select(a => new StrataTheme.Controls.StrataComposerChip(a.Name, a.IconGlyph))
-            .ToList();
-    }
-
-    /// <summary>Returns StrataComposerChip items for all skills (for composer autocomplete).</summary>
-    public List<StrataTheme.Controls.StrataComposerChip> GetSkillChips()
-    {
-        return _dataStore.Data.Skills
-            .Select(s => new StrataTheme.Controls.StrataComposerChip(s.Name, s.IconGlyph))
-            .ToList();
-    }
-
-    /// <summary>Returns StrataComposerChip items for all enabled MCP servers (for composer autocomplete).</summary>
-    public List<StrataTheme.Controls.StrataComposerChip> GetMcpChips()
-    {
-        return _dataStore.Data.McpServers
-            .Where(s => s.IsEnabled)
-            .Select(s => new StrataTheme.Controls.StrataComposerChip(s.Name))
-            .ToList();
-    }
-
-    /// <summary>Returns StrataComposerChip items for all projects (for composer autocomplete).</summary>
-    public List<StrataTheme.Controls.StrataComposerChip> GetProjectChips()
-    {
-        return _dataStore.Data.Projects
-            .Select(p => new StrataTheme.Controls.StrataComposerChip(p.Name, "📁"))
-            .ToList();
-    }
-
-    /// <summary>Selects a project by name (called from composer autocomplete).</summary>
-    public void SelectProjectByName(string name)
-    {
-        var project = _dataStore.Data.Projects.FirstOrDefault(p => p.Name == name);
-        if (project is not null)
-            SetProjectId(project.Id);
-    }
-
-    /// <summary>Returns the display name of the current project, or null.</summary>
-    public string? GetCurrentProjectName()
-    {
-        var pid = CurrentChat?.ProjectId ?? _pendingProjectId ?? ActiveProjectFilterId;
-        if (!pid.HasValue) return null;
-        return _dataStore.Data.Projects.FirstOrDefault(p => p.Id == pid.Value)?.Name;
-    }
-
-    /// <summary>Selects an agent by name (called from composer autocomplete).</summary>
-    public void SelectAgentByName(string name)
-    {
-        var agent = _dataStore.Data.Agents.FirstOrDefault(a => a.Name == name);
-        SetActiveAgent(agent);
-    }
-
-    /// <summary>Adds a skill by name (called from composer autocomplete).</summary>
-    public void AddSkillByName(string name)
-    {
-        var skill = _dataStore.Data.Skills.FirstOrDefault(s => s.Name == name);
-        if (skill is not null) AddSkill(skill);
-    }
-
-    /// <summary>Finds a skill by name for display purposes (e.g. fetching icon glyph).</summary>
-    public Skill? FindSkillByName(string name)
-    {
-        return _dataStore.Data.Skills.FirstOrDefault(s => s.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
-    }
-
-    public void AddAttachment(string filePath)
-    {
-        if (PendingAttachments.Contains(filePath))
-            return;
-
-        PendingAttachments.Add(filePath);
-        PendingAttachmentItems.Add(new FileAttachmentItem(filePath, isRemovable: true, removeAction: RemoveAttachment));
-    }
-
-    public void RemoveAttachment(string filePath)
-    {
-        PendingAttachments.Remove(filePath);
-
-        var pendingItem = PendingAttachmentItems.FirstOrDefault(item =>
-            string.Equals(item.FilePath, filePath, StringComparison.OrdinalIgnoreCase));
-        if (pendingItem is not null)
-            PendingAttachmentItems.Remove(pendingItem);
-    }
-
-    private readonly FileSearchService _fileSearchService = new();
-
-    /// <summary>
-    /// Searches for files in the current working directory matching the query.
-    /// Returns StrataComposerChip items where Name is the relative display path
-    /// and Glyph stores the full absolute path (for selection).
-    /// </summary>
-    public List<StrataTheme.Controls.StrataComposerChip> SearchFiles(string query, int maxResults = 20)
-    {
-        var workDir = GetEffectiveWorkingDirectory();
-        var isProjectDir = workDir != Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-
-        // Require at least 1 character of query for user home (too many files otherwise)
-        if (!isProjectDir && string.IsNullOrEmpty(query))
-            return [];
-
-        var maxDepth = isProjectDir ? 10 : 4;
-        return _fileSearchService.Search(workDir, query, maxResults, maxDepth)
-            .ConvertAll(r => new StrataTheme.Controls.StrataComposerChip(r.RelativePath, r.FullPath));
-    }
-
-    /// <summary>
-    /// Resolves the effective working directory, checking pending/active project
-    /// even before a chat is created (when CurrentChat is still null).
-    /// </summary>
-    private string GetEffectiveWorkingDirectory()
-    {
-        var pid = CurrentChat?.ProjectId ?? _pendingProjectId ?? ActiveProjectFilterId;
-        if (pid.HasValue)
-        {
-            var project = _dataStore.Data.Projects.FirstOrDefault(p => p.Id == pid.Value);
-            if (project is { WorkingDirectory: { Length: > 0 } dir } && Directory.Exists(dir))
-                return dir;
-        }
-        return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-    }
-
-    private List<UserMessageDataAttachmentsItemFile>? TakePendingAttachments()
-    {
-        if (PendingAttachments.Count == 0) return null;
-        var items = PendingAttachments.Select(fp => new UserMessageDataAttachmentsItemFile
-        {
-            Path = fp,
-            DisplayName = Path.GetFileName(fp)
-        }).ToList();
-        PendingAttachments.Clear();
-        PendingAttachmentItems.Clear();
-        return items;
-    }
-
-    public static bool IsFileCreationTool(string? toolName)
-    {
-        return toolName is "write_file" or "create_file" or "create" or "edit_file"
-            or "str_replace_editor" or "str_replace" or "create_and_write_file"
-            or "replace_string_in_file" or "multi_replace_string_in_file"
-            or "insert" or "write" or "save_file";
-    }
-
-    private static bool IsTerminalStreamingTool(string? toolName)
-    {
-        return toolName is "powershell" or "read_powershell" or "write_powershell" or "stop_powershell";
-    }
-
-    private static string ResolveRootTerminalToolCallId(
-        string toolCallId,
-        Dictionary<string, string?> toolParentById,
-        Dictionary<string, string> terminalRootByToolCallId)
-    {
-        if (terminalRootByToolCallId.TryGetValue(toolCallId, out var knownRoot))
-            return knownRoot;
-
-        var current = toolCallId;
-        for (var depth = 0; depth < 24; depth++)
-        {
-            if (terminalRootByToolCallId.TryGetValue(current, out var mappedRoot))
-            {
-                terminalRootByToolCallId[toolCallId] = mappedRoot;
-                return mappedRoot;
-            }
-
-            if (!toolParentById.TryGetValue(current, out var parent) || string.IsNullOrWhiteSpace(parent))
-                break;
-
-            current = parent;
-        }
-
-        terminalRootByToolCallId[toolCallId] = current;
-        return current;
-    }
-
-    private static void ApplyTerminalOutput(Chat chat, string rootToolCallId, string output, bool replaceExistingOutput)
-    {
-        if (string.IsNullOrWhiteSpace(rootToolCallId) || string.IsNullOrWhiteSpace(output))
-            return;
-
-        var rootToolMessage = chat.Messages.LastOrDefault(m => m.ToolCallId == rootToolCallId);
-        if (rootToolMessage is null)
-            return;
-
-        rootToolMessage.ToolOutput = MergeTerminalOutput(rootToolMessage.ToolOutput, output, replaceExistingOutput);
-    }
-
-    private static string MergeTerminalOutput(string? existingOutput, string incomingOutput, bool replaceExistingOutput)
-    {
-        if (string.IsNullOrWhiteSpace(incomingOutput))
-            return existingOutput ?? string.Empty;
-
-        if (replaceExistingOutput || string.IsNullOrWhiteSpace(existingOutput))
-            return incomingOutput;
-
-        if (incomingOutput.StartsWith(existingOutput, StringComparison.Ordinal))
-            return incomingOutput;
-
-        if (existingOutput.EndsWith(incomingOutput, StringComparison.Ordinal))
-            return existingOutput;
-
-        return existingOutput + Environment.NewLine + incomingOutput;
-    }
-
-    /// <summary>Converts a file:// URI or plain path to a local filesystem path.</summary>
-    private static string? UriToLocalPath(string uri)
-    {
-        if (Uri.TryCreate(uri, UriKind.Absolute, out var parsed) && parsed.IsFile)
-            return parsed.LocalPath;
-        // Already a plain path
-        if (Path.IsPathRooted(uri))
-            return uri;
-        return null;
-    }
-
-    /// <summary>Extracts terminal/text output from SDK tool result fields.</summary>
-    private static string? ExtractTerminalOutput(ToolExecutionCompleteDataResult? result)
-    {
-        if (result is null)
-            return null;
-
-        var detailed = CleanTerminalOutput(result.DetailedContent);
-        if (!string.IsNullOrWhiteSpace(detailed))
-            return detailed;
-
-        var contentsText = ExtractTerminalOutput(result.Contents);
-        if (!string.IsNullOrWhiteSpace(contentsText))
-            return CleanTerminalOutput(contentsText);
-
-        return CleanTerminalOutput(result.Content);
-    }
-
-    /// <summary>Extracts terminal/text output from tool execution result contents.</summary>
-    private static string? ExtractTerminalOutput(ToolExecutionCompleteDataResultContentsItem[]? contents)
-    {
-        if (contents is not { Length: > 0 })
-            return null;
-
-        var chunks = new List<string>();
-        foreach (var item in contents)
-        {
-            if (item is ToolExecutionCompleteDataResultContentsItemTerminal terminal)
-            {
-                if (!string.IsNullOrWhiteSpace(terminal.Text))
-                    chunks.Add(terminal.Text);
-                continue;
-            }
-
-            if (item is ToolExecutionCompleteDataResultContentsItemText text
-                && !string.IsNullOrWhiteSpace(text.Text))
-            {
-                chunks.Add(text.Text);
-            }
-        }
-
-        return chunks.Count > 0 ? string.Join(Environment.NewLine, chunks) : null;
-    }
-
-    /// <summary>Strips SDK metadata lines (e.g. exit code markers) from terminal output.</summary>
-    private static string? CleanTerminalOutput(string? output)
-    {
-        if (string.IsNullOrEmpty(output)) return output;
-        // Remove trailing "<exited with exit code N>" lines
-        return Regex.Replace(output, @"\s*<exited with exit code \d+>\s*$", "", RegexOptions.IgnoreCase).TrimEnd();
-    }
-
-    /// <summary>Extensions for intermediary/script files that shouldn't appear as attachment chips.</summary>
-    private static readonly HashSet<string> ScriptExtensions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".py", ".ps1", ".bat", ".cmd", ".sh", ".bash", ".vbs", ".wsf", ".js", ".mjs", ".ts"
-    };
-
     /// <summary>
     /// Picks the best model from a list of model IDs using name/version heuristics.
-    /// Prefers: flagship tiers (opus > sonnet > pro > base gpt) with highest version,
-    /// avoids: mini, fast, codex, haiku, preview variants.
     /// </summary>
     public static string? PickBestModel(IReadOnlyList<string> models)
     {
@@ -3169,35 +1604,14 @@ public partial class ChatViewModel : ObservableObject
         return score;
     }
 
-    /// <summary>Returns true if the file looks like a user-facing deliverable, not a temp script.</summary>
-    public static bool IsUserFacingFile(string filePath)
-    {
-        var ext = Path.GetExtension(filePath);
-        return !ScriptExtensions.Contains(ext);
-    }
-
-    [GeneratedRegex(@"(?:^|[\s`""'(\[])([A-Za-z]:\\[^\s`""'<>|*?\[\]]+\.\w{1,10})|(?:^|[\s`""'(\[])((?:/|~/)[^\s`""'<>|*?\[\]]+\.\w{1,10})", RegexOptions.Multiline)]
-    private static partial Regex FilePathRegex();
-
     [GeneratedRegex(@"(\d+)(?:\.(\d+))?")]
     private static partial Regex VersionRegex();
-
-    public static string[] ExtractFilePathsFromContent(string content)
-    {
-        if (string.IsNullOrWhiteSpace(content)) return [];
-        var matches = FilePathRegex().Matches(content);
-        return matches
-            .Select(m => !string.IsNullOrEmpty(m.Groups[1].Value) ? m.Groups[1].Value : m.Groups[2].Value)
-            .Where(p => !string.IsNullOrEmpty(p))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-    }
 
     /// <summary>
     /// Removes the user message and its response, then resends.
     /// The message content may have been edited before calling this.
     /// </summary>
-    public async Task ResendFromMessageAsync(ChatMessage userMessage)
+    public async Task ResendFromMessageAsync(ChatMessage userMessage, bool wasEdited)
     {
         if (CurrentChat is null) return;
 
@@ -3215,25 +1629,25 @@ public partial class ChatViewModel : ObservableObject
             CurrentChat.Messages.RemoveAt(CurrentChat.Messages.Count - 1);
 
         // Rebuild the UI without the removed messages
-        _isRebuildingTranscript = true;
+        _transcriptBuilder.IsRebuildingTranscript = true;
         Messages.Clear();
         foreach (var msg in CurrentChat.Messages.Where(m =>
             m.Role != "reasoning"
             && !(m.Role == "assistant" && string.IsNullOrWhiteSpace(m.Content))))
             Messages.Add(new ChatMessageViewModel(msg));
-        _isRebuildingTranscript = false;
+        _transcriptBuilder.IsRebuildingTranscript = false;
 
         RebuildTranscript();
 
-        _shownFileChips.Clear();
+        _transcriptBuilder.ShownFileChips.Clear();
         _pendingSearchSources.Clear();
-        _pendingFetchedSkillRefs.Clear();
+        _transcriptBuilder.PendingFetchedSkillRefs.Clear();
 
-        // Invalidate the session — the server-side history contains the unedited exchange.
-        // TODO: replay prior history once SDK supports seeding sessions with messages.
-        _sessionCache.Remove(CurrentChat.Id);
-        CurrentChat.CopilotSessionId = null;
-        _activeSession = null;
+        // Invalidate the session only if the message was edited — the server-side
+        // history contains the unedited exchange and must be discarded.
+        // For pure regenerate (same content), the session can be reused.
+        if (wasEdited)
+            InvalidateCurrentSession();
 
         // Re-add the user message as a fresh entry
         var newUserMsg = new ChatMessage
@@ -3264,7 +1678,7 @@ public partial class ChatViewModel : ObservableObject
                 CurrentChat.Messages.Add(connErrorMsg);
                 var connVm = new ChatMessageViewModel(connErrorMsg);
                 Messages.Add(connVm);
-                ProcessMessageToTranscript(connVm);
+                _transcriptBuilder.ProcessMessageToTranscript(connVm);
                 ScrollToEndRequested?.Invoke();
                 return;
             }
@@ -3309,8 +1723,8 @@ public partial class ChatViewModel : ObservableObject
             IsStreaming = false;
 
             // Clean up typing indicator and tool groups
-            HideTypingIndicator();
-            CloseCurrentToolGroup();
+            _transcriptBuilder.HideTypingIndicator();
+            _transcriptBuilder.CloseCurrentToolGroup();
 
             if (CurrentChat is not null)
             {
@@ -3329,112 +1743,12 @@ public partial class ChatViewModel : ObservableObject
                 CurrentChat.Messages.Add(errorMsg);
                 var msgVm = new ChatMessageViewModel(errorMsg);
                 Messages.Add(msgVm);
-                ProcessMessageToTranscript(msgVm);
+                _transcriptBuilder.ProcessMessageToTranscript(msgVm);
                 ScrollToEndRequested?.Invoke();
             }
         }
     }
 
-    private string GetWorkingDirectory()
-    {
-        // Use project working directory if set
-        if (CurrentChat?.ProjectId is { } pid)
-        {
-            var project = _dataStore.Data.Projects.FirstOrDefault(p => p.Id == pid);
-            if (project is { WorkingDirectory: { Length: > 0 } dir } && Directory.Exists(dir))
-                return dir;
-        }
-
-        // Default to user home — avoid ~/Lumi so the SDK doesn't inject
-        // a confusing "Lumi" workspace name into the LLM context.
-        return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-    }
-
-    private static string FormatToolDisplayName(string toolName, string? argsJson = null)
-    {
-        var fileName = ExtractShortFileName(argsJson);
-        return toolName switch
-        {
-            "web_fetch" or "fetch" or "lumi_fetch" => Loc.Tool_ReadingWebsite,
-            "web_search" or "search" or "lumi_search" => Loc.Tool_SearchingWeb,
-            "view" or "read_file" or "read" => fileName is not null ? string.Format(Loc.Tool_ReadingNamed, fileName) : Loc.Tool_ReadingFile,
-            "create" or "write_file" or "create_file" or "write" or "save_file" => fileName is not null ? string.Format(Loc.Tool_CreatingNamed, fileName) : Loc.Tool_CreatingFile,
-            "edit" or "edit_file" or "str_replace_editor" or "str_replace" or "replace_string_in_file" or "insert" => fileName is not null ? string.Format(Loc.Tool_EditingNamed, fileName) : Loc.Tool_EditingFile,
-            "multi_replace_string_in_file" => fileName is not null ? string.Format(Loc.Tool_EditingNamed, fileName) : Loc.Tool_EditingFiles,
-            "list_dir" or "list_directory" or "ls" => Loc.Tool_ListingDirectory,
-            "bash" or "shell" or "powershell" or "run_command" or "execute_command" or "run_terminal" or "run_in_terminal" => Loc.Tool_RunningCommand,
-            "read_powershell" => Loc.Tool_ReadingTerminal,
-            "write_powershell" => Loc.Tool_WritingTerminal,
-            "stop_powershell" => Loc.Tool_StoppingTerminal,
-            "report_intent" => Loc.Tool_Planning,
-            "grep" or "grep_search" or "search_files" or "glob" => Loc.Tool_SearchingFiles,
-            "file_search" or "find" => Loc.Tool_FindingFiles,
-            "semantic_search" => Loc.Tool_SearchingCodebase,
-            "delete_file" or "delete" or "rm" => fileName is not null ? string.Format(Loc.Tool_DeletingNamed, fileName) : Loc.Tool_DeletingFile,
-            "move_file" or "rename_file" or "mv" or "rename" => fileName is not null ? string.Format(Loc.Tool_MovingNamed, fileName) : Loc.Tool_MovingFile,
-            "get_errors" or "diagnostics" => fileName is not null ? string.Format(Loc.Tool_CheckingNamed, fileName) : Loc.Tool_CheckingErrors,
-            "browser" => Loc.Tool_OpeningPage,
-            "browser_look" => Loc.Tool_BrowserSnapshot,
-            "browser_do" => Loc.Tool_Action,
-            "browser_js" => Loc.Tool_BrowserEvaluate,
-            "save_memory" => Loc.Tool_Remembering,
-            "update_memory" => Loc.Tool_UpdatingMemory,
-            "delete_memory" => Loc.Tool_Forgetting,
-            "recall_memory" => Loc.Tool_Recalling,
-            "announce_file" => Loc.Tool_SharingFile,
-            "fetch_skill" => Loc.Tool_FetchingSkill,
-            "ask_question" => Loc.Tool_AskingQuestion,
-            "code_review" => Loc.Tool_ReviewingCode,
-            "generate_tests" => Loc.Tool_GeneratingTests,
-            "explain_code" => Loc.Tool_ExplainingCode,
-            "analyze_project" => Loc.Tool_AnalyzingProject,
-            "ui_list_windows" => Loc.Tool_ListingWindows,
-            "ui_press_keys" => Loc.Tool_PressingKeys,
-            "ui_inspect" => Loc.Tool_InspectingWindow,
-            "ui_find" => Loc.Tool_FindingElement,
-            "ui_click" => Loc.Tool_ClickingControl,
-            "ui_type" => Loc.Tool_TypingInControl,
-            "ui_read" => Loc.Tool_ReadingControl,
-            _ => FormatSnakeCaseToTitle(toolName)
-        };
-    }
-
-    private static string? ExtractShortFileName(string? argsJson)
-    {
-        if (string.IsNullOrWhiteSpace(argsJson)) return null;
-        try
-        {
-            using var doc = JsonDocument.Parse(argsJson);
-            var root = doc.RootElement;
-            string? fullPath = null;
-            if (root.TryGetProperty("filePath", out var fp)) fullPath = fp.GetString();
-            else if (root.TryGetProperty("path", out var p)) fullPath = p.GetString();
-            else if (root.TryGetProperty("file", out var f)) fullPath = f.GetString();
-            else if (root.TryGetProperty("filename", out var fn)) fullPath = fn.GetString();
-            else if (root.TryGetProperty("file_path", out var fp2)) fullPath = fp2.GetString();
-            // For multi_replace, check first replacement
-            else if (root.TryGetProperty("replacements", out var repl)
-                     && repl.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var item in repl.EnumerateArray())
-                {
-                    if (item.TryGetProperty("filePath", out var rfp)) { fullPath = rfp.GetString(); break; }
-                    if (item.TryGetProperty("path", out var rp)) { fullPath = rp.GetString(); break; }
-                }
-            }
-            return fullPath is not null ? Path.GetFileName(fullPath) : null;
-        }
-        catch { return null; }
-    }
-
-    private static string FormatSnakeCaseToTitle(string name)
-    {
-        if (string.IsNullOrEmpty(name)) return name;
-        var words = name.Split('_', StringSplitOptions.RemoveEmptyEntries);
-        if (words.Length == 0) return name;
-        words[0] = char.ToUpper(words[0][0]) + words[0][1..];
-        return string.Join(' ', words);
-    }
 }
 
 public partial class ChatMessageViewModel : ObservableObject

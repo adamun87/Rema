@@ -25,7 +25,7 @@ public abstract partial class TranscriptItem : ObservableObject;
 public partial class UserMessageItem : TranscriptItem
 {
     private readonly ChatMessageViewModel _source;
-    private readonly Action<ChatMessage>? _resendAction;
+    private readonly Action<ChatMessage, bool>? _resendAction;
 
     [ObservableProperty] private string _content;
     [ObservableProperty] private string _timestampText;
@@ -46,7 +46,7 @@ public partial class UserMessageItem : TranscriptItem
     /// <summary>Command invoked when user clicks Regenerate/Retry on the message.</summary>
     public ICommand ResendCommand { get; }
 
-    public UserMessageItem(ChatMessageViewModel source, bool showTimestamps, Action<ChatMessage>? resendAction = null)
+    public UserMessageItem(ChatMessageViewModel source, bool showTimestamps, Action<ChatMessage, bool>? resendAction = null)
     {
         _source = source;
         _resendAction = resendAction;
@@ -60,14 +60,14 @@ public partial class UserMessageItem : TranscriptItem
         ResendCommand = new RelayCommand(ResendFromMessage);
     }
 
-    public void ResendFromMessage() => _resendAction?.Invoke(_source.Message);
+    public void ResendFromMessage() => _resendAction?.Invoke(_source.Message, false);
 
     public void EditAndResend(string newContent)
     {
         _source.Message.Content = newContent;
         _source.NotifyContentChanged();
         Content = newContent;
-        _resendAction?.Invoke(_source.Message);
+        _resendAction?.Invoke(_source.Message, true);
     }
 }
 

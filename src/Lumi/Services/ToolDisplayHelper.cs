@@ -13,7 +13,7 @@ namespace Lumi.Services;
 /// Static helpers for formatting tool call display names, arguments, and metadata.
 /// Extracted from ChatView code-behind for reuse in ViewModels.
 /// </summary>
-public static class ToolDisplayHelper
+public static partial class ToolDisplayHelper
 {
     public static string GetToolGlyph(string toolName) => toolName switch
     {
