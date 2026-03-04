@@ -301,8 +301,8 @@ public partial class ChatViewModel
     [ObservableProperty] bool _isDiffOpen;
 
     /// <summary>Shows a file diff in the preview island.</summary>
-    public void ShowDiff(string filePath, string? oldText, string? newText)
-        => DiffShowRequested?.Invoke(filePath, oldText, newText);
+    public void ShowDiff(FileChangeItem item)
+        => DiffShowRequested?.Invoke(item);
 
     /// <summary>Hides the diff preview island.</summary>
     public void HideDiff() => DiffHideRequested?.Invoke();

@@ -154,41 +154,63 @@
               </sc:StrataThink.Content>
             </sc:StrataThink>
 
-            <!-- File changes section -->
-            <sc:StrataThink Label="{Binding FileChangesLabel}"
-                            IsVisible="{Binding HasFileChanges}">
-              <sc:StrataThink.Content>
-                <ItemsControl ItemsSource="{Binding FileChanges}">
-                  <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate><StackPanel Spacing="2" /></ItemsPanelTemplate>
-                  </ItemsControl.ItemsPanel>
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate DataType="vm:FileChangeItem">
-                      <Button Classes="subtle" HorizontalAlignment="Stretch"
-                              HorizontalContentAlignment="Left"
-                              Command="{Binding ShowDiffCommand}"
-                              Padding="6,4" Cursor="Hand">
-                        <DockPanel>
-                          <TextBlock DockPanel.Dock="Left" Text="{Binding ActionIcon}" Margin="0,0,6,0"
-                                     FontSize="13" VerticalAlignment="Center" />
-                          <StackPanel>
-                            <TextBlock Text="{Binding FileName}" Classes="caption" FontWeight="SemiBold" />
-                            <TextBlock Text="{Binding Directory}" Classes="caption"
-                                       Foreground="{DynamicResource Brush.TextTertiary}"
-                                       TextTrimming="CharacterEllipsis"
-                                       IsVisible="{Binding Directory, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                          </StackPanel>
-                        </DockPanel>
-                      </Button>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-              </sc:StrataThink.Content>
-            </sc:StrataThink>
-
           </StackPanel>
         </sc:StrataChatMessage.Content>
       </sc:StrataChatMessage>
+    </DataTemplate>
+
+    <!-- ── File changes summary (separate item at end of turn) ── -->
+    <DataTemplate DataType="vm:FileChangesSummaryItem">
+      <sc:StrataThink Label="{Binding Label}">
+        <sc:StrataThink.HeaderExtra>
+          <StackPanel Orientation="Horizontal" Spacing="4">
+            <TextBlock Text="{Binding TotalStatsAdded}"
+                       FontSize="{DynamicResource Font.SizeCaption}" FontWeight="SemiBold"
+                       Foreground="{DynamicResource Brush.SuccessDefault}" />
+            <TextBlock Text="{Binding TotalStatsRemoved}"
+                       FontSize="{DynamicResource Font.SizeCaption}" FontWeight="SemiBold"
+                       Foreground="{DynamicResource Brush.DangerDefault}"
+                       IsVisible="{Binding HasTotalRemovals}" />
+          </StackPanel>
+        </sc:StrataThink.HeaderExtra>
+        <sc:StrataThink.Content>
+          <ItemsControl ItemsSource="{Binding FileChanges}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate><StackPanel Spacing="2" /></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate DataType="vm:FileChangeItem">
+                <Button Classes="subtle" HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Left"
+                        Command="{Binding ShowDiffCommand}"
+                        Padding="6,4" Cursor="Hand">
+                  <DockPanel>
+                    <TextBlock DockPanel.Dock="Left" Text="{Binding ActionIcon}" Margin="0,0,6,0"
+                               FontSize="13" VerticalAlignment="Center" />
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4"
+                                VerticalAlignment="Center" Margin="8,0,0,0">
+                      <TextBlock Text="{Binding StatsAdded}"
+                                 FontSize="{DynamicResource Font.SizeCaption}" FontWeight="Medium"
+                                 Foreground="{DynamicResource Brush.SuccessDefault}" />
+                      <TextBlock Text="{Binding StatsRemoved}"
+                                 FontSize="{DynamicResource Font.SizeCaption}" FontWeight="Medium"
+                                 Foreground="{DynamicResource Brush.DangerDefault}"
+                                 IsVisible="{Binding HasRemovals}" />
+                    </StackPanel>
+                    <StackPanel>
+                      <TextBlock Text="{Binding FileName}" Classes="caption" FontWeight="SemiBold" />
+                      <TextBlock Text="{Binding Directory}" Classes="caption"
+                                 Foreground="{DynamicResource Brush.TextTertiary}"
+                                 TextTrimming="CharacterEllipsis"
+                                 IsVisible="{Binding Directory, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    </StackPanel>
+                  </DockPanel>
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </sc:StrataThink.Content>
+      </sc:StrataThink>
     </DataTemplate>
 
     <!-- ── Error message ─────────────────────────────── -->

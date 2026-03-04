@@ -413,9 +413,9 @@ public partial class MainWindow : Window
                 closeBrowserBtn.Click += (_, _) => { HideBrowserPanel(); vm.ChatVM.IsBrowserOpen = false; };
 
             // Wire diff panel show/hide
-            vm.ChatVM.DiffShowRequested += (filePath, oldText, newText) =>
+            vm.ChatVM.DiffShowRequested += (item) =>
             {
-                Dispatcher.UIThread.Post(() => ShowDiffPanel(filePath, oldText, newText));
+                Dispatcher.UIThread.Post(() => ShowDiffPanel(item));
             };
             vm.ChatVM.DiffHideRequested += () =>
             {
@@ -1301,7 +1301,7 @@ public partial class MainWindow : Window
         _diffHost.Content = _diffView;
     }
 
-    private async void ShowDiffPanel(string filePath, string? oldText, string? newText)
+    private async void ShowDiffPanel(FileChangeItem fileChange)
     {
         if (_diffIsland is null || _chatContentGrid is null || _chatIsland is null) return;
 
@@ -1333,10 +1333,10 @@ public partial class MainWindow : Window
 
         // Update header text
         if (_diffFileNameText is not null)
-            _diffFileNameText.Text = System.IO.Path.GetFileName(filePath);
+            _diffFileNameText.Text = System.IO.Path.GetFileName(fileChange.FilePath);
 
         // Set diff content
-        _diffView?.SetDiff(filePath, oldText, newText);
+        _diffView?.SetFileChangeDiff(fileChange);
 
         // Switch to split layout
         const double offsetX = 40.0;

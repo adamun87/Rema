@@ -85,15 +85,12 @@ public partial class AssistantMessageItem : TranscriptItem
     [ObservableProperty] private bool _hasSkills;
     [ObservableProperty] private bool _hasFileAttachments;
     [ObservableProperty] private bool _hasSources;
-    [ObservableProperty] private bool _hasFileChanges;
     [ObservableProperty] private string _sourcesLabel = "";
-    [ObservableProperty] private string _fileChangesLabel = "";
 
     public string? Author => _source.Author;
     public ObservableCollection<SkillReference> Skills { get; } = [];
     public ObservableCollection<FileAttachmentItem> FileAttachments { get; } = [];
     public ObservableCollection<SourceItem> Sources { get; } = [];
-    public ObservableCollection<FileChangeItem> FileChanges { get; } = [];
 
     public AssistantMessageItem(ChatMessageViewModel source, bool showTimestamps)
     {
@@ -124,8 +121,7 @@ public partial class AssistantMessageItem : TranscriptItem
     /// when the assistant turn completes (or during transcript rebuild).
     /// </summary>
     public void ApplyExtras(
-        List<FileAttachmentItem>? fileChips,
-        List<FileChangeItem>? fileChanges)
+        List<FileAttachmentItem>? fileChips)
     {
         // Skills come from the persisted model
         Skills.Clear();
@@ -147,15 +143,6 @@ public partial class AssistantMessageItem : TranscriptItem
             Sources.Add(new SourceItem(src));
         HasSources = Sources.Count > 0;
         SourcesLabel = Sources.Count == 1 ? Loc.Sources_One : string.Format(Loc.Sources_N, Sources.Count);
-
-        // File changes
-        if (fileChanges is { Count: > 0 })
-        {
-            foreach (var fc in fileChanges)
-                FileChanges.Add(fc);
-        }
-        HasFileChanges = FileChanges.Count > 0;
-        FileChangesLabel = FileChanges.Count == 1 ? Loc.FileChanges_One : string.Format(Loc.FileChanges_N, FileChanges.Count);
     }
 }
 
@@ -257,10 +244,10 @@ public partial class ToolCallItem : ToolCallItemBase
     [ObservableProperty] private double _durationMs;
     [ObservableProperty] private bool _hasDiff;
 
-    public string? DiffFilePath { get; init; }
-    public string? DiffOldText { get; init; }
-    public string? DiffNewText { get; init; }
-    public Action<string, string?, string?>? ShowDiffAction { get; init; }
+    public string? DiffFilePath { get; set; }
+    public string? DiffToolName { get; set; }
+    public List<(string? OldText, string? NewText)>? DiffEdits { get; set; }
+    public Action<FileChangeItem>? ShowFileChangeAction { get; set; }
 
     public ToolCallItem(string toolName, StrataAiToolCallStatus status)
     {
@@ -271,8 +258,13 @@ public partial class ToolCallItem : ToolCallItemBase
     [RelayCommand]
     private void ShowDiff()
     {
-        if (DiffFilePath is not null)
-            ShowDiffAction?.Invoke(DiffFilePath, DiffOldText, DiffNewText);
+        if (DiffFilePath is null || ShowFileChangeAction is null) return;
+        var isCreate = DiffToolName is not null && ToolDisplayHelper.IsFileCreateTool(DiffToolName);
+        var item = new FileChangeItem(DiffFilePath, isCreate, null);
+        if (DiffEdits is not null)
+            foreach (var (old, @new) in DiffEdits)
+                item.AddEdit(old, @new);
+        ShowFileChangeAction.Invoke(item);
     }
 }
 
@@ -467,26 +459,81 @@ public partial class FileChangeItem : ObservableObject
     public string ActionIcon { get; }
     public string ActionLabel { get; }
     public string? Directory { get; }
+    public bool IsCreate { get; }
+    public int LinesAdded { get; private set; }
+    public int LinesRemoved { get; private set; }
+    public string StatsAdded => $"+{LinesAdded}";
+    public string StatsRemoved => LinesRemoved > 0 ? $"−{LinesRemoved}" : "";
+    public bool HasRemovals => LinesRemoved > 0;
 
-    private readonly string? _oldText;
-    private readonly string? _newText;
-    private readonly Action<string, string?, string?>? _showDiffAction;
+    /// <summary>All edits applied to this file (old text → new text pairs).</summary>
+    public List<(string? OldText, string? NewText)> Edits { get; } = [];
 
-    public FileChangeItem(string filePath, string toolName, string? oldText, string? newText,
-        Action<string, string?, string?>? showDiffAction = null)
+    private readonly Action<FileChangeItem>? _showDiffAction;
+
+    public FileChangeItem(string filePath, bool isCreate, Action<FileChangeItem>? showDiffAction = null)
     {
         FilePath = filePath;
         FileName = Path.GetFileName(filePath);
         Directory = Path.GetDirectoryName(filePath);
-        _oldText = oldText;
-        _newText = newText;
+        IsCreate = isCreate;
         _showDiffAction = showDiffAction;
 
-        var isCreate = ToolDisplayHelper.IsFileCreateTool(toolName);
         ActionIcon = isCreate ? "📄" : "📝";
         ActionLabel = isCreate ? Loc.FileChange_Created : Loc.FileChange_Modified;
     }
 
+    /// <summary>Adds an edit and updates line stats.</summary>
+    public void AddEdit(string? oldText, string? newText)
+    {
+        Edits.Add((oldText, newText));
+        LinesAdded += CountLines(newText);
+        LinesRemoved += CountLines(oldText);
+    }
+
+    /// <summary>
+    /// For created files where we couldn't extract content from tool args,
+    /// read the file to get accurate line count.
+    /// </summary>
+    public void EnsureStatsForCreatedFile()
+    {
+        if (!IsCreate || LinesAdded > 0) return;
+        try
+        {
+            if (File.Exists(FilePath))
+                LinesAdded = File.ReadAllLines(FilePath).Length;
+        }
+        catch { /* ignore */ }
+    }
+
+    private static int CountLines(string? text)
+        => string.IsNullOrEmpty(text) ? 0 : text.Split('\n').Length;
+
     [RelayCommand]
-    private void ShowDiff() => _showDiffAction?.Invoke(FilePath, _oldText, _newText);
+    private void ShowDiff() => _showDiffAction?.Invoke(this);
+}
+
+// ── File changes summary (standalone transcript item at end of turn) ──
+
+public partial class FileChangesSummaryItem : TranscriptItem
+{
+    [ObservableProperty] private string _label = "";
+    [ObservableProperty] private string _totalStatsAdded = "";
+    [ObservableProperty] private string _totalStatsRemoved = "";
+    [ObservableProperty] private bool _hasTotalRemovals;
+
+    public ObservableCollection<FileChangeItem> FileChanges { get; } = [];
+
+    public FileChangesSummaryItem(List<FileChangeItem> fileChanges)
+    {
+        foreach (var fc in fileChanges)
+            FileChanges.Add(fc);
+
+        var totalAdded = fileChanges.Sum(fc => fc.LinesAdded);
+        var totalRemoved = fileChanges.Sum(fc => fc.LinesRemoved);
+        TotalStatsAdded = $"+{totalAdded}";
+        TotalStatsRemoved = totalRemoved > 0 ? $"−{totalRemoved}" : "";
+        HasTotalRemovals = totalRemoved > 0;
+        Label = fileChanges.Count == 1 ? Loc.FileChanges_One : string.Format(Loc.FileChanges_N, fileChanges.Count);
+    }
 }

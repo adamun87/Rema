@@ -15,7 +15,7 @@ namespace Lumi.ViewModels;
 public class TranscriptBuilder
 {
     private readonly DataStore _dataStore;
-    private readonly Action<string, string?, string?> _showDiffAction;
+    private readonly Action<FileChangeItem> _showDiffAction;
     private readonly Action<string, string> _submitQuestionAnswerAction;
     private readonly Func<ChatMessage, bool, Task> _resendFromMessageAction;
 
@@ -30,7 +30,7 @@ public class TranscriptBuilder
     private readonly Dictionary<string, TerminalPreviewItem> _terminalPreviewsByToolCallId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, long> _toolStartTimes = [];
     public List<FileAttachmentItem> PendingToolFileChips { get; } = [];
-    public List<FileChangeItem> PendingFileEdits { get; } = [];
+    public List<(string FilePath, string ToolName, string? OldText, string? NewText)> PendingFileEdits { get; } = [];
     private IList<TranscriptItem>? _rebuildTarget;
     public bool IsRebuildingTranscript { get; set; }
 
@@ -53,7 +53,7 @@ public class TranscriptBuilder
 
     public TranscriptBuilder(
         DataStore dataStore,
-        Action<string, string?, string?> showDiffAction,
+        Action<FileChangeItem> showDiffAction,
         Action<string, string> submitQuestionAnswerAction,
         Func<ChatMessage, bool, Task> resendFromMessageAction)
     {
@@ -78,6 +78,7 @@ public class TranscriptBuilder
             ProcessMessageToTranscript(msg);
 
         CloseCurrentToolGroup();
+        FlushPendingFileEdits();
         CollapseAllCompletedTurns();
 
         _rebuildTarget = null;
@@ -309,21 +310,15 @@ public class TranscriptBuilder
         {
             var diffs = ToolDisplayHelper.ExtractAllDiffs(toolName, msgVm.Content);
             foreach (var d in diffs)
-                PendingFileEdits.Add(new FileChangeItem(d.FilePath, toolName, d.OldText, d.NewText, _showDiffAction));
+                PendingFileEdits.Add((d.FilePath, toolName, d.OldText, d.NewText));
 
             if (diffs.Count > 0)
             {
-                var capturedDiff = diffs[0];
-                toolCall = new ToolCallItem(friendlyName, initialStatus)
-                {
-                    InputParameters = toolCall.InputParameters,
-                    MoreInfo = toolCall.MoreInfo,
-                    HasDiff = true,
-                    DiffFilePath = capturedDiff.FilePath,
-                    DiffOldText = capturedDiff.OldText,
-                    DiffNewText = capturedDiff.NewText,
-                    ShowDiffAction = _showDiffAction,
-                };
+                toolCall.HasDiff = true;
+                toolCall.DiffFilePath = diffs[0].FilePath;
+                toolCall.DiffToolName = toolName;
+                toolCall.DiffEdits = diffs.Select(d => (d.OldText, d.NewText)).ToList();
+                toolCall.ShowFileChangeAction = _showDiffAction;
             }
         }
 
@@ -373,6 +368,8 @@ public class TranscriptBuilder
 
         if (msgVm.Role == "user")
         {
+            // Flush any pending file edits from the previous turn
+            FlushPendingFileEdits();
             var item = new UserMessageItem(msgVm, showTimestamps, (msg, edited) => _ = _resendFromMessageAction(msg, edited));
             InsertBeforeTypingIndicator(item);
         }
@@ -385,17 +382,17 @@ public class TranscriptBuilder
         {
             var item = new AssistantMessageItem(msgVm, showTimestamps);
 
-            // For completed messages during rebuild, apply extras immediately
-            if (!msgVm.IsStreaming && (PendingToolFileChips.Count > 0 || PendingFileEdits.Count > 0
+            // For completed messages during rebuild, apply extras (but NOT file changes — those flush at end of turn)
+            if (!msgVm.IsStreaming && (PendingToolFileChips.Count > 0
                 || msgVm.Message.Sources.Count > 0 || msgVm.Message.ActiveSkills.Count > 0))
             {
                 item.ApplyExtras(
-                    PendingToolFileChips.Count > 0 ? PendingToolFileChips.ToList() : null,
-                    PendingFileEdits.Count > 0 ? PendingFileEdits.ToList() : null);
+                    PendingToolFileChips.Count > 0 ? PendingToolFileChips.ToList() : null);
                 PendingToolFileChips.Clear();
-                PendingFileEdits.Clear();
                 PendingFetchedSkillRefs.Clear();
             }
+
+            InsertBeforeTypingIndicator(item);
 
             // For streaming messages, apply extras when streaming ends
             if (msgVm.IsStreaming)
@@ -406,20 +403,49 @@ public class TranscriptBuilder
                     if (args.PropertyName == nameof(ChatMessageViewModel.IsStreaming) && !msgVm.IsStreaming)
                     {
                         capturedItem.ApplyExtras(
-                            PendingToolFileChips.Count > 0 ? PendingToolFileChips.ToList() : null,
-                            PendingFileEdits.Count > 0 ? PendingFileEdits.ToList() : null);
+                            PendingToolFileChips.Count > 0 ? PendingToolFileChips.ToList() : null);
                         PendingToolFileChips.Clear();
-                        PendingFileEdits.Clear();
                         PendingFetchedSkillRefs.Clear();
 
                         // Collapse completed turn blocks after assistant finishes
                         CollapseCompletedTurnBlocks(capturedItem);
+
+                        // Flush file changes at end of turn
+                        FlushPendingFileEdits();
                     }
                 };
             }
-
-            InsertBeforeTypingIndicator(item);
         }
+    }
+
+    /// <summary>
+    /// Inserts a FileChangesSummaryItem for any accumulated file edits, then clears the pending list.
+    /// Called at the end of a turn (when user message arrives or streaming ends).
+    /// </summary>
+    private void FlushPendingFileEdits()
+    {
+        if (PendingFileEdits.Count == 0) return;
+        InsertBeforeTypingIndicator(new FileChangesSummaryItem(GroupFileEdits()));
+        PendingFileEdits.Clear();
+    }
+
+    /// <summary>Groups raw pending edits by file path into one FileChangeItem per unique file.</summary>
+    private List<FileChangeItem> GroupFileEdits()
+    {
+        var grouped = new Dictionary<string, FileChangeItem>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (filePath, toolName, oldText, newText) in PendingFileEdits)
+        {
+            if (!grouped.TryGetValue(filePath, out var item))
+            {
+                var isCreate = ToolDisplayHelper.IsFileCreateTool(toolName);
+                item = new FileChangeItem(filePath, isCreate, _showDiffAction);
+                grouped[filePath] = item;
+            }
+            item.AddEdit(oldText, newText);
+        }
+        foreach (var item in grouped.Values)
+            item.EnsureStatsForCreatedFile();
+        return grouped.Values.ToList();
     }
 
     private void EnsureCurrentToolGroup(StrataAiToolCallStatus initialStatus)

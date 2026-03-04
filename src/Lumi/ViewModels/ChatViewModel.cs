@@ -116,8 +116,8 @@ public partial class ChatViewModel : ObservableObject
     public event Action? ChatUpdated;
     public event Action<Guid, string>? ChatTitleChanged;
     public event Action? BrowserHideRequested;
-    /// <summary>Raised when a file-edit tool wants to show a diff in the preview island. Args: filePath, oldText, newText.</summary>
-    public event Action<string, string?, string?>? DiffShowRequested;
+    /// <summary>Raised when a file-edit tool wants to show a diff in the preview island.</summary>
+    public event Action<FileChangeItem>? DiffShowRequested;
     /// <summary>Raised to hide the diff preview island.</summary>
     public event Action? DiffHideRequested;
 
@@ -142,7 +142,7 @@ public partial class ChatViewModel : ObservableObject
 
         _transcriptBuilder = new TranscriptBuilder(
             dataStore,
-            showDiffAction: (path, old, @new) => DiffShowRequested?.Invoke(path, old, @new),
+            showDiffAction: item => DiffShowRequested?.Invoke(item),
             submitQuestionAnswerAction: SubmitQuestionAnswer,
             resendFromMessageAction: ResendFromMessageAsync);
         _transcriptBuilder.SetLiveTarget(_transcriptItems);

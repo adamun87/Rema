@@ -313,6 +313,7 @@ public static partial class ToolDisplayHelper
             var newText = root.TryGetProperty("newString", out var n) ? n.GetString()
                 : root.TryGetProperty("new_str", out var ns) ? ns.GetString()
                 : root.TryGetProperty("content", out var c) ? c.GetString()
+                : root.TryGetProperty("file_text", out var ft) ? ft.GetString()
                 : root.TryGetProperty("insert_text", out var it) ? it.GetString() : null;
 
             results.Add((filePath, oldText, newText));
