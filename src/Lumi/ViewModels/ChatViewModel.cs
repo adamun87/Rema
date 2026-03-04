@@ -1382,7 +1382,7 @@ public partial class ChatViewModel : ObservableObject
                 : null;
 
             // Restore session mode from chat
-            SetSessionModeSilent(chat.SessionMode ?? "autopilot");
+            SetSessionModeSilent(chat.SessionMode ?? "interactive");
 
             // Restore SDK agent selection
             SelectedSdkAgentName = chat.SdkAgentName;
