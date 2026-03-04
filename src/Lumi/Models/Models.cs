@@ -51,7 +51,7 @@ public class Chat : INotifyPropertyChanged
     public List<Guid> ActiveSkillIds { get; set; } = [];
     public List<string> ActiveMcpServerNames { get; set; } = [];
 
-    /// <summary>Persisted session mode: "interactive", "plan", or "autopilot".</summary>
+    /// <summary>Deprecated — session mode is no longer used. Kept for backward-compatible deserialization.</summary>
     public string? SessionMode { get; set; }
 
     /// <summary>Name of an SDK-discovered agent selected for this chat (not a Lumi agent).</summary>

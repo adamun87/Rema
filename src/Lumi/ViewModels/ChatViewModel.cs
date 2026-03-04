@@ -937,18 +937,8 @@ public partial class ChatViewModel : ObservableObject
                     // Acknowledged but no UI action needed currently
                     break;
 
-                case SessionModeChangedEvent modeChanged:
-                    Dispatcher.UIThread.Post(() =>
-                    {
-                        var newMode = modeChanged.Data.NewMode?.ToLowerInvariant() ?? "interactive";
-                        if (_activeSession == session)
-                            SetSessionModeSilent(newMode);
-                        if (chat.SessionMode != newMode)
-                        {
-                            chat.SessionMode = newMode;
-                            QueueSaveChat(chat, saveIndex: false);
-                        }
-                    });
+                case SessionModeChangedEvent:
+                    // Mode API removed — Lumi always uses the server default (interactive).
                     break;
 
                 case SessionPlanChangedEvent planChanged:
@@ -1381,9 +1371,6 @@ public partial class ChatViewModel : ObservableObject
                 ? _dataStore.Data.Agents.FirstOrDefault(a => a.Id == chat.AgentId.Value)
                 : null;
 
-            // Restore session mode from chat
-            SetSessionModeSilent(chat.SessionMode ?? "autopilot");
-
             // Restore SDK agent selection
             SelectedSdkAgentName = chat.SdkAgentName;
 
@@ -1471,8 +1458,7 @@ public partial class ChatViewModel : ObservableObject
         StatusText = "";
         ActiveAgent = null;
 
-        // Reset mode/plan/SDK agent state
-        SetSessionModeSilent("autopilot");
+        // Reset plan/SDK agent state
         HasPlan = false;
         PlanContent = null;
         IsPlanExpanded = false;
@@ -1540,7 +1526,6 @@ public partial class ChatViewModel : ObservableObject
                 ProjectId = _pendingProjectId ?? ActiveProjectFilterId,
                 ActiveSkillIds = new List<Guid>(ActiveSkillIds),
                 ActiveMcpServerNames = new List<string>(ActiveMcpServerNames),
-                SessionMode = SessionMode != "interactive" ? SessionMode : null,
                 SdkAgentName = SelectedSdkAgentName
             };
             _pendingProjectId = null;
@@ -1617,19 +1602,6 @@ public partial class ChatViewModel : ObservableObject
                 // Workspace agents (.github/agents/) are handled via system prompt injection
                 // in EnsureSessionAsync — no Agent.SelectAsync needed.
 
-                // Restore session mode if persisted on chat
-                if (!string.IsNullOrWhiteSpace(CurrentChat.SessionMode) && CurrentChat.SessionMode != "interactive" && _activeSession is not null)
-                {
-                    var sdkMode = CurrentChat.SessionMode switch
-                    {
-                        "plan" => GitHub.Copilot.SDK.Rpc.SessionModeGetResultMode.Plan,
-                        "autopilot" => GitHub.Copilot.SDK.Rpc.SessionModeGetResultMode.Autopilot,
-                        _ => GitHub.Copilot.SDK.Rpc.SessionModeGetResultMode.Interactive
-                    };
-                    try { await _copilotService.SetSessionModeAsync(_activeSession, sdkMode, cts.Token); }
-                    catch { /* best effort */ }
-                }
-
                 // Discover SDK agents in background (non-blocking)
                 _ = PopulateFromSessionAsync();
                 // Refresh quota in background
@@ -1637,10 +1609,6 @@ public partial class ChatViewModel : ObservableObject
             }
 
             sendOptions = new MessageOptions { Prompt = prompt };
-
-            // Set per-message mode if not the default interactive
-            if (!string.IsNullOrWhiteSpace(SessionMode) && SessionMode != "interactive")
-                sendOptions.Mode = SessionMode;
 
             // Inject newly activated skills as context in the message (explicit activation in existing chat)
             if (_pendingSkillInjections.Count > 0)

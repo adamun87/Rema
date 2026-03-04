@@ -35,14 +35,10 @@ public partial class ChatViewModel
     [ObservableProperty] private string? _agentBadgeText;
     [ObservableProperty] private string[]? _qualityLevels;
 
-    // ── Session Mode (Interactive / Plan / Autopilot) ──
-    private static readonly string[] ModeLabels = ["💬 Ask", "📋 Plan", "⚡ Agent"];
-    [ObservableProperty] private string _sessionMode = "autopilot";
-    [ObservableProperty] private object? _selectedMode;
+    // ── Plan (server may still generate plans) ──
     [ObservableProperty] private bool _hasPlan;
     [ObservableProperty] private string? _planContent;
     [ObservableProperty] private bool _isPlanExpanded;
-    public string[] AvailableModes => ModeLabels;
 
     // ── SDK-discovered agents ──
     [ObservableProperty] private string? _selectedSdkAgentName;
@@ -96,7 +92,6 @@ public partial class ChatViewModel
     private void InitializeMvvmUiState()
     {
         SendWithEnter = _dataStore.Data.Settings.SendWithEnter;
-        SetSessionModeSilent("autopilot"); // Default to Agent mode
 
         ActiveSkillChips.CollectionChanged += OnActiveSkillChipsCollectionChanged;
         ActiveMcpChips.CollectionChanged += OnActiveMcpChipsCollectionChanged;
@@ -712,86 +707,6 @@ public partial class ChatViewModel
     }
 
     // ── Session Mode commands ──
-
-    private bool _suppressModeSync;
-
-    partial void OnSelectedModeChanged(object? value)
-    {
-        if (_suppressModeSync || value is not string label) return;
-
-        var mode = label switch
-        {
-            "📋 Plan" => "plan",
-            "⚡ Agent" => "autopilot",
-            _ => "interactive"
-        };
-
-        if (SessionMode != mode)
-            SessionMode = mode;
-    }
-
-    partial void OnSessionModeChanged(string value)
-    {
-        if (_suppressModeSync) return;
-
-        // Sync the ComboBox label
-        var label = value switch
-        {
-            "plan" => ModeLabels[1],
-            "autopilot" => ModeLabels[2],
-            _ => ModeLabels[0]
-        };
-        if (SelectedMode is not string current || current != label)
-        {
-            _suppressModeSync = true;
-            try { SelectedMode = label; }
-            finally { _suppressModeSync = false; }
-        }
-
-        if (CurrentChat is not null)
-        {
-            CurrentChat.SessionMode = value;
-            QueueSaveChat(CurrentChat, saveIndex: false);
-        }
-
-        if (_activeSession is not null)
-        {
-            var sdkMode = value switch
-            {
-                "plan" => GitHub.Copilot.SDK.Rpc.SessionModeGetResultMode.Plan,
-                "autopilot" => GitHub.Copilot.SDK.Rpc.SessionModeGetResultMode.Autopilot,
-                _ => GitHub.Copilot.SDK.Rpc.SessionModeGetResultMode.Interactive
-            };
-            _ = SetSessionModeAsync(sdkMode);
-        }
-    }
-
-    /// <summary>Sets SessionMode without triggering the SDK call (for event-driven or load-time sync).</summary>
-    private void SetSessionModeSilent(string mode)
-    {
-        _suppressModeSync = true;
-        try
-        {
-            SessionMode = mode;
-            SelectedMode = mode switch
-            {
-                "plan" => ModeLabels[1],
-                "autopilot" => ModeLabels[2],
-                _ => ModeLabels[0]
-            };
-        }
-        finally { _suppressModeSync = false; }
-    }
-
-    private async Task SetSessionModeAsync(GitHub.Copilot.SDK.Rpc.SessionModeGetResultMode mode)
-    {
-        if (_activeSession is null) return;
-        try
-        {
-            await _copilotService.SetSessionModeAsync(_activeSession, mode);
-        }
-        catch { /* best effort */ }
-    }
 
     [RelayCommand]
     private async Task RefreshPlan()

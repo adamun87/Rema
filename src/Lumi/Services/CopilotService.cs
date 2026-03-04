@@ -133,23 +133,6 @@ public class CopilotService : IAsyncDisposable
         await session.Rpc.Agent.DeselectAsync(ct);
     }
 
-    // ── Mode API ──
-
-    /// <summary>Gets the current session mode (Interactive, Plan, or Autopilot).</summary>
-    public async Task<GitHub.Copilot.SDK.Rpc.SessionModeGetResultMode> GetSessionModeAsync(
-        CopilotSession session, CancellationToken ct = default)
-    {
-        var result = await session.Rpc.Mode.GetAsync(ct);
-        return result.Mode;
-    }
-
-    /// <summary>Sets the session mode (Interactive, Plan, or Autopilot).</summary>
-    public async Task SetSessionModeAsync(
-        CopilotSession session, GitHub.Copilot.SDK.Rpc.SessionModeGetResultMode mode, CancellationToken ct = default)
-    {
-        await session.Rpc.Mode.SetAsync(mode, ct);
-    }
-
     // ── Plan API ──
 
     /// <summary>Reads the current plan content from the session.</summary>
