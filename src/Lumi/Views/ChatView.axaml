@@ -32,6 +32,8 @@
     <!-- ── User message ─────────────────────────────── -->
     <DataTemplate DataType="vm:UserMessageItem">
       <sc:StrataChatMessage Role="User"
+                            HorizontalAlignment="Right"
+                            MaxWidth="560"
                             Author="{Binding Author}"
                             Timestamp="{Binding TimestampText}"
                             IsEditable="True"
