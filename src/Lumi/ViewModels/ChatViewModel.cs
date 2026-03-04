@@ -1676,11 +1676,11 @@ public partial class ChatViewModel : ObservableObject
         }
         catch (Exception ex) when (IsSessionNotFoundError(ex) && CurrentChat is not null && cts is not null && sendOptions is not null)
         {
-            // Session expired server-side — transparently recreate and retry once
+            // Stale session cache — evict and resume
             try
             {
                 StatusText = Loc.Status_Reconnecting;
-                InvalidateSession(CurrentChat);
+                InvalidateLocalSessionCache(CurrentChat);
                 await EnsureSessionAsync(CurrentChat, cts.Token);
                 await _activeSession!.SendAsync(sendOptions, cts.Token);
             }
@@ -1716,17 +1716,17 @@ public partial class ChatViewModel : ObservableObject
         }
     }
 
-    /// <summary>Checks whether an exception indicates the Copilot session no longer exists server-side.</summary>
+    /// <summary>Detects a stale cached session (the session ID is unknown to the current CLI process).</summary>
     private static bool IsSessionNotFoundError(Exception ex)
     {
         var msg = ex.InnerException?.Message ?? ex.Message;
         return msg.Contains("Session not found", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>Clears all cached state for a chat's Copilot session so it will be recreated on next use.</summary>
-    private void InvalidateSession(Chat chat)
+    /// <summary>Evicts a stale session from the local cache so EnsureSessionAsync will
+    /// re-establish it via ResumeSessionAsync, preserving server-side context.</summary>
+    private void InvalidateLocalSessionCache(Chat chat)
     {
-        chat.CopilotSessionId = null;
         _sessionCache.Remove(chat.Id);
         if (_sessionSubs.TryGetValue(chat.Id, out var sub))
         {
@@ -2206,13 +2206,13 @@ public partial class ChatViewModel : ObservableObject
         }
         catch (Exception ex) when (IsSessionNotFoundError(ex) && CurrentChat is not null)
         {
-            // Session expired server-side — transparently recreate and retry once
+            // Stale session cache — evict and resume
             try
             {
                 var cts = _ctsSources.GetValueOrDefault(CurrentChat.Id);
                 if (cts is null) return;
                 StatusText = Loc.Status_Reconnecting;
-                InvalidateSession(CurrentChat);
+                InvalidateLocalSessionCache(CurrentChat);
                 await EnsureSessionAsync(CurrentChat, cts.Token);
                 var resendPrompt2 = wasEdited
                     ? BuildEditedReplayPrompt(retainedContext, prompt)
