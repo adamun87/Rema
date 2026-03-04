@@ -1472,7 +1472,7 @@ public partial class ChatViewModel : ObservableObject
         ActiveAgent = null;
 
         // Reset mode/plan/SDK agent state
-        SetSessionModeSilent("interactive");
+        SetSessionModeSilent("autopilot");
         HasPlan = false;
         PlanContent = null;
         IsPlanExpanded = false;
@@ -1570,6 +1570,7 @@ public partial class ChatViewModel : ObservableObject
         UserMessageSent?.Invoke();
 
         CancellationTokenSource? cts = null;
+        MessageOptions? sendOptions = null;
         try
         {
             // Cancel any previous in-flight request for this chat
@@ -1635,7 +1636,7 @@ public partial class ChatViewModel : ObservableObject
                 _ = RefreshQuotaAsync();
             }
 
-            var sendOptions = new MessageOptions { Prompt = prompt };
+            sendOptions = new MessageOptions { Prompt = prompt };
 
             // Set per-message mode if not the default interactive
             if (!string.IsNullOrWhiteSpace(SessionMode) && SessionMode != "interactive")
@@ -1673,7 +1674,22 @@ public partial class ChatViewModel : ObservableObject
 
             await _activeSession!.SendAsync(sendOptions, cts.Token);
         }
-        catch (OperationCanceledException) when (!cts.IsCancellationRequested)
+        catch (Exception ex) when (IsSessionNotFoundError(ex) && CurrentChat is not null && cts is not null && sendOptions is not null)
+        {
+            // Session expired server-side — transparently recreate and retry once
+            try
+            {
+                StatusText = Loc.Status_Reconnecting;
+                InvalidateSession(CurrentChat);
+                await EnsureSessionAsync(CurrentChat, cts.Token);
+                await _activeSession!.SendAsync(sendOptions, cts.Token);
+            }
+            catch (Exception retryEx)
+            {
+                HandleSendError(retryEx, cts);
+            }
+        }
+        catch (OperationCanceledException) when (cts is not null && !cts.IsCancellationRequested)
         {
             // SDK cancelled internally (e.g. MCP server failure) — surface as error
             var errorText = string.Format(Loc.Status_Error, "Session cancelled unexpectedly. MCP servers may have failed to connect.");
@@ -1694,41 +1710,67 @@ public partial class ChatViewModel : ObservableObject
         {
             // Cancelled by StopGeneration — expected, no error to surface
         }
-        catch (Exception ex)
+        catch (Exception ex) when (cts is not null)
         {
-            // Include inner exception details to surface Copilot SDK errors
-            var message = ex.InnerException is not null
-                ? $"{ex.Message} → {ex.InnerException.Message}"
-                : ex.Message;
-            var errorText = string.Format(Loc.Status_Error, message);
-            StatusText = errorText;
-            IsBusy = false;
-            IsStreaming = false;
+            HandleSendError(ex, cts);
+        }
+    }
 
-            // Clean up typing indicator and tool groups
-            _transcriptBuilder.HideTypingIndicator();
-            _transcriptBuilder.CloseCurrentToolGroup();
+    /// <summary>Checks whether an exception indicates the Copilot session no longer exists server-side.</summary>
+    private static bool IsSessionNotFoundError(Exception ex)
+    {
+        var msg = ex.InnerException?.Message ?? ex.Message;
+        return msg.Contains("Session not found", StringComparison.OrdinalIgnoreCase);
+    }
 
-            if (CurrentChat is not null)
+    /// <summary>Clears all cached state for a chat's Copilot session so it will be recreated on next use.</summary>
+    private void InvalidateSession(Chat chat)
+    {
+        chat.CopilotSessionId = null;
+        _sessionCache.Remove(chat.Id);
+        if (_sessionSubs.TryGetValue(chat.Id, out var sub))
+        {
+            sub.Dispose();
+            _sessionSubs.Remove(chat.Id);
+        }
+        _activeSession = null;
+    }
+
+    /// <summary>Handles a send error by surfacing it as a status + error message in the transcript.</summary>
+    private void HandleSendError(Exception ex, CancellationTokenSource cts)
+    {
+        if (ex is OperationCanceledException && cts.IsCancellationRequested)
+            return; // Cancelled by StopGeneration — expected
+
+        var message = ex.InnerException is not null
+            ? $"{ex.Message} → {ex.InnerException.Message}"
+            : ex.Message;
+        var errorText = string.Format(Loc.Status_Error, message);
+        StatusText = errorText;
+        IsBusy = false;
+        IsStreaming = false;
+
+        _transcriptBuilder.HideTypingIndicator();
+        _transcriptBuilder.CloseCurrentToolGroup();
+
+        if (CurrentChat is not null)
+        {
+            var runtime = GetOrCreateRuntimeState(CurrentChat.Id);
+            runtime.IsBusy = false;
+            runtime.IsStreaming = false;
+            runtime.StatusText = StatusText;
+
+            var errorMsg = new ChatMessage
             {
-                var runtime = GetOrCreateRuntimeState(CurrentChat.Id);
-                runtime.IsBusy = false;
-                runtime.IsStreaming = false;
-                runtime.StatusText = StatusText;
-
-                // Surface the error as a visible chat message
-                var errorMsg = new ChatMessage
-                {
-                    Role = "error",
-                    Author = Loc.Author_Lumi,
-                    Content = errorText
-                };
-                CurrentChat.Messages.Add(errorMsg);
-                var msgVm = new ChatMessageViewModel(errorMsg);
-                Messages.Add(msgVm);
-                _transcriptBuilder.ProcessMessageToTranscript(msgVm);
-                ScrollToEndRequested?.Invoke();
-            }
+                Role = "error",
+                Author = Loc.Author_Lumi,
+                Content = errorText
+            };
+            CurrentChat.Messages.Add(errorMsg);
+            var msgVm = new ChatMessageViewModel(errorMsg);
+            Messages.Add(msgVm);
+            _transcriptBuilder.ProcessMessageToTranscript(msgVm);
+            ScrollToEndRequested?.Invoke();
         }
     }
 
@@ -2162,41 +2204,33 @@ public partial class ChatViewModel : ObservableObject
 
             await _activeSession!.SendAsync(new MessageOptions { Prompt = resendPrompt }, cts.Token);
         }
+        catch (Exception ex) when (IsSessionNotFoundError(ex) && CurrentChat is not null)
+        {
+            // Session expired server-side — transparently recreate and retry once
+            try
+            {
+                var cts = _ctsSources.GetValueOrDefault(CurrentChat.Id);
+                if (cts is null) return;
+                StatusText = Loc.Status_Reconnecting;
+                InvalidateSession(CurrentChat);
+                await EnsureSessionAsync(CurrentChat, cts.Token);
+                var resendPrompt2 = wasEdited
+                    ? BuildEditedReplayPrompt(retainedContext, prompt)
+                    : prompt;
+                await _activeSession!.SendAsync(new MessageOptions { Prompt = resendPrompt2 }, cts.Token);
+            }
+            catch (Exception retryEx)
+            {
+                HandleSendError(retryEx, _ctsSources.GetValueOrDefault(CurrentChat.Id)!);
+            }
+        }
         catch (OperationCanceledException)
         {
             // Cancelled by StopGeneration — expected
         }
         catch (Exception ex)
         {
-            var errorText = string.Format(Loc.Status_Error, ex.Message);
-            StatusText = errorText;
-            IsBusy = false;
-            IsStreaming = false;
-
-            // Clean up typing indicator and tool groups
-            _transcriptBuilder.HideTypingIndicator();
-            _transcriptBuilder.CloseCurrentToolGroup();
-
-            if (CurrentChat is not null)
-            {
-                var runtime = GetOrCreateRuntimeState(CurrentChat.Id);
-                runtime.IsBusy = false;
-                runtime.IsStreaming = false;
-                runtime.StatusText = StatusText;
-
-                // Surface the error as a visible chat message
-                var errorMsg = new ChatMessage
-                {
-                    Role = "error",
-                    Author = Loc.Author_Lumi,
-                    Content = errorText
-                };
-                CurrentChat.Messages.Add(errorMsg);
-                var msgVm = new ChatMessageViewModel(errorMsg);
-                Messages.Add(msgVm);
-                _transcriptBuilder.ProcessMessageToTranscript(msgVm);
-                ScrollToEndRequested?.Invoke();
-            }
+            HandleSendError(ex, _ctsSources.GetValueOrDefault(CurrentChat.Id)!);
         }
     }
 
