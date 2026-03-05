@@ -133,7 +133,8 @@ public class TranscriptBuilder
         };
 
         // Invisible tool calls
-        if (toolName is "stop_powershell" or "write_powershell" or "read_powershell")
+        if (toolName is "stop_powershell" or "write_powershell" or "read_powershell"
+            or "task_complete" or "read_agent" or "list_agents")
             return;
 
         // Question card — rendered as QuestionItem
@@ -303,6 +304,8 @@ public class TranscriptBuilder
         {
             InputParameters = ToolDisplayHelper.FormatToolArgsFriendly(toolName, msgVm.Content),
             MoreInfo = friendlyInfo,
+            IsCompact = ToolDisplayHelper.IsCompactEligible(toolName)
+                && initialStatus == StrataAiToolCallStatus.Completed,
         };
 
         // File-edit tools: collect diff data (skip failed tools — the edit didn't apply)
@@ -471,15 +474,28 @@ public class TranscriptBuilder
     {
         if (_currentToolGroup is null) return;
 
+        var target = _rebuildTarget ?? (IList<TranscriptItem>?)_liveTarget;
+
         if (_currentToolGroupCount == 0)
         {
-            if (_rebuildTarget is not null)
-                _rebuildTarget.Remove(_currentToolGroup);
-            else
-                _liveTarget?.Remove(_currentToolGroup);
+            target?.Remove(_currentToolGroup);
         }
         else
+        {
             UpdateToolGroupLabel();
+
+            // Flatten: replace a completed single-tool group with a SingleToolItem
+            if (_currentToolGroupCount == 1 && !_currentToolGroup.IsActive
+                && _currentToolGroup.ToolCalls.Count == 1 && target is not null)
+            {
+                var idx = target.IndexOf(_currentToolGroup);
+                if (idx >= 0)
+                {
+                    var single = new SingleToolItem(_currentToolGroup.ToolCalls[0]);
+                    target[idx] = single;
+                }
+            }
+        }
 
         _currentToolGroup = null;
         _currentToolGroupCount = 0;
@@ -575,6 +591,14 @@ public class TranscriptBuilder
                 ? string.Format(Loc.ToolGroup_MetaFailed, completedCount, toolCount, failedCount)
                 : string.Format(Loc.ToolGroup_MetaDone, completedCount, toolCount);
             if (IsRebuildingTranscript) group.IsExpanded = false;
+
+            // Live flatten: single-tool group just completed → replace with SingleToolItem
+            if (toolCount == 1 && group.ToolCalls.Count == 1 && !IsRebuildingTranscript && _liveTarget is not null)
+            {
+                var idx = _liveTarget.IndexOf(group);
+                if (idx >= 0)
+                    _liveTarget[idx] = new SingleToolItem(group.ToolCalls[0]);
+            }
         }
         else
         {
@@ -633,7 +657,7 @@ public class TranscriptBuilder
         }
     }
 
-    /// <summary>Collapses consecutive tool groups + reasoning before an assistant message into a TurnSummaryItem.</summary>
+    /// <summary>Collapses consecutive tool groups + reasoning + single tools before an assistant message into a TurnSummaryItem.</summary>
     private void CollapseCompletedTurnBlocks(AssistantMessageItem assistantItem)
     {
         var target = _rebuildTarget ?? (IList<TranscriptItem>?)_liveTarget;
@@ -644,7 +668,7 @@ public class TranscriptBuilder
         var blocksToMerge = new List<TranscriptItem>();
         for (int i = idx - 1; i >= 0; i--)
         {
-            if (target[i] is ToolGroupItem or ReasoningItem)
+            if (target[i] is ToolGroupItem or ReasoningItem or SingleToolItem)
                 blocksToMerge.Add(target[i]);
             else
                 break;
@@ -656,11 +680,18 @@ public class TranscriptBuilder
         int totalToolCalls = 0, failedCount = 0;
         bool hasReasoning = false, hasTodoProgress = false;
         string? todoMeta = null;
+        string? lastIntentLabel = null;
 
         foreach (var block in blocksToMerge)
         {
             if (block is ToolGroupItem tg)
             {
+                // Use the group's label as intent if it's not a generic "Working/Finished" label
+                if (!string.IsNullOrWhiteSpace(tg.Label)
+                    && !tg.Label.StartsWith(Loc.ToolGroup_Working.TrimEnd('\u2026', '.'), StringComparison.CurrentCulture)
+                    && !tg.Label.StartsWith(Loc.ToolGroup_Finished, StringComparison.CurrentCulture))
+                    lastIntentLabel = tg.Label;
+
                 foreach (var call in tg.ToolCalls)
                 {
                     if (call is ToolCallItem tc)
@@ -680,12 +711,25 @@ public class TranscriptBuilder
                     }
                 }
             }
+            else if (block is SingleToolItem st)
+            {
+                totalToolCalls++;
+                if (st.Inner is ToolCallItem stc && stc.Status == StrataAiToolCallStatus.Failed) failedCount++;
+                else if (st.Inner is TerminalPreviewItem stp && stp.Status == StrataAiToolCallStatus.Failed) failedCount++;
+            }
             else hasReasoning = true;
         }
 
         string label;
         if (hasTodoProgress)
             label = !string.IsNullOrWhiteSpace(todoMeta) ? $"{Loc.ToolTodo_Title} · {todoMeta}" : Loc.ToolTodo_Title;
+        else if (lastIntentLabel is not null)
+        {
+            // Use the intent-based label from report_intent
+            label = hasReasoning ? $"{lastIntentLabel} · {Loc.TurnSummary_Reasoned.ToLowerInvariant()}" : lastIntentLabel;
+            if (totalToolCalls > 1)
+                label += $" · {string.Format(Loc.ToolGroup_FinishedCount, totalToolCalls)}";
+        }
         else if (hasReasoning && totalToolCalls > 0)
             label = totalToolCalls == 1 ? Loc.TurnSummary_ReasonedAndOneAction : string.Format(Loc.TurnSummary_ReasonedAndActions, totalToolCalls);
         else if (totalToolCalls > 0)

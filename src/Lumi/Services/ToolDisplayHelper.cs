@@ -31,6 +31,9 @@ public static partial class ToolDisplayHelper
         "explain_code" => "📖",
         "analyze_project" => "🏗",
         "update_todo" or "manage_todo_list" => "✅",
+        "sql" => "🗃",
+        "task" => "🤖",
+        _ when toolName.StartsWith("agent:", StringComparison.Ordinal) => "🤖",
         _ => "⚙"
     };
 
@@ -43,6 +46,18 @@ public static partial class ToolDisplayHelper
     public static bool IsFileCreateTool(string toolName)
         => toolName is "create" or "write_file" or "create_file" or "write"
             or "save_file" or "create_and_write_file";
+
+    /// <summary>Tools that produce no meaningful expandable detail and can be rendered as compact pills.</summary>
+    public static bool IsCompactEligible(string toolName)
+        => toolName is "view" or "read_file" or "read"
+            or "grep" or "glob"
+            or "recall_memory"
+            or "report_intent"
+            or "announce_file" or "fetch_skill"
+            or "ui_list_windows" or "ui_read"
+            || toolName.StartsWith("DotSight-", StringComparison.Ordinal)
+            || toolName.StartsWith("Avalonia-MCP-", StringComparison.Ordinal)
+            || toolName.StartsWith("avalonia-mcp-", StringComparison.Ordinal);
 
     /// <summary>
     /// Maps a tool call to a user-friendly display name and summary line.
@@ -142,10 +157,27 @@ public static partial class ToolDisplayHelper
                 return (Loc.Tool_ExplainingCode, ExtractJsonField(argsJson, "language"));
             case "analyze_project":
                 return (Loc.Tool_AnalyzingProject, null);
+            case "sql":
+                return (Loc.Tool_RunningQuery, ExtractJsonField(argsJson, "description"));
+            case "task":
+            {
+                var agentType = ExtractJsonField(argsJson, "agent_type") ?? "agent";
+                var desc = ExtractJsonField(argsJson, "description");
+                return (string.Format(Loc.Tool_RunningAgent, agentType), desc);
+            }
             default:
+            {
+                // agent:explore, agent:task, agent:Coding Lumi, etc.
+                if (toolName.StartsWith("agent:", StringComparison.Ordinal))
+                {
+                    var agentName = toolName["agent:".Length..];
+                    var desc = ExtractJsonField(argsJson, "description");
+                    return (string.Format(Loc.Tool_RunningAgent, agentName), desc);
+                }
                 var displayName = author ?? FormatToolNameFriendly(toolName);
                 var info = ExtractToolSummary(argsJson);
                 return (displayName, info);
+            }
         }
     }
 
@@ -155,6 +187,10 @@ public static partial class ToolDisplayHelper
     public static string? FormatToolArgsFriendly(string toolName, string? argsJson)
     {
         if (string.IsNullOrWhiteSpace(argsJson)) return null;
+
+        // Agent tools have a plain-text description as content, not JSON args
+        if (toolName.StartsWith("agent:", StringComparison.Ordinal))
+            return null;
 
         try
         {
@@ -186,6 +222,18 @@ public static partial class ToolDisplayHelper
                 {
                     var cmd = GetString(root, "command");
                     return !string.IsNullOrEmpty(cmd) ? $"```powershell\n{cmd.Trim()}\n```" : null;
+                }
+                case "sql":
+                {
+                    var query = GetString(root, "query");
+                    return !string.IsNullOrEmpty(query) ? $"```sql\n{query.Trim()}\n```" : null;
+                }
+                case "task":
+                {
+                    var prompt = GetString(root, "prompt");
+                    if (prompt is null) break;
+                    var truncated = prompt.Length > 200 ? prompt[..197] + "..." : prompt;
+                    return $"**Prompt:** {truncated}";
                 }
                 case "report_intent":
                     return GetString(root, "intent") is { } intent ? $"Intent: {intent}" : null;

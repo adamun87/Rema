@@ -228,6 +228,71 @@ public partial class ToolGroupItem : TranscriptItem
     }
 }
 
+// ── Single tool (flattened — rendered as StrataThink pill) ─
+
+public partial class SingleToolItem : TranscriptItem
+{
+    public ToolCallItemBase Inner { get; }
+
+    [ObservableProperty] private bool _isExpanded;
+
+    public string Label => Inner switch
+    {
+        ToolCallItem tc => tc.ToolName,
+        TerminalPreviewItem tp => tp.ToolName,
+        TodoProgressItem todo => todo.ToolName,
+        _ => ""
+    };
+
+    public bool IsActive => Inner switch
+    {
+        ToolCallItem tc => tc.Status == StrataAiToolCallStatus.InProgress,
+        TerminalPreviewItem tp => tp.Status == StrataAiToolCallStatus.InProgress,
+        TodoProgressItem todo => todo.Status == StrataAiToolCallStatus.InProgress,
+        _ => false
+    };
+
+    public string? Meta
+    {
+        get
+        {
+            double ms = Inner switch
+            {
+                ToolCallItem tc => tc.DurationMs,
+                TerminalPreviewItem tp => tp.DurationMs,
+                _ => 0
+            };
+            if (ms <= 0) return null;
+            return ms >= 1000 ? $"{ms / 1000:F1}s" : $"{ms:F0} ms";
+        }
+    }
+
+    public string? InputParameters => Inner switch
+    {
+        ToolCallItem tc => tc.InputParameters,
+        TodoProgressItem todo => todo.InputParameters,
+        _ => null
+    };
+
+    public string? MoreInfo => Inner switch
+    {
+        ToolCallItem tc => tc.MoreInfo,
+        _ => null
+    };
+
+    // Terminal-specific
+    public string? TerminalCommand => Inner is TerminalPreviewItem tp ? tp.Command : null;
+    public string? TerminalOutput => Inner is TerminalPreviewItem tp && !string.IsNullOrWhiteSpace(tp.Output) ? tp.Output : null;
+    public bool IsTerminal => Inner is TerminalPreviewItem;
+
+    public bool HasContent => !string.IsNullOrWhiteSpace(InputParameters) || !string.IsNullOrWhiteSpace(MoreInfo);
+
+    public bool HasDiff => Inner is ToolCallItem { HasDiff: true };
+    public ICommand? ShowDiffCommand => Inner is ToolCallItem tc ? tc.ShowDiffCommand : null;
+
+    public SingleToolItem(ToolCallItemBase inner) => Inner = inner;
+}
+
 // ── Base for items inside a tool group ───────────────
 
 public abstract partial class ToolCallItemBase : ObservableObject;
@@ -243,6 +308,7 @@ public partial class ToolCallItem : ToolCallItemBase
     [ObservableProperty] private string? _moreInfo;
     [ObservableProperty] private double _durationMs;
     [ObservableProperty] private bool _hasDiff;
+    [ObservableProperty] private bool _isCompact;
 
     public string? DiffFilePath { get; set; }
     public string? DiffToolName { get; set; }
