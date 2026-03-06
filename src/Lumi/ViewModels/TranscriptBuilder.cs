@@ -19,7 +19,6 @@ public class TranscriptBuilder
     private readonly Action<string, string> _submitQuestionAnswerAction;
     private readonly Func<ChatMessage, bool, Task> _resendFromMessageAction;
 
-    // ── Transcript building state ──
     private ToolGroupItem? _currentToolGroup;
     private int _currentToolGroupCount;
     private TodoProgressItem? _currentTodoToolCall;
@@ -27,22 +26,22 @@ public class TranscriptBuilder
     private int _todoUpdateCount;
     private string? _currentIntentText;
     private TypingIndicatorItem? _typingIndicator;
+    private TranscriptTurnControl? _typingTurn;
+    private TranscriptTurnControl? _currentTurn;
     private readonly Dictionary<string, TerminalPreviewItem> _terminalPreviewsByToolCallId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, long> _toolStartTimes = [];
     public List<FileAttachmentItem> PendingToolFileChips { get; } = [];
     public List<(string FilePath, string ToolName, string? OldText, string? NewText)> PendingFileEdits { get; } = [];
-    private IList<TranscriptItem>? _rebuildTarget;
+    private IList<TranscriptTurnControl>? _rebuildTarget;
     public bool IsRebuildingTranscript { get; set; }
 
     public HashSet<string> ShownFileChips { get; } = new(StringComparer.OrdinalIgnoreCase);
     public List<SkillReference> PendingFetchedSkillRefs { get; } = [];
     private PlanCardItem? _pendingPlanCard;
 
-    /// <summary>Sets the live collection that the builder operates on for non-rebuild operations.</summary>
-    public void SetLiveTarget(ObservableCollection<TranscriptItem> target) => _liveTarget = target;
+    public void SetLiveTarget(ObservableCollection<TranscriptTurnControl> target) => _liveTarget = target;
 
-    /// <summary>The live transcript collection returned by the last <see cref="Rebuild"/> call.</summary>
-    private ObservableCollection<TranscriptItem>? _liveTarget;
+    private ObservableCollection<TranscriptTurnControl>? _liveTarget;
 
     private sealed class TodoProgressState
     {
@@ -64,15 +63,11 @@ public class TranscriptBuilder
         _resendFromMessageAction = resendFromMessageAction;
     }
 
-    /// <summary>
-    /// Rebuilds transcript items from the given messages collection.
-    /// Returns a new <see cref="ObservableCollection{TranscriptItem}"/> and stores it as the live target.
-    /// </summary>
-    public ObservableCollection<TranscriptItem> Rebuild(IEnumerable<ChatMessageViewModel> messages)
+    public ObservableCollection<TranscriptTurnControl> Rebuild(IEnumerable<ChatMessageViewModel> messages)
     {
         IsRebuildingTranscript = true;
-        var tempItems = new List<TranscriptItem>();
-        _rebuildTarget = tempItems;
+        var tempTurns = new List<TranscriptTurnControl>();
+        _rebuildTarget = tempTurns;
         ResetState();
 
         foreach (var msg in messages)
@@ -82,15 +77,15 @@ public class TranscriptBuilder
         FlushPendingFileEdits();
         FlushPendingPlanCard();
         CollapseAllCompletedTurns();
+        FinalizeCurrentTurn();
 
         _rebuildTarget = null;
-        var result = new ObservableCollection<TranscriptItem>(tempItems);
+        var result = new ObservableCollection<TranscriptTurnControl>(tempTurns.Where(static turn => turn.Items.Count > 0));
         _liveTarget = result;
         IsRebuildingTranscript = false;
         return result;
     }
 
-    /// <summary>Resets all transcript building state.</summary>
     public void ResetState()
     {
         _currentToolGroup = null;
@@ -100,6 +95,8 @@ public class TranscriptBuilder
         _todoUpdateCount = 0;
         _currentIntentText = null;
         _typingIndicator = null;
+        _typingTurn = null;
+        _currentTurn = null;
         _pendingPlanCard = null;
         _terminalPreviewsByToolCallId.Clear();
         _toolStartTimes.Clear();
@@ -109,7 +106,6 @@ public class TranscriptBuilder
         ShownFileChips.Clear();
     }
 
-    /// <summary>Processes a single ChatMessageViewModel into the appropriate TranscriptItem(s).</summary>
     public void ProcessMessageToTranscript(ChatMessageViewModel msgVm)
     {
         var showToolCalls = _dataStore.Data.Settings.ShowToolCalls;
@@ -128,6 +124,8 @@ public class TranscriptBuilder
     private void ProcessToolMessage(ChatMessageViewModel msgVm, bool showToolCalls, bool showTimestamps)
     {
         var toolName = msgVm.ToolName ?? "";
+        var toolStableIdSeed = msgVm.Message.ToolCallId ?? msgVm.Message.Id.ToString();
+        var turnStableId = TurnStableIdFor($"tool:{toolStableIdSeed}");
         var initialStatus = msgVm.ToolStatus switch
         {
             "Completed" => StrataAiToolCallStatus.Completed,
@@ -135,12 +133,10 @@ public class TranscriptBuilder
             _ => StrataAiToolCallStatus.InProgress
         };
 
-        // Invisible tool calls
         if (toolName is "stop_powershell" or "write_powershell" or "read_powershell"
             or "task_complete" or "read_agent" or "list_agents")
             return;
 
-        // Question card — rendered as QuestionItem
         if (toolName is "ask_question")
         {
             if (IsRebuildingTranscript)
@@ -148,7 +144,7 @@ public class TranscriptBuilder
                 var question = ToolDisplayHelper.ExtractJsonField(msgVm.Content, "question") ?? "";
                 var opts = ToolDisplayHelper.ExtractJsonField(msgVm.Content, "options") ?? "";
                 var answer = msgVm.Message.ToolOutput;
-                if (!string.IsNullOrEmpty(answer) && answer.StartsWith("User answered: "))
+                if (!string.IsNullOrEmpty(answer) && answer.StartsWith("User answered: ", StringComparison.Ordinal))
                     answer = answer["User answered: ".Length..];
 
                 CloseCurrentToolGroup();
@@ -158,13 +154,13 @@ public class TranscriptBuilder
                     card.SelectedAnswer = answer;
                     card.IsAnswered = true;
                 }
-                InsertBeforeTypingIndicator(card);
+
+                AppendToCurrentTurn(card, TurnStableIdFor($"question:{msgVm.Message.Id}"));
             }
-            // Live question cards are created via the QuestionAsked event
+
             return;
         }
 
-        // announce_file — collect for file chip display
         if (toolName == "announce_file")
         {
             var filePath = ToolDisplayHelper.ExtractJsonField(msgVm.Content, "filePath");
@@ -173,7 +169,6 @@ public class TranscriptBuilder
             return;
         }
 
-        // fetch_skill — collect skill reference
         if (toolName == "fetch_skill")
         {
             var skillName = ToolDisplayHelper.ExtractJsonField(msgVm.Content, "name");
@@ -189,7 +184,6 @@ public class TranscriptBuilder
             return;
         }
 
-        // report_intent — capture intent text for group label
         if (toolName == "report_intent")
         {
             var intentText = ToolDisplayHelper.ExtractJsonField(msgVm.Content, "intent");
@@ -198,22 +192,23 @@ public class TranscriptBuilder
                 _currentIntentText = intentText;
                 if (showToolCalls)
                 {
-                    EnsureCurrentToolGroup(initialStatus);
+                    EnsureCurrentToolGroup(initialStatus, toolStableIdSeed, turnStableId);
                     UpdateToolGroupLabel();
                 }
             }
             return;
         }
 
-        // Todo progress
         if (toolName is "update_todo" or "manage_todo_list")
         {
-            if (!showToolCalls) return;
+            if (!showToolCalls)
+                return;
 
             var steps = ToolDisplayHelper.ParseTodoSteps(msgVm.Content);
-            if (steps.Count == 0) return;
+            if (steps.Count == 0)
+                return;
 
-            EnsureCurrentToolGroup(initialStatus);
+            EnsureCurrentToolGroup(initialStatus, toolStableIdSeed, turnStableId);
             _todoUpdateCount++;
             UpsertTodoProgressToolCall(steps, msgVm.ToolStatus ?? "InProgress");
 
@@ -241,14 +236,17 @@ public class TranscriptBuilder
                                 _ => StrataAiToolCallStatus.InProgress
                             };
                         }
+
                         UpdateToolGroupState(capturedGroup);
                     }
                 };
             }
+
             return;
         }
 
-        if (!showToolCalls) return;
+        if (!showToolCalls)
+            return;
 
         var (friendlyName, friendlyInfo) = ToolDisplayHelper.GetFriendlyToolDisplay(toolName, msgVm.Author, msgVm.Content);
         friendlyName = $"{ToolDisplayHelper.GetToolGlyph(toolName)} {friendlyName}";
@@ -257,11 +255,10 @@ public class TranscriptBuilder
         if (toolCallId is not null && initialStatus == StrataAiToolCallStatus.InProgress)
             _toolStartTimes[toolCallId] = Stopwatch.GetTimestamp();
 
-        // Powershell → terminal preview
         if (toolName == "powershell")
         {
             var command = ToolDisplayHelper.ExtractJsonField(msgVm.Content, "command") ?? "";
-            var termPreview = new TerminalPreviewItem(friendlyName, command, initialStatus)
+            var termPreview = new TerminalPreviewItem(friendlyName, command, initialStatus, $"terminal:{toolStableIdSeed}")
             {
                 Output = msgVm.Message.ToolOutput ?? string.Empty,
                 IsExpanded = !IsRebuildingTranscript,
@@ -269,14 +266,16 @@ public class TranscriptBuilder
             if (toolCallId is not null)
                 _terminalPreviewsByToolCallId[toolCallId] = termPreview;
 
-            EnsureCurrentToolGroup(initialStatus);
+            EnsureCurrentToolGroup(initialStatus, toolStableIdSeed, turnStableId);
             var capturedTermGroup = _currentToolGroup!;
 
             if (!IsRebuildingTranscript)
             {
                 msgVm.PropertyChanged += (_, args) =>
                 {
-                    if (args.PropertyName != nameof(ChatMessageViewModel.ToolStatus)) return;
+                    if (args.PropertyName != nameof(ChatMessageViewModel.ToolStatus))
+                        return;
+
                     termPreview.Status = msgVm.ToolStatus switch
                     {
                         "Completed" => StrataAiToolCallStatus.Completed,
@@ -289,9 +288,11 @@ public class TranscriptBuilder
                         termPreview.DurationMs = Stopwatch.GetElapsedTime(startTick).TotalMilliseconds;
                         _toolStartTimes.Remove(toolCallId);
                     }
+
                     UpdateToolGroupState(capturedTermGroup);
                 };
             }
+
             _currentToolGroup!.ToolCalls.Add(termPreview);
             _currentToolGroupCount++;
 
@@ -302,8 +303,7 @@ public class TranscriptBuilder
             return;
         }
 
-        // Regular tool call
-        var toolCall = new ToolCallItem(friendlyName, initialStatus)
+        var toolCall = new ToolCallItem(friendlyName, initialStatus, $"tool:{toolStableIdSeed}")
         {
             InputParameters = ToolDisplayHelper.FormatToolArgsFriendly(toolName, msgVm.Content),
             MoreInfo = friendlyInfo,
@@ -311,31 +311,32 @@ public class TranscriptBuilder
                 && initialStatus == StrataAiToolCallStatus.Completed,
         };
 
-        // File-edit tools: collect diff data (skip failed tools — the edit didn't apply)
         if (ToolDisplayHelper.IsFileEditTool(toolName) && initialStatus != StrataAiToolCallStatus.Failed)
         {
             var diffs = ToolDisplayHelper.ExtractAllDiffs(toolName, msgVm.Content);
-            foreach (var d in diffs)
-                PendingFileEdits.Add((d.FilePath, toolName, d.OldText, d.NewText));
+            foreach (var diff in diffs)
+                PendingFileEdits.Add((diff.FilePath, toolName, diff.OldText, diff.NewText));
 
             if (diffs.Count > 0)
             {
                 toolCall.HasDiff = true;
                 toolCall.DiffFilePath = diffs[0].FilePath;
                 toolCall.DiffToolName = toolName;
-                toolCall.DiffEdits = diffs.Select(d => (d.OldText, d.NewText)).ToList();
+                toolCall.DiffEdits = diffs.Select(static diff => (diff.OldText, diff.NewText)).ToList();
                 toolCall.ShowFileChangeAction = _showDiffAction;
             }
         }
 
-        EnsureCurrentToolGroup(initialStatus);
+        EnsureCurrentToolGroup(initialStatus, toolStableIdSeed, turnStableId);
         var capturedToolGroup = _currentToolGroup!;
 
         if (!IsRebuildingTranscript)
         {
             msgVm.PropertyChanged += (_, args) =>
             {
-                if (args.PropertyName != nameof(ChatMessageViewModel.ToolStatus)) return;
+                if (args.PropertyName != nameof(ChatMessageViewModel.ToolStatus))
+                    return;
+
                 toolCall.Status = msgVm.ToolStatus switch
                 {
                     "Completed" => StrataAiToolCallStatus.Completed,
@@ -348,12 +349,14 @@ public class TranscriptBuilder
                     toolCall.DurationMs = Stopwatch.GetElapsedTime(startTick).TotalMilliseconds;
                     _toolStartTimes.Remove(toolCallId);
                 }
-                // Remove pending file edits if this file-edit tool failed
+
                 if (toolCall.Status == StrataAiToolCallStatus.Failed && toolCall.HasDiff && toolCall.DiffFilePath is not null)
                     PendingFileEdits.RemoveAll(fe => fe.FilePath == toolCall.DiffFilePath);
+
                 UpdateToolGroupState(capturedToolGroup);
             };
         }
+
         _currentToolGroup!.ToolCalls.Add(toolCall);
         _currentToolGroupCount++;
         UpdateToolGroupLabel();
@@ -362,10 +365,10 @@ public class TranscriptBuilder
     private void ProcessReasoningMessage(ChatMessageViewModel msgVm, bool showReasoning, bool expandWhileStreaming)
     {
         CloseCurrentToolGroup();
-        if (!showReasoning) return;
+        if (!showReasoning)
+            return;
 
-        var item = new ReasoningItem(msgVm, expandWhileStreaming);
-        InsertBeforeTypingIndicator(item);
+        AppendToCurrentTurn(new ReasoningItem(msgVm, expandWhileStreaming), TurnStableIdFor($"reasoning:{msgVm.Message.Id}"));
     }
 
     private void ProcessChatMessage(ChatMessageViewModel msgVm, bool showTimestamps)
@@ -374,73 +377,65 @@ public class TranscriptBuilder
 
         if (msgVm.Role == "user")
         {
-            // Flush any pending file edits from the previous turn
             FlushPendingFileEdits();
             FlushPendingPlanCard();
-            var item = new UserMessageItem(msgVm, showTimestamps, (msg, edited) => _ = _resendFromMessageAction(msg, edited));
-            InsertBeforeTypingIndicator(item);
+            FinalizeCurrentTurn();
+
+            var userItem = new UserMessageItem(msgVm, showTimestamps, (msg, edited) => _ = _resendFromMessageAction(msg, edited));
+            AppendToCurrentTurn(userItem, TurnStableIdFor($"message:{msgVm.Message.Id}"));
+            return;
         }
-        else if (msgVm.Role == "error")
+
+        if (msgVm.Role == "error")
         {
-            var item = new ErrorMessageItem(msgVm, showTimestamps);
-            InsertBeforeTypingIndicator(item);
+            AppendToCurrentTurn(new ErrorMessageItem(msgVm, showTimestamps), TurnStableIdFor($"message:{msgVm.Message.Id}"));
+            return;
         }
-        else // assistant or system
+
+        var assistantItem = new AssistantMessageItem(msgVm, showTimestamps);
+        if (!msgVm.IsStreaming && (PendingToolFileChips.Count > 0 || msgVm.Message.Sources.Count > 0 || msgVm.Message.ActiveSkills.Count > 0))
         {
-            var item = new AssistantMessageItem(msgVm, showTimestamps);
+            assistantItem.ApplyExtras(PendingToolFileChips.Count > 0 ? PendingToolFileChips.ToList() : null);
+            PendingToolFileChips.Clear();
+            PendingFetchedSkillRefs.Clear();
+        }
 
-            // For completed messages during rebuild, apply extras (but NOT file changes — those flush at end of turn)
-            if (!msgVm.IsStreaming && (PendingToolFileChips.Count > 0
-                || msgVm.Message.Sources.Count > 0 || msgVm.Message.ActiveSkills.Count > 0))
+        var turn = EnsureCurrentTurn(TurnStableIdFor($"message:{msgVm.Message.Id}"));
+        turn.Items.Add(assistantItem);
+
+        if (msgVm.IsStreaming)
+        {
+            var capturedTurn = turn;
+            var capturedItem = assistantItem;
+            msgVm.PropertyChanged += (_, args) =>
             {
-                item.ApplyExtras(
-                    PendingToolFileChips.Count > 0 ? PendingToolFileChips.ToList() : null);
-                PendingToolFileChips.Clear();
-                PendingFetchedSkillRefs.Clear();
-            }
-
-            InsertBeforeTypingIndicator(item);
-
-            // For streaming messages, apply extras when streaming ends
-            if (msgVm.IsStreaming)
-            {
-                var capturedItem = item;
-                msgVm.PropertyChanged += (_, args) =>
+                if (args.PropertyName == nameof(ChatMessageViewModel.IsStreaming) && !msgVm.IsStreaming)
                 {
-                    if (args.PropertyName == nameof(ChatMessageViewModel.IsStreaming) && !msgVm.IsStreaming)
-                    {
-                        capturedItem.ApplyExtras(
-                            PendingToolFileChips.Count > 0 ? PendingToolFileChips.ToList() : null);
-                        PendingToolFileChips.Clear();
-                        PendingFetchedSkillRefs.Clear();
+                    capturedItem.ApplyExtras(PendingToolFileChips.Count > 0 ? PendingToolFileChips.ToList() : null);
+                    PendingToolFileChips.Clear();
+                    PendingFetchedSkillRefs.Clear();
 
-                        // Collapse completed turn blocks after assistant finishes
-                        CollapseCompletedTurnBlocks(capturedItem);
-
-                        // Flush file changes and plan card at end of turn
-                        FlushPendingFileEdits();
-                        FlushPendingPlanCard();
-                    }
-                };
-            }
+                    CollapseCompletedTurnBlocks(capturedTurn, capturedItem);
+                    FlushPendingFileEdits();
+                    FlushPendingPlanCard();
+                }
+            };
         }
     }
 
-    /// <summary>
-    /// Inserts a FileChangesSummaryItem for any accumulated file edits, then clears the pending list.
-    /// Called at the end of a turn (when user message arrives or streaming ends).
-    /// </summary>
     private void FlushPendingFileEdits()
     {
-        if (PendingFileEdits.Count == 0) return;
-        InsertBeforeTypingIndicator(new FileChangesSummaryItem(GroupFileEdits()));
+        if (PendingFileEdits.Count == 0)
+            return;
+
+        var fileChanges = GroupFileEdits();
+        var stableId = fileChanges.Count > 0
+            ? $"file-changes:{fileChanges[0].FilePath}:{fileChanges.Count}"
+            : null;
+        AppendToCurrentTurn(new FileChangesSummaryItem(fileChanges, stableId), TurnStableIdFor(stableId ?? "file-changes"));
         PendingFileEdits.Clear();
     }
 
-    /// <summary>
-    /// Stages a plan card for insertion at the end of the current turn.
-    /// If a plan card was already staged, updates its status text instead of creating a duplicate.
-    /// </summary>
     public void SetPendingPlanCard(string statusText, Action openAction)
     {
         if (_pendingPlanCard is not null)
@@ -448,21 +443,19 @@ public class TranscriptBuilder
             _pendingPlanCard.StatusText = statusText;
             return;
         }
+
         _pendingPlanCard = new PlanCardItem(statusText, openAction);
     }
 
-    /// <summary>
-    /// Inserts the staged plan card into the transcript, then clears it.
-    /// Called at the end of a turn (alongside FlushPendingFileEdits).
-    /// </summary>
     private void FlushPendingPlanCard()
     {
-        if (_pendingPlanCard is null) return;
-        InsertBeforeTypingIndicator(_pendingPlanCard);
+        if (_pendingPlanCard is null)
+            return;
+
+        AppendToCurrentTurn(_pendingPlanCard, TurnStableIdFor("plan"));
         _pendingPlanCard = null;
     }
 
-    /// <summary>Groups raw pending edits by file path into one FileChangeItem per unique file.</summary>
     private List<FileChangeItem> GroupFileEdits()
     {
         var grouped = new Dictionary<string, FileChangeItem>(StringComparer.OrdinalIgnoreCase);
@@ -474,56 +467,59 @@ public class TranscriptBuilder
                 item = new FileChangeItem(filePath, isCreate, _showDiffAction);
                 grouped[filePath] = item;
             }
+
             item.AddEdit(oldText, newText);
         }
+
         foreach (var item in grouped.Values)
             item.EnsureStatsForCreatedFile();
+
         return grouped.Values.ToList();
     }
 
-    private void EnsureCurrentToolGroup(StrataAiToolCallStatus initialStatus)
+    private void EnsureCurrentToolGroup(StrataAiToolCallStatus initialStatus, string? stableIdSeed = null, string? turnStableId = null)
     {
-        if (_currentToolGroup is not null) return;
+        if (_currentToolGroup is not null)
+            return;
 
         _currentToolGroupCount = 0;
         _currentTodoToolCall = null;
         _currentTodoProgress = null;
 
         _currentToolGroup = new ToolGroupItem(
-            _currentIntentText is not null ? _currentIntentText + "\u2026" : Loc.ToolGroup_Working)
+            _currentIntentText is not null ? _currentIntentText + "…" : Loc.ToolGroup_Working,
+            stableIdSeed is not null ? $"tool-group:{stableIdSeed}" : null)
         {
             IsActive = initialStatus == StrataAiToolCallStatus.InProgress,
             ProgressValue = -1,
         };
 
-        InsertBeforeTypingIndicator(_currentToolGroup);
+        AppendToCurrentTurn(_currentToolGroup, turnStableId ?? TurnStableIdFor(stableIdSeed ?? TranscriptVirtualization.CreateRuntimeKey("tool-group")));
     }
 
-    /// <summary>Closes the current tool group. Safe to call when no group is open.</summary>
     public void CloseCurrentToolGroup()
     {
-        if (_currentToolGroup is null) return;
+        if (_currentToolGroup is null)
+            return;
 
-        var target = _rebuildTarget ?? (IList<TranscriptItem>?)_liveTarget;
+        var turn = FindTurnContaining(_currentToolGroup) ?? _currentTurn;
+        var target = turn?.Items;
 
         if (_currentToolGroupCount == 0)
         {
             target?.Remove(_currentToolGroup);
+            RemoveTurnIfEmpty(turn);
         }
         else
         {
             UpdateToolGroupLabel();
 
-            // Flatten: replace a completed single-tool group with a SingleToolItem
             if (_currentToolGroupCount == 1 && !_currentToolGroup.IsActive
                 && _currentToolGroup.ToolCalls.Count == 1 && target is not null)
             {
                 var idx = target.IndexOf(_currentToolGroup);
                 if (idx >= 0)
-                {
-                    var single = new SingleToolItem(_currentToolGroup.ToolCalls[0]);
-                    target[idx] = single;
-                }
+                    target[idx] = new SingleToolItem(_currentToolGroup.ToolCalls[0]);
             }
         }
 
@@ -538,20 +534,17 @@ public class TranscriptBuilder
 
     private void UpdateToolGroupLabel()
     {
-        if (_currentToolGroup is null) return;
+        if (_currentToolGroup is null)
+            return;
+
         UpdateToolGroupState(_currentToolGroup);
     }
 
-    /// <summary>
-    /// Updates a specific tool group's label, meta, progress, and IsActive state
-    /// based on the current status of its tool calls. Safe to call after the group
-    /// is no longer the _currentToolGroup (e.g., from late PropertyChanged callbacks).
-    /// </summary>
     private void UpdateToolGroupState(ToolGroupItem? group)
     {
-        if (group is null) return;
+        if (group is null)
+            return;
 
-        // For the current group, use the richer state (todo progress, intent text, etc.)
         var isCurrent = ReferenceEquals(group, _currentToolGroup);
 
         if (isCurrent && _currentTodoProgress is not null && _currentTodoProgress.Total > 0)
@@ -581,20 +574,20 @@ public class TranscriptBuilder
         var failedCount = 0;
         foreach (var call in group.ToolCalls)
         {
-            if (call is ToolCallItem tc)
+            switch (call)
             {
-                if (tc.Status == StrataAiToolCallStatus.Completed) completedCount++;
-                else if (tc.Status == StrataAiToolCallStatus.Failed) failedCount++;
-            }
-            else if (call is TerminalPreviewItem tp)
-            {
-                if (tp.Status == StrataAiToolCallStatus.Completed) completedCount++;
-                else if (tp.Status == StrataAiToolCallStatus.Failed) failedCount++;
-            }
-            else if (call is TodoProgressItem todo)
-            {
-                if (todo.Status == StrataAiToolCallStatus.Completed) completedCount++;
-                else if (todo.Status == StrataAiToolCallStatus.Failed) failedCount++;
+                case ToolCallItem toolCall:
+                    if (toolCall.Status == StrataAiToolCallStatus.Completed) completedCount++;
+                    else if (toolCall.Status == StrataAiToolCallStatus.Failed) failedCount++;
+                    break;
+                case TerminalPreviewItem terminal:
+                    if (terminal.Status == StrataAiToolCallStatus.Completed) completedCount++;
+                    else if (terminal.Status == StrataAiToolCallStatus.Failed) failedCount++;
+                    break;
+                case TodoProgressItem todo:
+                    if (todo.Status == StrataAiToolCallStatus.Completed) completedCount++;
+                    else if (todo.Status == StrataAiToolCallStatus.Failed) failedCount++;
+                    break;
             }
         }
 
@@ -604,7 +597,8 @@ public class TranscriptBuilder
             group.ProgressValue = -1;
             group.IsActive = true;
             group.Label = isCurrent && _currentIntentText is not null
-                ? _currentIntentText + "\u2026" : Loc.ToolGroup_Working;
+                ? _currentIntentText + "…"
+                : Loc.ToolGroup_Working;
             return;
         }
 
@@ -620,40 +614,46 @@ public class TranscriptBuilder
             group.Meta = failedCount > 0
                 ? string.Format(Loc.ToolGroup_MetaFailed, completedCount, toolCount, failedCount)
                 : string.Format(Loc.ToolGroup_MetaDone, completedCount, toolCount);
-            if (IsRebuildingTranscript) group.IsExpanded = false;
+            if (IsRebuildingTranscript)
+                group.IsExpanded = false;
 
-            // Live flatten: single-tool group just completed → replace with SingleToolItem
-            if (toolCount == 1 && group.ToolCalls.Count == 1 && !IsRebuildingTranscript && _liveTarget is not null)
+            if (toolCount == 1 && group.ToolCalls.Count == 1 && !IsRebuildingTranscript)
             {
-                var idx = _liveTarget.IndexOf(group);
-                if (idx >= 0)
-                    _liveTarget[idx] = new SingleToolItem(group.ToolCalls[0]);
+                var turn = FindTurnContaining(group);
+                if (turn is not null)
+                {
+                    var idx = turn.IndexOf(group);
+                    if (idx >= 0)
+                        turn.Items[idx] = new SingleToolItem(group.ToolCalls[0]);
+                }
             }
         }
         else
         {
             group.IsActive = true;
             group.Label = intentText is not null
-                ? intentText + "\u2026"
+                ? intentText + "…"
                 : (toolCount == 1 ? Loc.ToolGroup_Working : string.Format(Loc.ToolGroup_WorkingCount, toolCount));
             var runningCount = Math.Max(0, toolCount - completedCount - failedCount);
             group.Meta = runningCount > 0
                 ? string.Format(Loc.ToolGroup_MetaRunning, completedCount, toolCount, runningCount)
                 : string.Format(Loc.ToolGroup_MetaDone, completedCount, toolCount);
-            if (IsRebuildingTranscript) group.IsExpanded = false;
+            if (IsRebuildingTranscript)
+                group.IsExpanded = false;
         }
 
         var genericProgress = toolCount > 0
-            ? Math.Clamp(((completedCount + failedCount) * 100d) / toolCount, 0d, 100d) : -1;
+            ? Math.Clamp(((completedCount + failedCount) * 100d) / toolCount, 0d, 100d)
+            : -1;
         group.ProgressValue = IsRebuildingTranscript ? -1 : genericProgress;
     }
 
     private void UpsertTodoProgressToolCall(List<ToolDisplayHelper.TodoStepSnapshot> steps, string toolStatus)
     {
         var total = steps.Count;
-        var completed = steps.Count(s => string.Equals(s.Status, "completed", StringComparison.OrdinalIgnoreCase));
-        var failed = steps.Count(s => string.Equals(s.Status, "failed", StringComparison.OrdinalIgnoreCase));
-        var detailsMd = ToolDisplayHelper.BuildTodoDetailsMarkdown(steps);
+        var completed = steps.Count(step => string.Equals(step.Status, "completed", StringComparison.OrdinalIgnoreCase));
+        var failed = steps.Count(step => string.Equals(step.Status, "failed", StringComparison.OrdinalIgnoreCase));
+        var detailsMarkdown = ToolDisplayHelper.BuildTodoDetailsMarkdown(steps);
 
         if (_currentTodoProgress is null)
         {
@@ -675,79 +675,92 @@ public class TranscriptBuilder
 
         if (_currentTodoToolCall is null)
         {
-            _currentTodoToolCall = new TodoProgressItem($"✅ {Loc.ToolTodo_Title}", StrataAiToolCallStatus.InProgress)
+            _currentTodoToolCall = new TodoProgressItem(
+                $"✅ {Loc.ToolTodo_Title}",
+                StrataAiToolCallStatus.InProgress,
+                $"todo:{_currentToolGroup?.VirtualizationMeasureKey}")
             {
-                InputParameters = detailsMd,
+                InputParameters = detailsMarkdown,
             };
             _currentToolGroup?.ToolCalls.Add(_currentTodoToolCall);
         }
         else
         {
-            _currentTodoToolCall.InputParameters = detailsMd;
+            _currentTodoToolCall.InputParameters = detailsMarkdown;
         }
     }
 
-    /// <summary>Collapses consecutive tool groups + reasoning + single tools before an assistant message into a TurnSummaryItem.</summary>
-    private void CollapseCompletedTurnBlocks(AssistantMessageItem assistantItem)
+    private void CollapseCompletedTurnBlocks(TranscriptTurnControl turn, AssistantMessageItem assistantItem)
     {
-        var target = _rebuildTarget ?? (IList<TranscriptItem>?)_liveTarget;
-        if (target is null) return;
-        var idx = target.IndexOf(assistantItem);
-        if (idx <= 0) return;
+        var items = turn.Items;
+        var idx = items.IndexOf(assistantItem);
+        if (idx <= 0)
+            return;
 
         var blocksToMerge = new List<TranscriptItem>();
-        for (int i = idx - 1; i >= 0; i--)
+        for (var i = idx - 1; i >= 0; i--)
         {
-            if (target[i] is ToolGroupItem or ReasoningItem or SingleToolItem)
-                blocksToMerge.Add(target[i]);
+            if (items[i] is ToolGroupItem or ReasoningItem or SingleToolItem)
+                blocksToMerge.Add(items[i]);
             else
                 break;
         }
 
-        if (blocksToMerge.Count < 2) return;
+        if (blocksToMerge.Count < 2)
+            return;
+
         blocksToMerge.Reverse();
 
-        int totalToolCalls = 0, failedCount = 0;
-        bool hasReasoning = false, hasTodoProgress = false;
+        var totalToolCalls = 0;
+        var failedCount = 0;
+        var hasReasoning = false;
+        var hasTodoProgress = false;
         string? todoMeta = null;
         string? lastIntentLabel = null;
 
         foreach (var block in blocksToMerge)
         {
-            if (block is ToolGroupItem tg)
+            if (block is ToolGroupItem toolGroup)
             {
-                // Use the group's label as intent if it's not a generic "Working/Finished" label
-                if (!string.IsNullOrWhiteSpace(tg.Label)
-                    && !tg.Label.StartsWith(Loc.ToolGroup_Working.TrimEnd('\u2026', '.'), StringComparison.CurrentCulture)
-                    && !tg.Label.StartsWith(Loc.ToolGroup_Finished, StringComparison.CurrentCulture))
-                    lastIntentLabel = tg.Label;
-
-                foreach (var call in tg.ToolCalls)
+                if (!string.IsNullOrWhiteSpace(toolGroup.Label)
+                    && !toolGroup.Label.StartsWith(Loc.ToolGroup_Working.TrimEnd('…', '.'), StringComparison.CurrentCulture)
+                    && !toolGroup.Label.StartsWith(Loc.ToolGroup_Finished, StringComparison.CurrentCulture))
                 {
-                    if (call is ToolCallItem tc)
+                    lastIntentLabel = toolGroup.Label;
+                }
+
+                foreach (var call in toolGroup.ToolCalls)
+                {
+                    switch (call)
                     {
-                        totalToolCalls++;
-                        if (tc.Status == StrataAiToolCallStatus.Failed) failedCount++;
-                        if (!string.IsNullOrWhiteSpace(tc.ToolName) && tc.ToolName.Contains(Loc.ToolTodo_Title, StringComparison.CurrentCultureIgnoreCase))
-                        {
-                            hasTodoProgress = true;
-                            todoMeta = tg.Meta ?? tc.MoreInfo;
-                        }
-                    }
-                    else if (call is TerminalPreviewItem tp)
-                    {
-                        totalToolCalls++;
-                        if (tp.Status == StrataAiToolCallStatus.Failed) failedCount++;
+                        case ToolCallItem toolCall:
+                            totalToolCalls++;
+                            if (toolCall.Status == StrataAiToolCallStatus.Failed) failedCount++;
+                            if (!string.IsNullOrWhiteSpace(toolCall.ToolName) && toolCall.ToolName.Contains(Loc.ToolTodo_Title, StringComparison.CurrentCultureIgnoreCase))
+                            {
+                                hasTodoProgress = true;
+                                todoMeta = toolGroup.Meta ?? toolCall.MoreInfo;
+                            }
+                            break;
+                        case TerminalPreviewItem terminal:
+                            totalToolCalls++;
+                            if (terminal.Status == StrataAiToolCallStatus.Failed) failedCount++;
+                            break;
                     }
                 }
             }
-            else if (block is SingleToolItem st)
+            else if (block is SingleToolItem singleTool)
             {
                 totalToolCalls++;
-                if (st.Inner is ToolCallItem stc && stc.Status == StrataAiToolCallStatus.Failed) failedCount++;
-                else if (st.Inner is TerminalPreviewItem stp && stp.Status == StrataAiToolCallStatus.Failed) failedCount++;
+                if (singleTool.Inner is ToolCallItem singleCall && singleCall.Status == StrataAiToolCallStatus.Failed)
+                    failedCount++;
+                else if (singleTool.Inner is TerminalPreviewItem singleTerminal && singleTerminal.Status == StrataAiToolCallStatus.Failed)
+                    failedCount++;
             }
-            else hasReasoning = true;
+            else
+            {
+                hasReasoning = true;
+            }
         }
 
         string label;
@@ -755,7 +768,6 @@ public class TranscriptBuilder
             label = !string.IsNullOrWhiteSpace(todoMeta) ? $"{Loc.ToolTodo_Title} · {todoMeta}" : Loc.ToolTodo_Title;
         else if (lastIntentLabel is not null)
         {
-            // Use the intent-based label from report_intent
             label = hasReasoning ? $"{lastIntentLabel} · {Loc.TurnSummary_Reasoned.ToLowerInvariant()}" : lastIntentLabel;
             if (totalToolCalls > 1)
                 label += $" · {string.Format(Loc.ToolGroup_FinishedCount, totalToolCalls)}";
@@ -770,11 +782,11 @@ public class TranscriptBuilder
         if (failedCount > 0)
             label += " " + string.Format(Loc.ToolGroup_FinishedFailed, failedCount);
 
-        int firstIdx = target.IndexOf(blocksToMerge[0]);
+        var firstIdx = items.IndexOf(blocksToMerge[0]);
         foreach (var block in blocksToMerge)
-            target.Remove(block);
+            items.Remove(block);
 
-        var summary = new TurnSummaryItem(label)
+        var summary = new TurnSummaryItem(label, $"turn-summary:{assistantItem.VirtualizationMeasureKey}")
         {
             IsExpanded = hasTodoProgress && !IsRebuildingTranscript,
             HasFailures = failedCount > 0,
@@ -782,55 +794,57 @@ public class TranscriptBuilder
         foreach (var block in blocksToMerge)
             summary.InnerItems.Add(block);
 
-        target.Insert(firstIdx, summary);
+        items.Insert(firstIdx, summary);
     }
 
     private void CollapseAllCompletedTurns()
     {
-        // Collect assistant items, process last-to-first so index shifts don't affect earlier items
-        var target = _rebuildTarget ?? (IList<TranscriptItem>?)_liveTarget;
-        if (target is null) return;
-        var assistantItems = new List<AssistantMessageItem>();
-        for (int i = 0; i < target.Count; i++)
+        var turns = GetTurnTarget();
+        if (turns is null)
+            return;
+
+        foreach (var turn in turns)
         {
-            if (target[i] is AssistantMessageItem a)
-                assistantItems.Add(a);
+            var assistantItems = turn.Items.OfType<AssistantMessageItem>().ToList();
+            for (var i = assistantItems.Count - 1; i >= 0; i--)
+                CollapseCompletedTurnBlocks(turn, assistantItems[i]);
         }
-        for (int i = assistantItems.Count - 1; i >= 0; i--)
-            CollapseCompletedTurnBlocks(assistantItems[i]);
     }
 
-    /// <summary>Shows or updates the typing indicator at the bottom of the transcript.</summary>
     public void ShowTypingIndicator(string? label)
     {
-        if (_liveTarget is null) return;
+        if (_liveTarget is null)
+            return;
 
         if (_typingIndicator is null)
         {
             _typingIndicator = new TypingIndicatorItem(label ?? Loc.Status_Thinking);
-            _liveTarget.Add(_typingIndicator);
+            _typingTurn = new TranscriptTurnControl("turn:typing");
+            _typingTurn.Items.Add(_typingIndicator);
+            _liveTarget.Add(_typingTurn);
+            return;
         }
-        else
+
+        _typingIndicator.Label = label ?? Loc.Status_Thinking;
+        _typingIndicator.IsActive = true;
+        if (_typingTurn is not null)
         {
-            _typingIndicator.Label = label ?? Loc.Status_Thinking;
-            _typingIndicator.IsActive = true;
-            // Reposition to end if not already there
-            var count = _liveTarget.Count;
-            if (count == 0 || _liveTarget[count - 1] != _typingIndicator)
+            var lastIndex = _liveTarget.Count - 1;
+            if (lastIndex < 0 || _liveTarget[lastIndex] != _typingTurn)
             {
-                _liveTarget.Remove(_typingIndicator);
-                _liveTarget.Add(_typingIndicator);
+                _liveTarget.Remove(_typingTurn);
+                _liveTarget.Add(_typingTurn);
             }
         }
     }
 
     public void HideTypingIndicator()
     {
-        if (_typingIndicator is not null && _liveTarget is not null)
-        {
-            _liveTarget.Remove(_typingIndicator);
-            _typingIndicator = null;
-        }
+        if (_typingTurn is not null && _liveTarget is not null)
+            _liveTarget.Remove(_typingTurn);
+
+        _typingIndicator = null;
+        _typingTurn = null;
     }
 
     public void UpdateTypingIndicatorLabel(string? label)
@@ -839,34 +853,10 @@ public class TranscriptBuilder
             _typingIndicator.Label = label;
     }
 
-    private void InsertBeforeTypingIndicator(TranscriptItem item)
-    {
-        if (_rebuildTarget is not null)
-        {
-            _rebuildTarget.Add(item);
-            return;
-        }
-
-        if (_liveTarget is null)
-            return;
-
-        if (_typingIndicator is not null)
-        {
-            var idx = _liveTarget.IndexOf(_typingIndicator);
-            if (idx >= 0)
-            {
-                _liveTarget.Insert(idx, item);
-                return;
-            }
-        }
-
-        _liveTarget.Add(item);
-    }
-
-    /// <summary>Updates a terminal preview's output. Called from SubscribeToSession event handlers.</summary>
     public void UpdateTerminalOutput(string rootToolCallId, string output, bool replaceExistingOutput)
     {
-        if (string.IsNullOrEmpty(output)) return;
+        if (string.IsNullOrEmpty(output))
+            return;
 
         if (!_terminalPreviewsByToolCallId.TryGetValue(rootToolCallId, out var target))
             return;
@@ -883,11 +873,75 @@ public class TranscriptBuilder
             target.Output = target.Output + "\n" + output;
     }
 
-    /// <summary>Creates a QuestionItem and inserts it into the transcript. Called from the QuestionAsked event.</summary>
     public void AddQuestionToTranscript(string questionId, string question, string options, bool allowFreeText)
     {
         CloseCurrentToolGroup();
         var card = new QuestionItem(questionId, question, options, allowFreeText, _submitQuestionAnswerAction);
-        InsertBeforeTypingIndicator(card);
+        AppendToCurrentTurn(card, TurnStableIdFor($"question:{questionId}"));
     }
+
+    private void AppendToCurrentTurn(TranscriptItem item, string turnStableId)
+    {
+        EnsureCurrentTurn(turnStableId).Items.Add(item);
+    }
+
+    private TranscriptTurnControl EnsureCurrentTurn(string turnStableId)
+    {
+        if (_currentTurn is not null)
+            return _currentTurn;
+
+        _currentTurn = new TranscriptTurnControl(turnStableId);
+        InsertTurnBeforeTypingIndicator(_currentTurn);
+        return _currentTurn;
+    }
+
+    private void FinalizeCurrentTurn()
+    {
+        RemoveTurnIfEmpty(_currentTurn);
+        _currentTurn = null;
+    }
+
+    private void InsertTurnBeforeTypingIndicator(TranscriptTurnControl turn)
+    {
+        if (_rebuildTarget is not null)
+        {
+            _rebuildTarget.Add(turn);
+            return;
+        }
+
+        if (_liveTarget is null)
+            return;
+
+        if (_typingTurn is not null)
+        {
+            var idx = _liveTarget.IndexOf(_typingTurn);
+            if (idx >= 0)
+            {
+                _liveTarget.Insert(idx, turn);
+                return;
+            }
+        }
+
+        _liveTarget.Add(turn);
+    }
+
+    private TranscriptTurnControl? FindTurnContaining(TranscriptItem item)
+    {
+        var turns = GetTurnTarget();
+        return turns?.FirstOrDefault(turn => turn.Items.Contains(item));
+    }
+
+    private IList<TranscriptTurnControl>? GetTurnTarget() => _rebuildTarget ?? _liveTarget;
+
+    private void RemoveTurnIfEmpty(TranscriptTurnControl? turn)
+    {
+        if (turn is null || turn.Items.Count > 0)
+            return;
+
+        GetTurnTarget()?.Remove(turn);
+        if (ReferenceEquals(turn, _currentTurn))
+            _currentTurn = null;
+    }
+
+    private static string TurnStableIdFor(string seed) => $"turn:{seed}";
 }

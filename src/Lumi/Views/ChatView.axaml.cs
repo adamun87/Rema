@@ -18,6 +18,7 @@ namespace Lumi.Views;
 public partial class ChatView : UserControl
 {
     private StrataChatShell? _chatShell;
+    private StrataChatTranscript? _transcript;
     private StrataChatComposer? _activeComposer;
     private StrataChatComposer? _welcomeComposer;
     private Panel? _dropOverlay;
@@ -38,6 +39,7 @@ public partial class ChatView : UserControl
         AvaloniaXamlLoader.Load(this);
 
         _chatShell = this.FindControl<StrataChatShell>("ChatShell");
+        _transcript = this.FindControl<StrataChatTranscript>("Transcript");
         _welcomeComposer = this.FindControl<StrataChatComposer>("WelcomeComposer");
         _activeComposer = this.FindControl<StrataChatComposer>("ActiveComposer");
         _dropOverlay = this.FindControl<Panel>("DropOverlay");
@@ -107,18 +109,11 @@ public partial class ChatView : UserControl
     private void OnTranscriptRebuilt()
     {
         _chatShell?.ResetAutoScroll();
-        Dispatcher.UIThread.Post(() =>
-        {
-            _chatShell?.ResetAutoScroll();
-            // Jump instantly to the last message so the chat opens at the bottom
-            var count = (_subscribedVm?.TranscriptItems.Count ?? 0);
-            if (count > 0)
-                _chatShell?.ScrollToIndex(count - 1, ScrollToAlignment.End);
-            else
-                _chatShell?.ScrollToEnd();
-            // Focus after layout + render passes have completed
-            Dispatcher.UIThread.Post(FocusComposer, DispatcherPriority.Input);
-        }, DispatcherPriority.Loaded);
+        var count = _subscribedVm?.TranscriptTurns.Count ?? 0;
+        if (count > 0)
+            _transcript?.PrepareScrollToIndex(count - 1, ScrollToAlignment.End);
+
+        Dispatcher.UIThread.Post(FocusComposer, DispatcherPriority.Input);
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)

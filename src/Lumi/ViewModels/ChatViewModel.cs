@@ -87,8 +87,8 @@ public partial class ChatViewModel : ObservableObject
     [ObservableProperty] private LumiAgent? _activeAgent;
 
     public ObservableCollection<ChatMessageViewModel> Messages { get; } = [];
-    /// <summary>Flat list of transcript items for the virtualized chat panel. Bound to StrataChatTranscript.ItemsSource.</summary>
-    [ObservableProperty] private ObservableCollection<TranscriptItem> _transcriptItems = [];
+    /// <summary>Virtualized turn list for the chat transcript. Bound to StrataChatTranscript.ItemsSource.</summary>
+    [ObservableProperty] private ObservableCollection<TranscriptTurnControl> _transcriptTurns = [];
 
     public ObservableCollection<string> AvailableModels { get; } = [];
     public ObservableCollection<string> PendingAttachments { get; } = [];
@@ -149,7 +149,7 @@ public partial class ChatViewModel : ObservableObject
             showDiffAction: item => DiffShowRequested?.Invoke(item),
             submitQuestionAnswerAction: SubmitQuestionAnswer,
             resendFromMessageAction: ResendFromMessageAsync);
-        _transcriptBuilder.SetLiveTarget(_transcriptItems);
+        _transcriptBuilder.SetLiveTarget(_transcriptTurns);
 
         // Seed with preferred modelso the ComboBox has an initial selection
         if (!string.IsNullOrWhiteSpace(_selectedModel))
@@ -170,7 +170,7 @@ public partial class ChatViewModel : ObservableObject
             }
             else if (args.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset)
             {
-                TranscriptItems.Clear();
+                TranscriptTurns.Clear();
                 _transcriptBuilder.ResetState();
             }
         };
@@ -198,7 +198,7 @@ public partial class ChatViewModel : ObservableObject
 
     internal void RebuildTranscript()
     {
-        TranscriptItems = _transcriptBuilder.Rebuild(Messages);
+        TranscriptTurns = _transcriptBuilder.Rebuild(Messages);
         TranscriptRebuilt?.Invoke();
     }
 
@@ -1452,7 +1452,7 @@ public partial class ChatViewModel : ObservableObject
         _activeSession = null;
 
         Messages.Clear();
-        TranscriptItems.Clear();
+        TranscriptTurns.Clear();
         _transcriptBuilder.ResetState();
         CurrentChat = null;
         IsBusy = false;

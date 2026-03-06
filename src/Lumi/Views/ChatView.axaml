@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Lumi.ViewModels"
+             xmlns:lc="using:Lumi.Views.Controls"
              xmlns:sc="using:StrataTheme.Controls"
              xmlns:loc="using:Lumi.Localization"
              x:Class="Lumi.Views.ChatView"
@@ -50,7 +51,7 @@
                             RegenerateCommand="{Binding ResendCommand}">
         <sc:StrataChatMessage.Content>
           <StackPanel Spacing="6">
-            <sc:StrataMarkdown Markdown="{Binding Content}" IsInline="True" />
+            <lc:TranscriptTextContent Text="{Binding Content}" />
             <ItemsControl ItemsSource="{Binding Attachments}"
                           IsVisible="{Binding HasAttachments}">
               <ItemsControl.ItemsPanel>
@@ -96,7 +97,7 @@
                             IsStreaming="{Binding IsStreaming}">
         <sc:StrataChatMessage.Content>
           <StackPanel Spacing="6">
-            <sc:StrataMarkdown Markdown="{Binding Content}" IsInline="True" />
+            <lc:TranscriptTextContent Text="{Binding Content}" />
 
             <!-- Skills section -->
             <ItemsControl ItemsSource="{Binding Skills}"
@@ -271,7 +272,7 @@
                       IsExpanded="{Binding IsExpanded}"
                       IsActive="{Binding IsActive}">
         <sc:StrataThink.Content>
-          <sc:StrataMarkdown Markdown="{Binding Content}" IsInline="True" />
+          <lc:TranscriptTextContent Text="{Binding Content}" />
         </sc:StrataThink.Content>
       </sc:StrataThink>
     </DataTemplate>
@@ -593,7 +594,7 @@
 
         <sc:StrataChatShell.Transcript>
           <sc:StrataChatTranscript x:Name="Transcript"
-                                  ItemsSource="{Binding TranscriptItems}" />
+                                  ItemsSource="{Binding TranscriptTurns}" />
         </sc:StrataChatShell.Transcript>
 
         <sc:StrataChatShell.Composer>
