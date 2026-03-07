@@ -35,6 +35,12 @@
       <Setter Property="Foreground" Value="{DynamicResource Brush.AccentDefault}" />
     </Style>
 
+    <!-- Token usage badge hover -->
+    <Style Selector="Border#TokenUsageBadge:pointerover">
+      <Setter Property="Opacity" Value="1" />
+      <Setter Property="Background" Value="{DynamicResource Brush.SurfaceSubtle}" />
+    </Style>
+
     <!-- ── Panel cross-fade transitions ─────────────────── -->
 
     <!-- Welcome panel: opacity + hit-testing controlled by .active class -->
@@ -802,6 +808,38 @@
                              AvailableMcps="{Binding AvailableMcpChips}"
                              AvailableProjects="{Binding AvailableProjectChips}"
                              AvailableFiles="{Binding AvailableFileSuggestions}" />
+
+      <!-- Token usage indicator -->
+      <Border x:Name="TokenUsageBadge"
+              IsVisible="{Binding HasTokenUsage}"
+              HorizontalAlignment="Right"
+              Margin="0,3,14,0"
+              Padding="8,3,8,3"
+              CornerRadius="8"
+              Background="{DynamicResource Brush.Surface2}"
+              Opacity="0.7"
+              ToolTip.Tip="{Binding TokenUsageTooltip}"
+              Cursor="Hand">
+        <Border.Transitions>
+          <Transitions>
+            <DoubleTransition Property="Opacity" Duration="0:0:0.2" />
+          </Transitions>
+        </Border.Transitions>
+        <StackPanel Orientation="Horizontal" Spacing="4">
+          <PathIcon Width="10" Height="10"
+                    Foreground="{DynamicResource Brush.TextTertiary}"
+                    Data="M13 10V3L4 14h7v7l9-11h-7z" />
+          <TextBlock Text="{Binding TokenUsageSummary}"
+                     FontSize="10.5"
+                     Foreground="{DynamicResource Brush.TextTertiary}"
+                     VerticalAlignment="Center" />
+          <TextBlock Text="tokens"
+                     FontSize="10.5"
+                     Foreground="{DynamicResource Brush.TextTertiary}"
+                     Opacity="0.7"
+                     VerticalAlignment="Center" />
+        </StackPanel>
+      </Border>
     </StackPanel>
   </Panel>
 </UserControl>

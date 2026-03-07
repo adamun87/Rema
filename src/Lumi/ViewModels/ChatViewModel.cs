@@ -85,6 +85,22 @@ public partial class ChatViewModel : ObservableObject
     [ObservableProperty] private string _statusText = "";
     [ObservableProperty] private string? _selectedModel;
     [ObservableProperty] private LumiAgent? _activeAgent;
+    [ObservableProperty] private long _totalInputTokens;
+    [ObservableProperty] private long _totalOutputTokens;
+
+    public bool HasTokenUsage => TotalInputTokens > 0 || TotalOutputTokens > 0;
+    public string TokenUsageSummary => FormatTokenCount(TotalInputTokens + TotalOutputTokens);
+    public string TokenUsageTooltip => $"Input: {TotalInputTokens:N0} tokens\nOutput: {TotalOutputTokens:N0} tokens\nTotal: {TotalInputTokens + TotalOutputTokens:N0} tokens";
+
+    partial void OnTotalInputTokensChanged(long value) { OnPropertyChanged(nameof(HasTokenUsage)); OnPropertyChanged(nameof(TokenUsageSummary)); OnPropertyChanged(nameof(TokenUsageTooltip)); }
+    partial void OnTotalOutputTokensChanged(long value) { OnPropertyChanged(nameof(HasTokenUsage)); OnPropertyChanged(nameof(TokenUsageSummary)); OnPropertyChanged(nameof(TokenUsageTooltip)); }
+
+    private static string FormatTokenCount(long tokens) => tokens switch
+    {
+        < 1_000 => $"{tokens}",
+        < 1_000_000 => $"{tokens / 1_000.0:0.#}K",
+        _ => $"{tokens / 1_000_000.0:0.##}M"
+    };
 
     public ObservableCollection<ChatMessageViewModel> Messages { get; } = [];
     /// <summary>Virtualized turn list for the chat transcript. Bound to StrataChatTranscript.ItemsSource.</summary>
@@ -879,12 +895,16 @@ public partial class ChatViewModel : ObservableObject
                 case AssistantUsageEvent usage:
                     Dispatcher.UIThread.Post(() =>
                     {
-                    // Track usage data in runtime state for display/debug metrics.
-                    var d = usage.Data;
-                    runtime.TotalInputTokens += (long)(d.InputTokens ?? 0);
-                    runtime.TotalOutputTokens += (long)(d.OutputTokens ?? 0);
-                    if (_activeSession == session)
-                        OnPropertyChanged(nameof(CurrentChat));
+                        // Track usage data in runtime state for display/debug metrics.
+                        var d = usage.Data;
+                        runtime.TotalInputTokens += (long)(d.InputTokens ?? 0);
+                        runtime.TotalOutputTokens += (long)(d.OutputTokens ?? 0);
+                        if (_activeSession == session)
+                        {
+                            TotalInputTokens = runtime.TotalInputTokens;
+                            TotalOutputTokens = runtime.TotalOutputTokens;
+                            OnPropertyChanged(nameof(CurrentChat));
+                        }
                     });
                     break;
 
@@ -1312,6 +1332,8 @@ public partial class ChatViewModel : ObservableObject
             IsBusy = runtime.IsBusy;
             IsStreaming = runtime.IsStreaming;
             StatusText = runtime.StatusText;
+            TotalInputTokens = runtime.TotalInputTokens;
+            TotalOutputTokens = runtime.TotalOutputTokens;
 
             Messages.Clear();
             foreach (var msg in chat.Messages)
