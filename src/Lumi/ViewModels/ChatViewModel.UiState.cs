@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -915,5 +916,84 @@ public partial class ChatViewModel
     private void RefreshGitStatus()
     {
         RefreshCodingProjectState();
+    }
+
+    // ── Branch flyout actions ──────────────────────────────
+
+    /// <summary>Raised when text needs to be copied to clipboard. View handles actual clipboard access.</summary>
+    public event Action<string>? CopyToClipboardRequested;
+
+    [RelayCommand]
+    private void OpenInTerminal()
+    {
+        var dir = GetEffectiveWorkingDirectory().TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "wt",
+                Arguments = $"-d \"{dir}\"",
+                UseShellExecute = true,
+            });
+        }
+        catch
+        {
+            // Fallback to cmd if Windows Terminal is not installed
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "cmd.exe",
+                    WorkingDirectory = dir,
+                    UseShellExecute = true,
+                });
+            }
+            catch { /* ignore */ }
+        }
+    }
+
+    [RelayCommand]
+    private void OpenInExplorer()
+    {
+        var dir = GetEffectiveWorkingDirectory();
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = dir,
+                UseShellExecute = true,
+            });
+        }
+        catch { /* ignore */ }
+    }
+
+    [RelayCommand]
+    private void OpenInIDE()
+    {
+        var dir = GetEffectiveWorkingDirectory();
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "code",
+                Arguments = $"\"{dir}\"",
+                UseShellExecute = true,
+            });
+        }
+        catch { /* ignore */ }
+    }
+
+    [RelayCommand]
+    private void CopyBranchName()
+    {
+        if (GitBranch is { Length: > 0 } branch)
+            CopyToClipboardRequested?.Invoke(branch);
+    }
+
+    [RelayCommand]
+    private void CopyDirectoryPath()
+    {
+        var dir = GetEffectiveWorkingDirectory();
+        CopyToClipboardRequested?.Invoke(dir);
     }
 }

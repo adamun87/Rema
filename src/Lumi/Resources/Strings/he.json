@@ -429,6 +429,11 @@
   "Git_WorktreeTooltip": "עבוד ב-worktree נפרד כדי לבודד שינויי סוכן",
   "Git_LocalTooltip": "עבוד ישירות במאגר המקומי",
   "Git_RefreshTooltip": "רענן סטטוס Git",
+  "Git_OpenTerminal": "פתח בטרמינל",
+  "Git_OpenExplorer": "פתח בסייר קבצים",
+  "Git_OpenIDE": "פתח ב-IDE",
+  "Git_CopyBranch": "העתק שם ענף",
+  "Git_CopyPath": "העתק נתיב תיקייה",
 
   "Sidebar_McpServers": "שרתי MCP",
   "Sidebar_NewMcpServerTooltip": "שרת MCP חדש",

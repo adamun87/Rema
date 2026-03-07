@@ -674,8 +674,39 @@
           <TranslateTransform />
         </Border.RenderTransform>
         <StackPanel Orientation="Horizontal" Spacing="5">
-          <Border Background="{DynamicResource Brush.Surface2}" CornerRadius="4" Padding="5,1"
-                  IsVisible="{Binding GitBranch, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+          <Button Classes="subtle" Padding="5,1" MinHeight="0" Height="20" CornerRadius="4"
+                  IsVisible="{Binding GitBranch, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                  Cursor="Hand" Background="{DynamicResource Brush.Surface2}">
+            <Button.Flyout>
+              <MenuFlyout Placement="TopEdgeAlignedLeft">
+                <MenuItem Header="{loc:Str Git_OpenTerminal}" Command="{Binding OpenInTerminalCommand}">
+                  <MenuItem.Icon>
+                    <PathIcon Width="14" Height="14" Data="M5.828 4.086a.5.5 0 0 1 .707 0l3.535 3.535a.5.5 0 0 1 0 .707L6.535 11.864a.5.5 0 0 1-.707-.707L9.01 7.975 5.828 4.793a.5.5 0 0 1 0-.707zM12.5 11.5h-4a.5.5 0 0 0 0 1h4a.5.5 0 0 0 0-1z" />
+                  </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="{loc:Str Git_OpenExplorer}" Command="{Binding OpenInExplorerCommand}">
+                  <MenuItem.Icon>
+                    <PathIcon Width="14" Height="14" Data="M3 3a2 2 0 0 0-2 2v2h20V5a2 2 0 0 0-2-2H3zm18 6H3v8a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9z" />
+                  </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="{loc:Str Git_OpenIDE}" Command="{Binding OpenInIDECommand}">
+                  <MenuItem.Icon>
+                    <PathIcon Width="14" Height="14" Data="M9.954 2.217a.5.5 0 0 1 .273.654L6.326 13.289a.5.5 0 0 1-.927-.382L9.3 2.49a.5.5 0 0 1 .654-.273zM3.694 7.217l-2.4 2.4a.5.5 0 0 0 0 .707l2.4 2.4a.5.5 0 1 1-.707.707L.294 10.738a1.5 1.5 0 0 1 0-2.121l2.693-2.107a.5.5 0 0 1 .707.707zm9.612 0 2.4 2.4a.5.5 0 0 1 0 .707l-2.4 2.4a.5.5 0 0 0 .707.707l2.693-2.107a1.5 1.5 0 0 0 0-2.121L13.999 6.51a.5.5 0 0 0-.707.707z" />
+                  </MenuItem.Icon>
+                </MenuItem>
+                <Separator />
+                <MenuItem Header="{loc:Str Git_CopyBranch}" Command="{Binding CopyBranchNameCommand}">
+                  <MenuItem.Icon>
+                    <PathIcon Width="14" Height="14" Data="M6 3v6a3 3 0 0 0 3 3h2a1 1 0 0 1 1 1v2m0 0a2 2 0 1 0 4 0 2 2 0 0 0-4 0zM6 3a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 0V9" />
+                  </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="{loc:Str Git_CopyPath}" Command="{Binding CopyDirectoryPathCommand}">
+                  <MenuItem.Icon>
+                    <PathIcon Width="14" Height="14" Data="M8 1H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2zm0 1a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1h4zm4 3h-1V4h1a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H8v-1h4a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1z" />
+                  </MenuItem.Icon>
+                </MenuItem>
+              </MenuFlyout>
+            </Button.Flyout>
             <StackPanel Orientation="Horizontal" Spacing="3">
               <PathIcon Width="8" Height="8" Foreground="{DynamicResource Brush.TextTertiary}"
                         Data="M6 3v6a3 3 0 0 0 3 3h2a1 1 0 0 1 1 1v2m0 0a2 2 0 1 0 4 0 2 2 0 0 0-4 0zM6 3a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 0V9" />
@@ -683,7 +714,7 @@
                          Foreground="{DynamicResource Brush.TextTertiary}" VerticalAlignment="Center"
                          MaxWidth="120" TextTrimming="CharacterEllipsis" />
             </StackPanel>
-          </Border>
+          </Button>
           <!-- Local / Worktree toggle -->
           <Border Background="{DynamicResource Brush.Surface2}" CornerRadius="4" Padding="1">
             <StackPanel Orientation="Horizontal" Spacing="1">

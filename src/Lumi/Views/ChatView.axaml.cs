@@ -84,6 +84,7 @@ public partial class ChatView : UserControl
             vm.PropertyChanged += OnViewModelPropertyChanged;
             vm.AttachFilesRequested += OnAttachFilesRequested;
             vm.ClipboardPasteRequested += OnClipboardPasteRequested;
+            vm.CopyToClipboardRequested += OnCopyToClipboardRequested;
             vm.FocusComposerRequested += FocusComposer;
         }
     }
@@ -109,6 +110,7 @@ public partial class ChatView : UserControl
         _subscribedVm.PropertyChanged -= OnViewModelPropertyChanged;
         _subscribedVm.AttachFilesRequested -= OnAttachFilesRequested;
         _subscribedVm.ClipboardPasteRequested -= OnClipboardPasteRequested;
+        _subscribedVm.CopyToClipboardRequested -= OnCopyToClipboardRequested;
         _subscribedVm.FocusComposerRequested -= FocusComposer;
         _subscribedVm = null;
     }
@@ -195,6 +197,21 @@ public partial class ChatView : UserControl
         {
             // Ignore transient clipboard failures.
         }
+    }
+
+    // ── Copy to clipboard (ViewModel raises event, View handles clipboard API) ──
+
+    private async void OnCopyToClipboardRequested(string text)
+    {
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard is null) return;
+        try
+        {
+            var data = new Avalonia.Input.DataTransfer();
+            data.Add(Avalonia.Input.DataTransferItem.CreateText(text));
+            await clipboard.SetDataAsync(data);
+        }
+        catch { /* ignore */ }
     }
 
     // ── Drag & drop ──────────────────────────────────────
