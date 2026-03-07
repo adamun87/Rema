@@ -685,13 +685,16 @@
         </sc:StrataAttachmentList.ItemTemplate>
       </sc:StrataAttachmentList>
 
-      <!-- Coding project strip — above the composer -->
-      <Border x:Name="CodingStrip" IsVisible="{Binding IsCodingProject}" Margin="4,0,4,0"
+      <!-- Info strip (coding project + token usage) — above the composer -->
+      <Border x:Name="CodingStrip" IsVisible="{Binding ShowInfoStrip}" Margin="4,0,4,0"
               RenderTransformOrigin="0.5,1">
         <Border.RenderTransform>
           <TranslateTransform />
         </Border.RenderTransform>
-        <StackPanel Orientation="Horizontal" Spacing="5">
+        <Grid ColumnDefinitions="*,Auto">
+          <!-- Left: coding project controls -->
+          <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="5"
+                      IsVisible="{Binding IsCodingProject}">
           <Button Classes="subtle" Padding="5,1" MinHeight="0" Height="20" CornerRadius="4"
                   IsVisible="{Binding GitBranch, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                   Cursor="Hand" Background="{DynamicResource Brush.Surface2}">
@@ -784,62 +787,62 @@
           <PathIcon Width="9" Height="9" Foreground="{DynamicResource Brush.TextTertiary}"
                     Data="M17.65 6.35A8 8 0 1 0 19.73 13h-2.08A6 6 0 1 1 12 6a5.97 5.97 0 0 1 4.24 1.76L13 11h7V4l-2.35 2.35z" />
         </Button>
-        </StackPanel>
-      </Border>
-
-      <!-- Token usage indicator — above the composer -->
-      <Border x:Name="TokenUsageBadge"
-              IsVisible="{Binding HasTokenUsage}"
-              HorizontalAlignment="Right"
-              Margin="4,0,14,2"
-              Padding="8,3,8,3"
-              CornerRadius="8"
-              Background="{DynamicResource Brush.Surface2}"
-              Opacity="0.7"
-              Cursor="Hand">
-        <Border.Transitions>
-          <Transitions>
-            <DoubleTransition Property="Opacity" Duration="0:0:0.2" />
-          </Transitions>
-        </Border.Transitions>
-        <ToolTip.Tip>
-          <StackPanel Spacing="6" MinWidth="160">
-            <TextBlock Text="Token Usage" FontWeight="SemiBold" FontSize="12"
-                       Foreground="{DynamicResource Brush.TextPrimary}" />
-            <Border Height="1" Background="{DynamicResource Brush.BorderSubtle}" />
-            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" Margin="0,2,0,0">
-              <TextBlock Grid.Row="0" Grid.Column="0" Text="Input" FontSize="11"
-                         Foreground="{DynamicResource Brush.TextSecondary}" />
-              <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding TokenInputDisplay}" FontSize="11"
-                         Foreground="{DynamicResource Brush.TextPrimary}" HorizontalAlignment="Right" Margin="16,0,0,0" />
-              <TextBlock Grid.Row="1" Grid.Column="0" Text="Output" FontSize="11" Margin="0,4,0,0"
-                         Foreground="{DynamicResource Brush.TextSecondary}" />
-              <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding TokenOutputDisplay}" FontSize="11" Margin="16,4,0,0"
-                         Foreground="{DynamicResource Brush.TextPrimary}" HorizontalAlignment="Right" />
-            </Grid>
-            <Border Height="1" Background="{DynamicResource Brush.BorderSubtle}" />
-            <Grid ColumnDefinitions="*,Auto">
-              <TextBlock Grid.Column="0" Text="Total" FontSize="11" FontWeight="SemiBold"
-                         Foreground="{DynamicResource Brush.TextPrimary}" />
-              <TextBlock Grid.Column="1" Text="{Binding TokenTotalDisplay}" FontSize="11" FontWeight="SemiBold"
-                         Foreground="{DynamicResource Brush.AccentDefault}" HorizontalAlignment="Right" Margin="16,0,0,0" />
-            </Grid>
           </StackPanel>
-        </ToolTip.Tip>
-        <StackPanel Orientation="Horizontal" Spacing="4">
-          <PathIcon Width="10" Height="10"
-                    Foreground="{DynamicResource Brush.TextTertiary}"
-                    Data="M13 10V3L4 14h7v7l9-11h-7z" />
-          <TextBlock Text="{Binding TokenUsageSummary}"
-                     FontSize="10.5"
-                     Foreground="{DynamicResource Brush.TextTertiary}"
-                     VerticalAlignment="Center" />
-          <TextBlock Text="tokens"
-                     FontSize="10.5"
-                     Foreground="{DynamicResource Brush.TextTertiary}"
-                     Opacity="0.7"
-                     VerticalAlignment="Center" />
-        </StackPanel>
+
+          <!-- Right: token usage -->
+          <Border Grid.Column="1"
+                  IsVisible="{Binding HasTokenUsage}"
+                  Padding="8,1,8,1"
+                  CornerRadius="8"
+                  Background="{DynamicResource Brush.Surface2}"
+                  Opacity="0.7"
+                  Cursor="Hand"
+                  VerticalAlignment="Center">
+            <Border.Transitions>
+              <Transitions>
+                <DoubleTransition Property="Opacity" Duration="0:0:0.2" />
+              </Transitions>
+            </Border.Transitions>
+            <ToolTip.Tip>
+              <StackPanel Spacing="6" MinWidth="160">
+                <TextBlock Text="Token Usage" FontWeight="SemiBold" FontSize="12"
+                           Foreground="{DynamicResource Brush.TextPrimary}" />
+                <Border Height="1" Background="{DynamicResource Brush.BorderSubtle}" />
+                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" Margin="0,2,0,0">
+                  <TextBlock Grid.Row="0" Grid.Column="0" Text="Input" FontSize="11"
+                             Foreground="{DynamicResource Brush.TextSecondary}" />
+                  <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding TokenInputDisplay}" FontSize="11"
+                             Foreground="{DynamicResource Brush.TextPrimary}" HorizontalAlignment="Right" Margin="16,0,0,0" />
+                  <TextBlock Grid.Row="1" Grid.Column="0" Text="Output" FontSize="11" Margin="0,4,0,0"
+                             Foreground="{DynamicResource Brush.TextSecondary}" />
+                  <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding TokenOutputDisplay}" FontSize="11" Margin="16,4,0,0"
+                             Foreground="{DynamicResource Brush.TextPrimary}" HorizontalAlignment="Right" />
+                </Grid>
+                <Border Height="1" Background="{DynamicResource Brush.BorderSubtle}" />
+                <Grid ColumnDefinitions="*,Auto">
+                  <TextBlock Grid.Column="0" Text="Total" FontSize="11" FontWeight="SemiBold"
+                             Foreground="{DynamicResource Brush.TextPrimary}" />
+                  <TextBlock Grid.Column="1" Text="{Binding TokenTotalDisplay}" FontSize="11" FontWeight="SemiBold"
+                             Foreground="{DynamicResource Brush.AccentDefault}" HorizontalAlignment="Right" Margin="16,0,0,0" />
+                </Grid>
+              </StackPanel>
+            </ToolTip.Tip>
+            <StackPanel Orientation="Horizontal" Spacing="4">
+              <PathIcon Width="10" Height="10"
+                        Foreground="{DynamicResource Brush.TextTertiary}"
+                        Data="M13 10V3L4 14h7v7l9-11h-7z" />
+              <TextBlock Text="{Binding TokenUsageSummary}"
+                         FontSize="10.5"
+                         Foreground="{DynamicResource Brush.TextTertiary}"
+                         VerticalAlignment="Center" />
+              <TextBlock Text="tokens"
+                         FontSize="10.5"
+                         Foreground="{DynamicResource Brush.TextTertiary}"
+                         Opacity="0.7"
+                         VerticalAlignment="Center" />
+            </StackPanel>
+          </Border>
+        </Grid>
       </Border>
 
       <sc:StrataChatComposer x:Name="Composer"

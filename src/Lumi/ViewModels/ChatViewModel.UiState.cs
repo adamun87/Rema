@@ -52,6 +52,7 @@ public partial class ChatViewModel
 
     // ── Coding Project / Git ──
     [ObservableProperty] private bool _isCodingProject;
+    partial void OnIsCodingProjectChanged(bool value) => OnPropertyChanged(nameof(ShowInfoStrip));
     [ObservableProperty] private string? _gitBranch;
     [ObservableProperty] private int _gitChangedFileCount;
     [ObservableProperty] private bool _isWorktreeMode;

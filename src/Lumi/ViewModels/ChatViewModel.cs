@@ -89,6 +89,7 @@ public partial class ChatViewModel : ObservableObject
     [ObservableProperty] private long _totalOutputTokens;
 
     public bool HasTokenUsage => TotalInputTokens > 0 || TotalOutputTokens > 0;
+    public bool ShowInfoStrip => IsCodingProject || HasTokenUsage;
     public string TokenUsageSummary => FormatTokenCount(TotalInputTokens + TotalOutputTokens);
     public string TokenInputDisplay => $"{TotalInputTokens:N0}";
     public string TokenOutputDisplay => $"{TotalOutputTokens:N0}";
@@ -100,6 +101,7 @@ public partial class ChatViewModel : ObservableObject
     private void NotifyTokenPropertiesChanged()
     {
         OnPropertyChanged(nameof(HasTokenUsage));
+        OnPropertyChanged(nameof(ShowInfoStrip));
         OnPropertyChanged(nameof(TokenUsageSummary));
         OnPropertyChanged(nameof(TokenInputDisplay));
         OnPropertyChanged(nameof(TokenOutputDisplay));
@@ -1525,6 +1527,8 @@ public partial class ChatViewModel : ObservableObject
         _ = RefreshCodingProjectState();
         IsBusy = false;
         IsStreaming = false;
+        TotalInputTokens = 0;
+        TotalOutputTokens = 0;
         _pendingSearchSources.Clear();
         ActiveSkillIds.Clear();
         ActiveSkillChips.Clear();
