@@ -50,7 +50,9 @@ internal static class AppDataSnapshotFactory
                     UpdatedAt = c.UpdatedAt,
                     ActiveSkillIds = [..c.ActiveSkillIds],
                     ActiveMcpServerNames = [..c.ActiveMcpServerNames],
-                    WorktreePath = c.WorktreePath
+                    WorktreePath = c.WorktreePath,
+                    TotalInputTokens = c.TotalInputTokens,
+                    TotalOutputTokens = c.TotalOutputTokens,
                 })
                 .ToList(),
             Projects = source.Projects
