@@ -26,6 +26,7 @@ public class CopilotService : IAsyncDisposable
 {
     private CopilotClient? _client;
     private List<ModelInfo>? _models;
+    private string? _fastestModelId;
     private long _connectionGeneration;
 
     /// <summary>Fires after the CopilotClient has been replaced (reconnection).
@@ -89,6 +90,23 @@ public class CopilotService : IAsyncDisposable
         if (_client is null) throw new InvalidOperationException("Not connected");
         _models ??= await _client.ListModelsAsync(ct);
         return _models;
+    }
+
+    /// <summary>Returns the cheapest/fastest model ID from the cached model list.
+    /// Uses billing multiplier as a proxy for speed — lower cost ≈ faster/lighter.</summary>
+    public async Task<string?> GetFastestModelIdAsync(CancellationToken ct = default)
+    {
+        if (_fastestModelId is not null) return _fastestModelId;
+        try
+        {
+            var models = await GetModelsAsync(ct);
+            _fastestModelId = models
+                .Where(m => m.Billing is not null)
+                .OrderBy(m => m.Billing!.Multiplier)
+                .FirstOrDefault()?.Id;
+        }
+        catch { /* best effort — fall back to default model */ }
+        return _fastestModelId;
     }
 
     /// <summary>Creates a new Copilot session with the given configuration.</summary>
@@ -412,30 +430,45 @@ public class CopilotService : IAsyncDisposable
     {
         if (_client is null) return null;
 
+        var fastModel = await GetFastestModelIdAsync(ct).ConfigureAwait(false);
+
+        // Embed the user message in the system message so the SDK's leaked
+        // base context (tools, SQL tables, etc.) doesn't pollute the title.
+        var systemContent = $"""
+            Generate a short title (3-6 words) for a chat that starts with this message. Output ONLY the title text, nothing else.
+
+            User: {Truncate(userMessage, 500)}
+            """;
+
         var session = await _client.CreateSessionAsync(new SessionConfig
         {
-            Streaming = true,
+            Model = fastModel,
+            Streaming = false,
             SystemMessage = new SystemMessageConfig
             {
-                Content = "You are a title generator. Generate a concise title (3-6 words) for a chat conversation that started with the user message below. Respond with ONLY the title text, nothing else. No quotes, no punctuation at the end. Do not refuse or explain — just output the title.",
+                Content = systemContent,
                 Mode = SystemMessageMode.Replace
             },
             AvailableTools = [],
+            ExcludedTools = ["*"],
             OnPermissionRequest = PermissionHandler.ApproveAll,
-        }, ct);
+        }, ct).ConfigureAwait(false);
 
         try
         {
             var result = await session.SendAndWaitAsync(
-                new MessageOptions { Prompt = userMessage },
-                TimeSpan.FromSeconds(30), ct);
-            return result?.Data?.Content?.Trim();
+                new MessageOptions { Prompt = "title:" },
+                TimeSpan.FromSeconds(15), ct).ConfigureAwait(false);
+            return result?.Data?.Content?.Trim().Trim('"', '\'', '.', '!');
         }
         finally
         {
-            await session.DisposeAsync();
+            await session.DisposeAsync().ConfigureAwait(false);
         }
     }
+
+    private static string Truncate(string text, int maxLength) =>
+        text.Length <= maxLength ? text : text[..maxLength];
 
     /// <summary>
     /// Creates a lightweight session with only the provided custom tools and a fully replaced

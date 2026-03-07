@@ -1612,7 +1612,8 @@ public partial class ChatViewModel : ObservableObject
             _pendingProjectId = null;
             _dataStore.Data.Chats.Add(chat);
             CurrentChat = chat;
-            // SDK generates titles automatically via SessionTitleChangedEvent
+            if (_dataStore.Data.Settings.AutoGenerateTitles)
+                _ = GenerateTitleForChatAsync(chat, prompt);
             await SaveCurrentChatAsync();
             await RefreshCodingProjectState();
             ChatUpdated?.Invoke();
@@ -1942,6 +1943,27 @@ public partial class ChatViewModel : ObservableObject
             ExistingMemories = memories,
             RecentConversation = recentConversation
         };
+    }
+
+    private async Task GenerateTitleForChatAsync(Chat chat, string userMessage)
+    {
+        try
+        {
+            var title = await _copilotService.GenerateTitleAsync(userMessage);
+            if (string.IsNullOrWhiteSpace(title)) return;
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                chat.Title = title;
+                chat.UpdatedAt = DateTimeOffset.Now;
+                if (CurrentChat?.Id == chat.Id)
+                    OnPropertyChanged(nameof(CurrentChatTitle));
+                if (_dataStore.Data.Settings.AutoSaveChats)
+                    _ = SaveIndexAsync();
+                ChatTitleChanged?.Invoke(chat.Id, chat.Title);
+            });
+        }
+        catch { /* best effort — title stays as truncated prompt */ }
     }
 
     private void QueueSuggestionGenerationForLatestAssistant(Chat chat)
