@@ -420,6 +420,16 @@
   "FileChange_Created": "נוצר",
   "FileChange_Modified": "שונה",
 
+  "Git_NoChanges": "אין שינויים",
+  "Git_OneChange": "שינוי אחד",
+  "Git_NChanges": "{0} שינויים",
+  "Git_Local": "מקומי",
+  "Git_Worktree": "Worktree",
+  "Git_ShowChanges": "הצג שינויים",
+  "Git_WorktreeTooltip": "עבוד ב-worktree נפרד כדי לבודד שינויי סוכן",
+  "Git_LocalTooltip": "עבוד ישירות במאגר המקומי",
+  "Git_RefreshTooltip": "רענן סטטוס Git",
+
   "Sidebar_McpServers": "שרתי MCP",
   "Sidebar_NewMcpServerTooltip": "שרת MCP חדש",
   "Editor_McpServer": "עורך שרת MCP",

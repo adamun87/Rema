@@ -419,6 +419,16 @@
   "FileChange_Created": "Created",
   "FileChange_Modified": "Modified",
 
+  "Git_NoChanges": "No changes",
+  "Git_OneChange": "1 change",
+  "Git_NChanges": "{0} changes",
+  "Git_Local": "Local",
+  "Git_Worktree": "Worktree",
+  "Git_ShowChanges": "Show changes",
+  "Git_WorktreeTooltip": "Work in a separate git worktree so agent changes are isolated",
+  "Git_LocalTooltip": "Work directly in the local repository",
+  "Git_RefreshTooltip": "Refresh git status",
+
   "Sidebar_McpServers": "MCP Servers",
   "Sidebar_NewMcpServerTooltip": "New MCP server",
   "Editor_McpServer": "MCP Server Editor",

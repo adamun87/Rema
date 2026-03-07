@@ -34,6 +34,68 @@
     <Style Selector="Button#BrowserToggleButton.open PathIcon#BrowserToggleIcon">
       <Setter Property="Foreground" Value="{DynamicResource Brush.AccentDefault}" />
     </Style>
+
+    <!-- ── Panel cross-fade transitions ─────────────────── -->
+
+    <!-- Welcome panel: opacity + hit-testing controlled by .active class -->
+    <Style Selector="Panel#WelcomePanel">
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.35" Easing="CubicEaseOut" />
+        </Transitions>
+      </Setter>
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="IsHitTestVisible" Value="False" />
+    </Style>
+    <Style Selector="Panel#WelcomePanel.active">
+      <Setter Property="Opacity" Value="1" />
+      <Setter Property="IsHitTestVisible" Value="True" />
+    </Style>
+
+    <!-- Welcome greeting: subtle slide-up as it fades out -->
+    <Style Selector="StackPanel#WelcomeGreeting">
+      <Setter Property="RenderTransform" Value="translateY(16px)" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.5" Easing="0.2,0 0,1" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Panel#WelcomePanel.active StackPanel#WelcomeGreeting">
+      <Setter Property="RenderTransform" Value="translateY(0)" />
+    </Style>
+
+    <!-- Chat panel: opacity + hit-testing controlled by .active class -->
+    <Style Selector="Panel#ChatPanel">
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.45" Easing="CubicEaseOut" Delay="0:0:0.1" />
+        </Transitions>
+      </Setter>
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="IsHitTestVisible" Value="False" />
+    </Style>
+    <Style Selector="Panel#ChatPanel.active">
+      <Setter Property="Opacity" Value="1" />
+      <Setter Property="IsHitTestVisible" Value="True" />
+    </Style>
+
+    <!-- ── Composer container: animated width + margin transition ── -->
+    <Style Selector="StackPanel#ComposerContainer">
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="MaxWidth" Duration="0:0:0.55" Easing="0.2,0 0,1" />
+          <ThicknessTransition Property="Margin" Duration="0:0:0.55" Easing="0.2,0 0,1" />
+        </Transitions>
+      </Setter>
+      <!-- Default (active chat) state -->
+      <Setter Property="MaxWidth" Value="5000" />
+      <Setter Property="Margin" Value="12,8,12,10" />
+    </Style>
+    <Style Selector="StackPanel#ComposerContainer.welcome">
+      <Setter Property="MaxWidth" Value="680" />
+      <Setter Property="Margin" Value="24,0,24,20" />
+    </Style>
   </UserControl.Styles>
 
   <UserControl.DataTemplates>
@@ -494,7 +556,7 @@
     </Panel>
 
     <!-- Welcome state (no active chat) -->
-    <Panel x:Name="WelcomePanel" IsVisible="{Binding IsWelcomeVisible}">
+    <Panel x:Name="WelcomePanel" Classes.active="{Binding IsWelcomeVisible}">
       <!-- Centered greeting (offset up to leave room for composer) -->
       <StackPanel x:Name="WelcomeGreeting" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16"
                   MaxWidth="480" Margin="0,0,0,120">
@@ -512,57 +574,6 @@
                      Text="{loc:Str Chat_WelcomeSubtitle}" />
         </StackPanel>
       </StackPanel>
-
-      <!-- Bottom-pinned composer -->
-      <StackPanel VerticalAlignment="Bottom" Spacing="4" MaxWidth="680"
-                  HorizontalAlignment="Stretch" Margin="24,0,24,20">
-        <sc:StrataAttachmentList ShowAddButton="False"
-                                 ItemsSource="{Binding PendingAttachmentItems}"
-                                 IsVisible="{Binding HasPendingAttachments}">
-          <sc:StrataAttachmentList.ItemTemplate>
-            <DataTemplate DataType="vm:FileAttachmentItem">
-              <sc:StrataFileAttachment FileName="{Binding FileName}"
-                                       FileSize="{Binding FileSize}"
-                                       Status="Completed"
-                                       IsRemovable="{Binding IsRemovable}"
-                                       RemoveCommand="{Binding RemoveCommand}" />
-            </DataTemplate>
-          </sc:StrataAttachmentList.ItemTemplate>
-        </sc:StrataAttachmentList>
-        <sc:StrataChatComposer x:Name="WelcomeComposer"
-                               Placeholder="{loc:Str Chat_Placeholder}"
-                               PromptText="{Binding PromptText, Mode=TwoWay}"
-                               IsBusy="{Binding IsBusy}"
-                               IsRecording="{Binding IsRecording}"
-                               SendWithEnter="{Binding SendWithEnter}"
-                               SendCommand="{Binding SendMessageCommand}"
-                               StopCommand="{Binding StopGenerationCommand}"
-                               AttachCommand="{Binding RequestAttachFilesCommand}"
-                               VoiceCommand="{Binding ToggleVoiceCommand}"
-                               AgentRemovedCommand="{Binding RemoveAgentCommand}"
-                               ProjectRemovedCommand="{Binding RemoveProjectCommand}"
-                               SkillRemovedCommand="{Binding RemoveSkillCommand}"
-                               McpRemovedCommand="{Binding RemoveMcpCommand}"
-                               FileQueryChangedCommand="{Binding HandleFileQueryCommand}"
-                               FileSelectedCommand="{Binding HandleFileSelectionCommand}"
-                               ClipboardPasteCommand="{Binding RequestClipboardPasteCommand}"
-                               Models="{Binding AvailableModels}"
-                               SelectedModel="{Binding SelectedModel, Mode=TwoWay}"
-                               QualityLevels="{Binding QualityLevels}"
-                               SuggestionA="{loc:Str Chat_SuggestionA}"
-                               SuggestionB="{loc:Str Chat_SuggestionB}"
-                               SuggestionC="{loc:Str Chat_SuggestionC}"
-                               AgentName="{Binding SelectedAgentName, Mode=TwoWay}"
-                               AgentGlyph="{Binding SelectedAgentGlyph}"
-                               ProjectName="{Binding SelectedProjectName, Mode=TwoWay}"
-                               SkillItems="{Binding ActiveSkillChips}"
-                               McpItems="{Binding ActiveMcpChips}"
-                               AvailableAgents="{Binding AvailableAgentChips}"
-                               AvailableSkills="{Binding AvailableSkillChips}"
-                               AvailableMcps="{Binding AvailableMcpChips}"
-                               AvailableProjects="{Binding AvailableProjectChips}"
-                               AvailableFiles="{Binding AvailableFileSuggestions}" />
-      </StackPanel>
     </Panel>
 
     <!-- Loading overlay shown while chat history is being rebuilt (outside ChatPanel so it's visible even from welcome screen) -->
@@ -576,7 +587,7 @@
     </Panel>
 
     <!-- Active chat -->
-    <Panel x:Name="ChatPanel" IsVisible="{Binding IsChatVisible}">
+    <Panel x:Name="ChatPanel" Classes.active="{Binding IsChatVisible}">
       <sc:StrataChatShell x:Name="ChatShell" IsOnline="True">
 
         <sc:StrataChatShell.Header>
@@ -631,59 +642,135 @@
         </sc:StrataChatShell.Transcript>
 
         <sc:StrataChatShell.Composer>
-          <StackPanel Spacing="4">
-
-            <sc:StrataAttachmentList ShowAddButton="False"
-                                     ItemsSource="{Binding PendingAttachmentItems}"
-                                     IsVisible="{Binding HasPendingAttachments}">
-              <sc:StrataAttachmentList.ItemTemplate>
-                <DataTemplate DataType="vm:FileAttachmentItem">
-                  <sc:StrataFileAttachment FileName="{Binding FileName}"
-                                           FileSize="{Binding FileSize}"
-                                           Status="Completed"
-                                           IsRemovable="{Binding IsRemovable}"
-                                           RemoveCommand="{Binding RemoveCommand}" />
-                </DataTemplate>
-              </sc:StrataAttachmentList.ItemTemplate>
-            </sc:StrataAttachmentList>
-            <sc:StrataChatComposer x:Name="ActiveComposer"
-                                  Placeholder="{loc:Str Chat_Placeholder}"
-                                  PromptText="{Binding PromptText, Mode=TwoWay}"
-                                  IsBusy="{Binding IsBusy}"
-                                  IsRecording="{Binding IsRecording}"
-                                  SendWithEnter="{Binding SendWithEnter}"
-                                  SendCommand="{Binding SendMessageCommand}"
-                                  StopCommand="{Binding StopGenerationCommand}"
-                                  AttachCommand="{Binding RequestAttachFilesCommand}"
-                                  VoiceCommand="{Binding ToggleVoiceCommand}"
-                                  AgentRemovedCommand="{Binding RemoveAgentCommand}"
-                                  ProjectRemovedCommand="{Binding RemoveProjectCommand}"
-                                  SkillRemovedCommand="{Binding RemoveSkillCommand}"
-                                  McpRemovedCommand="{Binding RemoveMcpCommand}"
-                                  FileQueryChangedCommand="{Binding HandleFileQueryCommand}"
-                                  FileSelectedCommand="{Binding HandleFileSelectionCommand}"
-                                  ClipboardPasteCommand="{Binding RequestClipboardPasteCommand}"
-                                  Models="{Binding AvailableModels}"
-                                  SelectedModel="{Binding SelectedModel, Mode=TwoWay}"
-                                  QualityLevels="{Binding QualityLevels}"
-                                  SuggestionA="{Binding SuggestionA}"
-                                  SuggestionB="{Binding SuggestionB}"
-                                  SuggestionC="{Binding SuggestionC}"
-                                  IsSuggestionsGenerating="{Binding IsSuggestionsGenerating}"
-                                  AgentName="{Binding SelectedAgentName, Mode=TwoWay}"
-                                  AgentGlyph="{Binding SelectedAgentGlyph}"
-                                  ProjectName="{Binding SelectedProjectName, Mode=TwoWay}"
-                                  SkillItems="{Binding ActiveSkillChips}"
-                                  McpItems="{Binding ActiveMcpChips}"
-                                  AvailableAgents="{Binding AvailableAgentChips}"
-                                  AvailableSkills="{Binding AvailableSkillChips}"
-                                  AvailableMcps="{Binding AvailableMcpChips}"
-                                  AvailableProjects="{Binding AvailableProjectChips}"
-                                  AvailableFiles="{Binding AvailableFileSuggestions}" />
-          </StackPanel>
+          <!-- Transparent spacer — reserves space so the transcript doesn't scroll behind the real composer -->
+          <Panel x:Name="ComposerSpacer" />
         </sc:StrataChatShell.Composer>
 
       </sc:StrataChatShell>
     </Panel>
+
+    <!-- Single composer — always visible, animates between welcome and active states -->
+    <StackPanel x:Name="ComposerContainer" VerticalAlignment="Bottom" ZIndex="5"
+                HorizontalAlignment="Stretch" Spacing="4"
+                Classes.welcome="{Binding IsWelcomeVisible}">
+      <sc:StrataAttachmentList ShowAddButton="False"
+                               ItemsSource="{Binding PendingAttachmentItems}"
+                               IsVisible="{Binding HasPendingAttachments}">
+        <sc:StrataAttachmentList.ItemTemplate>
+          <DataTemplate DataType="vm:FileAttachmentItem">
+            <sc:StrataFileAttachment FileName="{Binding FileName}"
+                                     FileSize="{Binding FileSize}"
+                                     Status="Completed"
+                                     IsRemovable="{Binding IsRemovable}"
+                                     RemoveCommand="{Binding RemoveCommand}" />
+          </DataTemplate>
+        </sc:StrataAttachmentList.ItemTemplate>
+      </sc:StrataAttachmentList>
+
+      <!-- Coding project strip — above the composer -->
+      <Border x:Name="CodingStrip" IsVisible="{Binding IsCodingProject}" Margin="4,0,4,0"
+              RenderTransformOrigin="0.5,1">
+        <Border.RenderTransform>
+          <TranslateTransform />
+        </Border.RenderTransform>
+        <StackPanel Orientation="Horizontal" Spacing="5">
+          <Border Background="{DynamicResource Brush.Surface2}" CornerRadius="4" Padding="5,1"
+                  IsVisible="{Binding GitBranch, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+            <StackPanel Orientation="Horizontal" Spacing="3">
+              <PathIcon Width="8" Height="8" Foreground="{DynamicResource Brush.TextTertiary}"
+                        Data="M6 3v6a3 3 0 0 0 3 3h2a1 1 0 0 1 1 1v2m0 0a2 2 0 1 0 4 0 2 2 0 0 0-4 0zM6 3a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 0V9" />
+              <TextBlock Text="{Binding GitBranch}" FontSize="10"
+                         Foreground="{DynamicResource Brush.TextTertiary}" VerticalAlignment="Center"
+                         MaxWidth="120" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+          </Border>
+          <!-- Local / Worktree toggle -->
+          <Border Background="{DynamicResource Brush.Surface2}" CornerRadius="4" Padding="1">
+            <StackPanel Orientation="Horizontal" Spacing="1">
+              <Button Classes="subtle" Padding="5,1" MinHeight="0" Height="20" CornerRadius="3"
+                      Command="{Binding ToggleWorktreePreChatCommand}"
+                      IsEnabled="{Binding !IsWorktreeLocked}"
+                      ToolTip.Tip="{loc:Str Git_LocalTooltip}"
+                      Classes.active="{Binding !IsWorktreeMode}" Cursor="Hand">
+                <Button.Styles>
+                  <Style Selector="Button.active">
+                    <Setter Property="Background" Value="{DynamicResource Brush.Surface0}" />
+                    <Setter Property="Opacity" Value="1" />
+                  </Style>
+                  <Style Selector="Button:not(.active)">
+                    <Setter Property="Opacity" Value="0.45" />
+                  </Style>
+                </Button.Styles>
+                <TextBlock Text="{loc:Str Git_Local}" FontSize="10" />
+              </Button>
+              <Button Classes="subtle" Padding="5,1" MinHeight="0" Height="20" CornerRadius="3"
+                      Command="{Binding ToggleWorktreePreChatCommand}"
+                      IsEnabled="{Binding !IsWorktreeLocked}"
+                      ToolTip.Tip="{loc:Str Git_WorktreeTooltip}"
+                      Classes.active="{Binding IsWorktreeMode}" Cursor="Hand">
+                <Button.Styles>
+                  <Style Selector="Button.active">
+                    <Setter Property="Background" Value="{DynamicResource Brush.Surface0}" />
+                    <Setter Property="Opacity" Value="1" />
+                  </Style>
+                  <Style Selector="Button:not(.active)">
+                    <Setter Property="Opacity" Value="0.45" />
+                  </Style>
+                </Button.Styles>
+                <TextBlock Text="{loc:Str Git_Worktree}" FontSize="10" />
+              </Button>
+            </StackPanel>
+          </Border>
+        <Button Classes="subtle" Padding="5,1" MinHeight="0" Height="20" CornerRadius="4"
+                Command="{Binding ShowGitChangesCommand}" IsVisible="{Binding HasGitChanges}"
+                ToolTip.Tip="{loc:Str Git_ShowChanges}" Cursor="Hand">
+          <StackPanel Orientation="Horizontal" Spacing="3">
+            <Border Width="6" Height="6" CornerRadius="3" Background="{DynamicResource Brush.Warning}" VerticalAlignment="Center" />
+            <TextBlock Text="{Binding GitChangesLabel}" FontSize="10" Foreground="{DynamicResource Brush.TextSecondary}" />
+          </StackPanel>
+        </Button>
+        <Button Classes="subtle" Padding="2,1" MinHeight="0" Height="20" Width="20" CornerRadius="4"
+                Command="{Binding RefreshGitStatusCommand}" ToolTip.Tip="{loc:Str Git_RefreshTooltip}" Cursor="Hand">
+          <PathIcon Width="9" Height="9" Foreground="{DynamicResource Brush.TextTertiary}"
+                    Data="M17.65 6.35A8 8 0 1 0 19.73 13h-2.08A6 6 0 1 1 12 6a5.97 5.97 0 0 1 4.24 1.76L13 11h7V4l-2.35 2.35z" />
+        </Button>
+        </StackPanel>
+      </Border>
+
+      <sc:StrataChatComposer x:Name="Composer"
+                             Placeholder="{loc:Str Chat_Placeholder}"
+                             PromptText="{Binding PromptText, Mode=TwoWay}"
+                             IsBusy="{Binding IsBusy}"
+                             IsRecording="{Binding IsRecording}"
+                             SendWithEnter="{Binding SendWithEnter}"
+                             SendCommand="{Binding SendMessageCommand}"
+                             StopCommand="{Binding StopGenerationCommand}"
+                             AttachCommand="{Binding RequestAttachFilesCommand}"
+                             VoiceCommand="{Binding ToggleVoiceCommand}"
+                             AgentRemovedCommand="{Binding RemoveAgentCommand}"
+                             ProjectRemovedCommand="{Binding RemoveProjectCommand}"
+                             SkillRemovedCommand="{Binding RemoveSkillCommand}"
+                             McpRemovedCommand="{Binding RemoveMcpCommand}"
+                             FileQueryChangedCommand="{Binding HandleFileQueryCommand}"
+                             FileSelectedCommand="{Binding HandleFileSelectionCommand}"
+                             ClipboardPasteCommand="{Binding RequestClipboardPasteCommand}"
+                             Models="{Binding AvailableModels}"
+                             SelectedModel="{Binding SelectedModel, Mode=TwoWay}"
+                             QualityLevels="{Binding QualityLevels}"
+                             SuggestionA="{Binding SuggestionA}"
+                             SuggestionB="{Binding SuggestionB}"
+                             SuggestionC="{Binding SuggestionC}"
+                             IsSuggestionsGenerating="{Binding IsSuggestionsGenerating}"
+                             AgentName="{Binding SelectedAgentName, Mode=TwoWay}"
+                             AgentGlyph="{Binding SelectedAgentGlyph}"
+                             ProjectName="{Binding SelectedProjectName, Mode=TwoWay}"
+                             SkillItems="{Binding ActiveSkillChips}"
+                             McpItems="{Binding ActiveMcpChips}"
+                             AvailableAgents="{Binding AvailableAgentChips}"
+                             AvailableSkills="{Binding AvailableSkillChips}"
+                             AvailableMcps="{Binding AvailableMcpChips}"
+                             AvailableProjects="{Binding AvailableProjectChips}"
+                             AvailableFiles="{Binding AvailableFileSuggestions}" />
+    </StackPanel>
   </Panel>
 </UserControl>

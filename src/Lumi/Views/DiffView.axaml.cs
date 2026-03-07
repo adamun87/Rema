@@ -257,6 +257,64 @@ public partial class DiffView : UserControl
         return normIdx == normalizedIdx ? origIdx : -1;
     }
 
+    /// <summary>
+    /// Shows the file with explicit changed line numbers highlighted.
+    /// Used for git diffs where we know exactly which lines changed.
+    /// </summary>
+    public async void SetFileDiffWithChangedLines(string filePath, HashSet<int> changedLineNumbers)
+    {
+        if (_diffContent is null) return;
+        _diffContent.Children.Clear();
+        _changeOffsets.Clear();
+        _currentChangeIndex = -1;
+
+        if (_loadingOverlay is not null) _loadingOverlay.IsVisible = true;
+
+        var isDark = Application.Current?.ActualThemeVariant == ThemeVariant.Dark;
+        var ext = Path.GetExtension(filePath)?.TrimStart('.');
+        var language = ext ?? "";
+
+        var result = await Task.Run(() =>
+        {
+            string content;
+            try { content = File.Exists(filePath) ? File.ReadAllText(filePath) : ""; }
+            catch { content = ""; }
+
+            if (string.IsNullOrEmpty(content))
+                return (Lines: Array.Empty<string>(), TokenizedLines: Array.Empty<TokenizedLine>());
+
+            var lines = content.Split('\n');
+            var tokenized = TokenizeLines(lines, language, isDark);
+            return (Lines: lines, TokenizedLines: tokenized);
+        });
+
+        if (result.Lines.Length == 0)
+        {
+            if (_loadingOverlay is not null) _loadingOverlay.IsVisible = false;
+            UpdateStats(changedLineNumbers.Count, 0);
+            UpdateNavigation();
+            return;
+        }
+
+        await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Render);
+        await BuildFileViewAsync(result.Lines, isDark, changedLineNumbers, result.TokenizedLines);
+
+        if (_loadingOverlay is not null) _loadingOverlay.IsVisible = false;
+        UpdateStats(changedLineNumbers.Count, 0);
+        UpdateNavigation();
+
+        if (_changeOffsets.Count > 0)
+        {
+            Dispatcher.UIThread.Post(async () =>
+            {
+                await Task.Delay(50);
+                _currentChangeIndex = 0;
+                if (_diffScroller is not null)
+                    _diffScroller.Offset = new Vector(0, Math.Max(0, _changeOffsets[0] - 40));
+            }, DispatcherPriority.Loaded);
+        }
+    }
+
     private async Task BuildFileViewAsync(string[] lines, bool isDark, HashSet<int> changedLines, TokenizedLine[] tokenizedLines)
     {
         if (_diffContent is null) return;

@@ -105,9 +105,9 @@ public partial class ChatViewModel : ObservableObject
     /// <summary>MCP server names active for the current chat (empty = use all enabled).</summary>
     public List<string> ActiveMcpServerNames { get; } = [];
 
-    [ObservableProperty] private string _suggestionA = "";
-    [ObservableProperty] private string _suggestionB = "";
-    [ObservableProperty] private string _suggestionC = "";
+    [ObservableProperty] private string _suggestionA = Loc.Chat_SuggestionA;
+    [ObservableProperty] private string _suggestionB = Loc.Chat_SuggestionB;
+    [ObservableProperty] private string _suggestionC = Loc.Chat_SuggestionC;
     [ObservableProperty] private bool _isSuggestionsGenerating;
 
     // Events for the view to react to
@@ -187,7 +187,12 @@ public partial class ChatViewModel : ObservableObject
         if (value)
             _transcriptBuilder.ShowTypingIndicator(StatusText);
         else
+        {
             _transcriptBuilder.HideTypingIndicator();
+            // Refresh git status after turn completes
+            if (IsCodingProject)
+                RefreshCodingProjectState();
+        }
     }
 
     partial void OnStatusTextChanged(string value)
@@ -1543,7 +1548,8 @@ public partial class ChatViewModel : ObservableObject
                 ProjectId = _pendingProjectId ?? ActiveProjectFilterId,
                 ActiveSkillIds = new List<Guid>(ActiveSkillIds),
                 ActiveMcpServerNames = new List<string>(ActiveMcpServerNames),
-                SdkAgentName = SelectedSdkAgentName
+                SdkAgentName = SelectedSdkAgentName,
+                WorktreePath = IsWorktreeMode ? WorktreePath : null
             };
             _pendingProjectId = null;
             _dataStore.Data.Chats.Add(chat);

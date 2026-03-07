@@ -19,8 +19,8 @@ public partial class ChatView : UserControl
 {
     private StrataChatShell? _chatShell;
     private StrataChatTranscript? _transcript;
-    private StrataChatComposer? _activeComposer;
-    private StrataChatComposer? _welcomeComposer;
+    private StrataChatComposer? _composer;
+    private Panel? _composerSpacer;
     private Panel? _dropOverlay;
 
     private ChatViewModel? _subscribedVm;
@@ -40,9 +40,28 @@ public partial class ChatView : UserControl
 
         _chatShell = this.FindControl<StrataChatShell>("ChatShell");
         _transcript = this.FindControl<StrataChatTranscript>("Transcript");
-        _welcomeComposer = this.FindControl<StrataChatComposer>("WelcomeComposer");
-        _activeComposer = this.FindControl<StrataChatComposer>("ActiveComposer");
+        _composer = this.FindControl<StrataChatComposer>("Composer");
+        _composerSpacer = this.FindControl<Panel>("ComposerSpacer");
         _dropOverlay = this.FindControl<Panel>("DropOverlay");
+
+        // Slide-up animation for coding strip
+        var codingStrip = this.FindControl<Border>("CodingStrip");
+        if (codingStrip is not null)
+        {
+            codingStrip.PropertyChanged += (_, e) =>
+            {
+                if (e.Property == IsVisibleProperty && codingStrip.IsVisible)
+                    PlaySlideUpAnimation(codingStrip);
+            };
+        }
+
+        // Keep the shell spacer height in sync with the real composer container
+        var composerContainer = this.FindControl<StackPanel>("ComposerContainer");
+        if (composerContainer is not null && _composerSpacer is not null)
+        {
+            composerContainer.SizeChanged += (_, _) =>
+                _composerSpacer.Height = composerContainer.Bounds.Height;
+        }
 
         AddHandler(DragDrop.DragEnterEvent, OnDragEnter);
         AddHandler(DragDrop.DragOverEvent, OnDragOver);
@@ -78,8 +97,7 @@ public partial class ChatView : UserControl
 
     public void FocusComposer()
     {
-        var composer = _subscribedVm?.IsChatVisible == true ? _activeComposer : _welcomeComposer;
-        composer?.FocusInput();
+        _composer?.FocusInput();
     }
 
     private void UnsubscribeFromViewModel()
@@ -227,5 +245,27 @@ public partial class ChatView : UserControl
         }
 
         FocusComposer();
+    }
+
+    private static async void PlaySlideUpAnimation(Control target)
+    {
+        target.Opacity = 0;
+        target.RenderTransform = new Avalonia.Media.TranslateTransform(0, 6);
+
+        var anim = new Avalonia.Animation.Animation
+        {
+            Duration = TimeSpan.FromMilliseconds(250),
+            Easing = new Avalonia.Animation.Easings.CubicEaseOut(),
+            FillMode = Avalonia.Animation.FillMode.Forward,
+            Children =
+            {
+                new Avalonia.Animation.KeyFrame { Cue = new Avalonia.Animation.Cue(0), Setters = { new Avalonia.Styling.Setter(OpacityProperty, 0.0), new Avalonia.Styling.Setter(Avalonia.Media.TranslateTransform.YProperty, 6.0) } },
+                new Avalonia.Animation.KeyFrame { Cue = new Avalonia.Animation.Cue(1), Setters = { new Avalonia.Styling.Setter(OpacityProperty, 1.0), new Avalonia.Styling.Setter(Avalonia.Media.TranslateTransform.YProperty, 0.0) } },
+            }
+        };
+
+        try { await anim.RunAsync(target); } catch { }
+        target.Opacity = 1;
+        target.RenderTransform = null;
     }
 }

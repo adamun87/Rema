@@ -57,6 +57,9 @@ public class Chat : INotifyPropertyChanged
     /// <summary>Name of an SDK-discovered agent selected for this chat (not a Lumi agent).</summary>
     public string? SdkAgentName { get; set; }
 
+    /// <summary>Git worktree path when this chat operates in worktree mode. Null means local mode.</summary>
+    public string? WorktreePath { get; set; }
+
     /// <summary>Runtime-only flag indicating this chat is actively generating a response.</summary>
     [JsonIgnore]
     public bool IsRunning

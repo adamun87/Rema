@@ -49,6 +49,25 @@ public partial class ChatViewModel
     [ObservableProperty] private double _quotaRemainingPercent = 100;
     [ObservableProperty] private bool _isQuotaLow;
 
+    // ── Coding Project / Git ──
+    [ObservableProperty] private bool _isCodingProject;
+    [ObservableProperty] private string? _gitBranch;
+    [ObservableProperty] private int _gitChangedFileCount;
+    [ObservableProperty] private bool _isWorktreeMode;
+    [ObservableProperty] private string? _worktreePath;
+    /// <summary>True when a chat exists (toggle is locked).</summary>
+    public bool IsWorktreeLocked => CurrentChat is not null;
+    public ObservableCollection<GitFileChangeViewModel> GitChangedFiles { get; } = [];
+    public bool HasGitChanges => GitChangedFileCount > 0;
+    public string GitChangesLabel => GitChangedFileCount switch
+    {
+        0 => Loc.Git_NoChanges,
+        1 => Loc.Git_OneChange,
+        _ => string.Format(Loc.Git_NChanges, GitChangedFileCount)
+    };
+
+    public event Action<List<GitFileChangeViewModel>>? GitChangesShowRequested;
+
     public ObservableCollection<StrataComposerChip> AvailableAgentChips { get; } = [];
     public ObservableCollection<StrataComposerChip> AvailableSkillChips { get; } = [];
     public ObservableCollection<StrataComposerChip> AvailableMcpChips { get; } = [];
@@ -103,6 +122,7 @@ public partial class ChatViewModel
         RefreshProjectBadge();
         RefreshAgentBadge();
         UpdateQualityLevels(SelectedModel);
+        RefreshCodingProjectState();
     }
 
     public void RefreshComposerCatalogs()
@@ -342,8 +362,19 @@ public partial class ChatViewModel
     {
         OnPropertyChanged(nameof(IsWelcomeVisible));
         OnPropertyChanged(nameof(IsChatVisible));
+        OnPropertyChanged(nameof(IsWorktreeLocked));
         SyncComposerProjectSelectionFromState();
         RefreshProjectBadge();
+        RefreshCodingProjectState();
+
+        if (value is null)
+        {
+            // Returning to welcome — show static welcome suggestions
+            SuggestionA = Loc.Chat_SuggestionA;
+            SuggestionB = Loc.Chat_SuggestionB;
+            SuggestionC = Loc.Chat_SuggestionC;
+            IsSuggestionsGenerating = false;
+        }
     }
 
     partial void OnActiveAgentChanged(LumiAgent? value)
@@ -365,6 +396,12 @@ public partial class ChatViewModel
     partial void OnAgentBadgeTextChanged(string? value)
     {
         OnPropertyChanged(nameof(HasAgentBadge));
+    }
+
+    partial void OnGitChangedFileCountChanged(int value)
+    {
+        OnPropertyChanged(nameof(HasGitChanges));
+        OnPropertyChanged(nameof(GitChangesLabel));
     }
 
     partial void OnSelectedAgentNameChanged(string? value)
@@ -776,5 +813,107 @@ public partial class ChatViewModel
             });
         }
         catch { /* best effort */ }
+    }
+
+    // ── Git / Coding project helpers ──────────────────────
+
+    /// <summary>Gets the project's original working directory (ignoring worktree override).</summary>
+    private string GetProjectWorkingDirectory()
+    {
+        var pid = CurrentChat?.ProjectId ?? _pendingProjectId ?? ActiveProjectFilterId;
+        if (pid.HasValue)
+        {
+            var project = _dataStore.Data.Projects.FirstOrDefault(p => p.Id == pid.Value);
+            if (project is { WorkingDirectory: { Length: > 0 } dir } && Directory.Exists(dir))
+                return dir;
+        }
+        return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    }
+
+    /// <summary>Detects whether the current project is a coding project and refreshes git state.</summary>
+    public async void RefreshCodingProjectState()
+    {
+        // Always use the original project dir for git detection (not worktree)
+        var projectDir = GetProjectWorkingDirectory();
+        var isGit = GitService.IsGitRepo(projectDir);
+        IsCodingProject = isGit;
+
+        // Worktree state comes exclusively from the current chat's persisted data.
+        // On welcome screen (no chat), always reset to local.
+        if (CurrentChat?.WorktreePath is { Length: > 0 } savedWt && Directory.Exists(savedWt))
+        {
+            WorktreePath = savedWt;
+            IsWorktreeMode = true;
+        }
+        else
+        {
+            WorktreePath = null;
+            IsWorktreeMode = false;
+        }
+
+        if (!isGit)
+        {
+            GitBranch = null;
+            GitChangedFileCount = 0;
+            GitChangedFiles.Clear();
+            return;
+        }
+
+        // Use the effective dir (worktree or project) for status
+        var workDir = GetEffectiveWorkingDirectory();
+        var branch = await GitService.GetCurrentBranchAsync(workDir);
+        var changes = await GitService.GetChangedFilesAsync(workDir);
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            GitBranch = branch;
+            GitChangedFileCount = changes.Count;
+            GitChangedFiles.Clear();
+            foreach (var c in changes)
+                GitChangedFiles.Add(new GitFileChangeViewModel(c));
+        });
+    }
+
+    /// <summary>Toggles worktree mode. Only works before a chat is created (on the welcome screen).</summary>
+    [RelayCommand]
+    private async Task ToggleWorktreePreChatAsync()
+    {
+        // Locked once a chat exists
+        if (CurrentChat is not null) return;
+
+        if (IsWorktreeMode)
+        {
+            // Switch back to local — just clear the pending state, don't remove worktree
+            // (it was never committed to a chat)
+            WorktreePath = null;
+            IsWorktreeMode = false;
+        }
+        else
+        {
+            var projectDir = GetProjectWorkingDirectory();
+            if (!GitService.IsGitRepo(projectDir)) return;
+
+            var chatId = Guid.NewGuid().ToString("N")[..8];
+            var branchName = $"lumi/{chatId}";
+            var path = await GitService.CreateWorktreeAsync(projectDir, branchName);
+            if (path is not null)
+            {
+                WorktreePath = path;
+                IsWorktreeMode = true;
+            }
+        }
+    }
+
+    [RelayCommand]
+    private void ShowGitChanges()
+    {
+        if (GitChangedFiles.Count > 0)
+            GitChangesShowRequested?.Invoke(GitChangedFiles.ToList());
+    }
+
+    [RelayCommand]
+    private void RefreshGitStatus()
+    {
+        RefreshCodingProjectState();
     }
 }

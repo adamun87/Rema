@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
@@ -19,6 +20,7 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Lumi.Localization;
 using Lumi.Models;
+using Lumi.Services;
 using Lumi.ViewModels;
 
 namespace Lumi.Views;
@@ -56,6 +58,7 @@ public partial class MainWindow : Window
     private ContentControl? _diffHost;
     private DiffView? _diffView;
     private TextBlock? _diffFileNameText;
+    private List<GitFileChangeViewModel>? _lastGitChangesList;
     private Border? _planIsland;
     private CancellationTokenSource? _previewAnimCts;
     private bool _suppressSelectionSync;
@@ -429,6 +432,12 @@ public partial class MainWindow : Window
             var closeDiffBtn = this.FindControl<Button>("CloseDiffButton");
             if (closeDiffBtn is not null)
                 closeDiffBtn.Click += (_, _) => { HideDiffPanel(); if (DataContext is MainViewModel m) m.ChatVM.IsDiffOpen = false; };
+
+            // Wire git changes panel show
+            vm.ChatVM.GitChangesShowRequested += (files) =>
+            {
+                Dispatcher.UIThread.Post(() => ShowGitChangesPanel(files));
+            };
 
             // Wire plan panel show/hide
             vm.ChatVM.PlanShowRequested += () =>
@@ -1355,11 +1364,12 @@ public partial class MainWindow : Window
 
     private void EnsureDiffViewLoaded()
     {
-        if (_diffView is not null) return;
         if (_diffHost is null) return;
-
-        _diffView = new DiffView();
-        _diffHost.Content = _diffView;
+        if (_diffView is null)
+            _diffView = new DiffView();
+        // Always restore DiffView as the host content (may have been swapped for git changes list)
+        if (_diffHost.Content != _diffView)
+            _diffHost.Content = _diffView;
     }
 
     private async void ShowDiffPanel(FileChangeItem fileChange)
@@ -1488,6 +1498,328 @@ public partial class MainWindow : Window
         }
 
         if (DataContext is MainViewModel vm) vm.ChatVM.IsDiffOpen = false;
+    }
+
+    /// <summary>Shows a list of git changed files in the diff panel. Clicking a file opens its diff.</summary>
+    private void ShowGitChangesPanel(List<GitFileChangeViewModel> files)
+    {
+        if (_diffIsland is null || _chatContentGrid is null || _chatIsland is null) return;
+
+        _lastGitChangesList = files;
+
+        var tertiaryBrush = Avalonia.Media.Brushes.Gray as Avalonia.Media.IBrush;
+        if (this.TryFindResource("Brush.TextTertiary", this.ActualThemeVariant, out var tObj) && tObj is Avalonia.Media.IBrush tBrush)
+            tertiaryBrush = tBrush;
+
+        // Build a file list panel
+        var listPanel = new StackPanel { Spacing = 2, Margin = new Thickness(8, 4) };
+        foreach (var file in files)
+        {
+            var kindColor = file.Kind switch
+            {
+                GitChangeKind.Added or GitChangeKind.Untracked => new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromRgb(63, 185, 80)),
+                GitChangeKind.Deleted => new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromRgb(248, 81, 73)),
+                GitChangeKind.Renamed => new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromRgb(88, 166, 255)),
+                _ => new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromRgb(210, 153, 34))
+            };
+
+            var row = new Button
+            {
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Left,
+                Padding = new Thickness(10, 8),
+                Background = Avalonia.Media.Brushes.Transparent,
+                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
+            };
+            row.Classes.Add("subtle");
+
+            var content = new DockPanel();
+
+            // Status letter badge
+            var badge = new Border
+            {
+                Width = 22, Height = 22,
+                CornerRadius = new CornerRadius(4),
+                Background = new Avalonia.Media.SolidColorBrush(kindColor.Color, 0.15),
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 10, 0),
+                Child = new TextBlock
+                {
+                    Text = file.KindIcon,
+                    FontSize = 11,
+                    FontWeight = Avalonia.Media.FontWeight.Bold,
+                    Foreground = kindColor,
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+                }
+            };
+            DockPanel.SetDock(badge, Dock.Left);
+            content.Children.Add(badge);
+
+            var textStack = new StackPanel { Spacing = 1, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
+            textStack.Children.Add(new TextBlock
+            {
+                Text = file.FileName,
+                FontSize = 12,
+                FontWeight = Avalonia.Media.FontWeight.Medium,
+            });
+            if (!string.IsNullOrEmpty(file.Directory))
+            {
+                textStack.Children.Add(new TextBlock
+                {
+                    Text = file.Directory,
+                    FontSize = 10,
+                    Foreground = tertiaryBrush,
+                });
+            }
+            content.Children.Add(textStack);
+
+            // Line stats on the right
+            if (file.HasStats)
+            {
+                var statsPanel = new StackPanel
+                {
+                    Orientation = Avalonia.Layout.Orientation.Horizontal,
+                    Spacing = 6,
+                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                    Margin = new Thickness(8, 0, 0, 0),
+                };
+                DockPanel.SetDock(statsPanel, Dock.Right);
+                if (file.LinesAdded > 0)
+                    statsPanel.Children.Add(new TextBlock
+                    {
+                        Text = $"+{file.LinesAdded}",
+                        FontSize = 11,
+                        FontFamily = new Avalonia.Media.FontFamily("Cascadia Code, Consolas, monospace"),
+                        Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromRgb(63, 185, 80)),
+                    });
+                if (file.LinesRemoved > 0)
+                    statsPanel.Children.Add(new TextBlock
+                    {
+                        Text = $"−{file.LinesRemoved}",
+                        FontSize = 11,
+                        FontFamily = new Avalonia.Media.FontFamily("Cascadia Code, Consolas, monospace"),
+                        Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromRgb(248, 81, 73)),
+                    });
+                // Insert before textStack so DockPanel docks it right
+                content.Children.Insert(1, statsPanel);
+            }
+
+            row.Content = content;
+
+            // Click opens the diff for this file with a back button
+            var capturedFile = file;
+            row.Click += (_, _) => ShowGitFileDiffWithBackNav(capturedFile);
+
+            listPanel.Children.Add(row);
+        }
+
+        // Update header
+        if (_diffFileNameText is not null)
+            _diffFileNameText.Text = $"Changes ({files.Count})";
+
+        // Show the list in the diff host (bypass EnsureDiffViewLoaded since we want custom content)
+        if (_diffHost is not null)
+        {
+            _diffHost.Content = new ScrollViewer
+            {
+                Content = listPanel,
+                HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+            };
+        }
+
+        // Show the diff panel (reuse the same show animation logic)
+        ShowDiffPanelAnimated();
+    }
+
+    /// <summary>Opens a single file diff with breadcrumb back-nav in the header.</summary>
+    private void ShowGitFileDiffWithBackNav(GitFileChangeViewModel file)
+    {
+        if (_diffHost is null) return;
+
+        // Create a fresh DiffView for this file
+        var diffView = new DiffView();
+        _diffHost.Content = diffView;
+
+        // Update header: clickable "Changes" breadcrumb + file name
+        if (_diffFileNameText is not null)
+        {
+            _diffFileNameText.Text = null;
+            _diffFileNameText.Inlines?.Clear();
+            var inlines = _diffFileNameText.Inlines ??= new Avalonia.Controls.Documents.InlineCollection();
+
+            var accentBrush = Avalonia.Media.Brushes.DodgerBlue as Avalonia.Media.IBrush;
+            var tertiaryBrush = Avalonia.Media.Brushes.Gray as Avalonia.Media.IBrush;
+            if (this.TryFindResource("Brush.AccentDefault", this.ActualThemeVariant, out var accentObj) && accentObj is Avalonia.Media.IBrush ab)
+                accentBrush = ab;
+            if (this.TryFindResource("Brush.TextTertiary", this.ActualThemeVariant, out var tertiaryObj) && tertiaryObj is Avalonia.Media.IBrush tb)
+                tertiaryBrush = tb;
+
+            var changesRun = new Avalonia.Controls.Documents.Run("Changes")
+            {
+                Foreground = accentBrush,
+            };
+            inlines.Add(changesRun);
+            inlines.Add(new Avalonia.Controls.Documents.Run("  ›  ") { Foreground = tertiaryBrush });
+            inlines.Add(new Avalonia.Controls.Documents.Run(file.FileName));
+
+            _diffFileNameText.Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand);
+
+            _diffFileNameText.PointerPressed -= OnDiffBreadcrumbClick;
+            _diffFileNameText.PointerPressed += OnDiffBreadcrumbClick;
+        }
+
+        // Build the diff view
+        if (file.Change.Kind is GitChangeKind.Added or GitChangeKind.Untracked)
+        {
+            // New file — highlight all lines
+            diffView.SetFileDiffWithChangedLines(file.Change.FullPath, null!);
+            // null signals "all lines" — but we need a proper set. Load line count.
+            _ = HighlightAllLinesAsync(file.Change.FullPath, diffView);
+        }
+        else
+        {
+            _ = LoadGitDiffWithLineNumbersAsync(file.Change, diffView);
+        }
+    }
+
+    private async Task HighlightAllLinesAsync(string filePath, DiffView diffView)
+    {
+        var lineCount = await Task.Run(() =>
+        {
+            try { return System.IO.File.Exists(filePath) ? System.IO.File.ReadAllLines(filePath).Length : 0; }
+            catch { return 0; }
+        });
+        var allLines = new HashSet<int>();
+        for (int i = 0; i < lineCount; i++) allLines.Add(i);
+        Dispatcher.UIThread.Post(() => diffView.SetFileDiffWithChangedLines(filePath, allLines));
+    }
+
+    private void OnDiffBreadcrumbClick(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+    {
+        if (_lastGitChangesList is not null)
+            ShowGitChangesPanel(_lastGitChangesList);
+    }
+
+    private async Task LoadGitDiffWithLineNumbersAsync(GitFileChange change, DiffView diffView)
+    {
+        var repoDir = System.IO.Path.GetDirectoryName(change.FullPath) ?? "";
+        var diff = await GitService.GetFileDiffAsync(repoDir, System.IO.Path.GetFileName(change.FullPath));
+        if (diff is null)
+            diff = await GitService.GetFileDiffAsync(repoDir, change.RelativePath);
+
+        var changedLines = new HashSet<int>();
+        if (diff is not null)
+        {
+            // Parse @@ headers to get new-file line numbers for changed lines
+            foreach (var line in diff.Split('\n'))
+            {
+                if (line.StartsWith("@@"))
+                {
+                    // Format: @@ -oldStart[,oldCount] +newStart[,newCount] @@
+                    var match = System.Text.RegularExpressions.Regex.Match(line, @"\+(\d+)(?:,(\d+))?");
+                    if (match.Success)
+                    {
+                        var start = int.Parse(match.Groups[1].Value) - 1; // 0-indexed
+                        // Track which lines in this hunk are actually added/modified
+                        int currentLine = start;
+                        // Find the content lines after this @@ header
+                        var allLines = diff.Split('\n');
+                        int idx = Array.IndexOf(allLines, line);
+                        for (int i = idx + 1; i < allLines.Length; i++)
+                        {
+                            var hunkLine = allLines[i];
+                            if (hunkLine.StartsWith("@@") || hunkLine.StartsWith("diff ")) break;
+                            if (hunkLine.StartsWith('+') && !hunkLine.StartsWith("+++"))
+                            {
+                                changedLines.Add(currentLine);
+                                currentLine++;
+                            }
+                            else if (hunkLine.StartsWith('-') && !hunkLine.StartsWith("---"))
+                            {
+                                // Removed line — doesn't advance new file position
+                            }
+                            else
+                            {
+                                // Context line
+                                currentLine++;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Dispatcher.UIThread.Post(() => diffView.SetFileDiffWithChangedLines(change.FullPath, changedLines));
+    }
+
+    /// <summary>Shows the diff island with animation (shared by file diff and git changes list).</summary>
+    private async void ShowDiffPanelAnimated()
+    {
+        if (_diffIsland is null || _chatContentGrid is null || _chatIsland is null) return;
+
+        // Hide browser panel if it's open
+        if (_browserIsland is { IsVisible: true })
+        {
+            _browserIsland.IsVisible = false;
+            _browserIsland.Opacity = 1;
+            _browserIsland.RenderTransform = null;
+            if (_browserSplitter is not null) _browserSplitter.IsVisible = false;
+            if (DataContext is MainViewModel vmb)
+            {
+                if (vmb.BrowserService.Controller is not null)
+                    vmb.BrowserService.Controller.IsVisible = false;
+                vmb.ChatVM.IsBrowserOpen = false;
+            }
+        }
+
+        // Hide plan panel if open
+        if (_planIsland is { IsVisible: true })
+        {
+            _planIsland.IsVisible = false;
+            _planIsland.Opacity = 1;
+            _planIsland.RenderTransform = null;
+            if (DataContext is MainViewModel vmp) vmp.ChatVM.IsPlanOpen = false;
+        }
+
+        var ct = ReplaceCancellationTokenSource(ref _previewAnimCts).Token;
+        var vm = DataContext as MainViewModel;
+        if (vm is not null && vm.SelectedNavIndex != 0)
+            vm.SelectedNavIndex = 0;
+
+        const double offsetX = 40.0;
+        var defs = _chatContentGrid.ColumnDefinitions;
+        while (defs.Count < 3) defs.Add(new ColumnDefinition());
+        defs[0].Width = new GridLength(1, GridUnitType.Star);
+        defs[1].Width = GridLength.Auto;
+        defs[2].Width = new GridLength(1, GridUnitType.Star);
+        Grid.SetColumn(_chatIsland, 0);
+        Grid.SetColumn(_diffIsland, 2);
+
+        _diffIsland.RenderTransform = new TranslateTransform(offsetX, 0);
+        _diffIsland.Opacity = 0;
+        _diffIsland.IsVisible = true;
+        if (_browserSplitter is not null) _browserSplitter.IsVisible = true;
+
+        var anim = new Avalonia.Animation.Animation
+        {
+            Duration = TimeSpan.FromMilliseconds(300),
+            Easing = new CubicEaseOut(),
+            FillMode = FillMode.Forward,
+            Children =
+            {
+                new KeyFrame { Cue = new Cue(0), Setters = { new Setter(OpacityProperty, 0.0), new Setter(TranslateTransform.XProperty, offsetX) } },
+                new KeyFrame { Cue = new Cue(1), Setters = { new Setter(OpacityProperty, 1.0), new Setter(TranslateTransform.XProperty, 0.0) } },
+            }
+        };
+
+        try { await anim.RunAsync(_diffIsland, ct); }
+        catch (OperationCanceledException) { return; }
+        if (ct.IsCancellationRequested) return;
+
+        _diffIsland.Opacity = 1;
+        _diffIsland.RenderTransform = null;
+        if (vm is not null) vm.ChatVM.IsDiffOpen = true;
     }
 
     private bool IsPlanOpen => _planIsland is { IsVisible: true };

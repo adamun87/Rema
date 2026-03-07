@@ -88,6 +88,7 @@ public partial class ChatViewModel
         SyncComposerProjectSelectionFromState();
         RefreshProjectBadge();
         RefreshComposerCatalogs(); // Re-scan workspace agents/skills for the new project
+        RefreshCodingProjectState();
     }
 
     private Guid? _pendingProjectId;
@@ -137,6 +138,7 @@ public partial class ChatViewModel
         SyncComposerProjectSelectionFromState();
         RefreshProjectBadge();
         RefreshComposerCatalogs(); // Re-scan to remove workspace agents/skills
+        RefreshCodingProjectState();
     }
     public void AddSkill(Skill skill)
     {
@@ -371,6 +373,10 @@ public partial class ChatViewModel
     /// </summary>
     private string GetEffectiveWorkingDirectory()
     {
+        // If worktree mode is active, use the worktree path
+        if (IsWorktreeMode && WorktreePath is { Length: > 0 } wt && Directory.Exists(wt))
+            return wt;
+
         var pid = CurrentChat?.ProjectId ?? _pendingProjectId ?? ActiveProjectFilterId;
         if (pid.HasValue)
         {
