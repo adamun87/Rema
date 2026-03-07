@@ -173,6 +173,8 @@ public partial class UserMessageItem : TranscriptItem
     public List<SkillReference> Skills { get; }
     public bool HasAttachments => Attachments.Count > 0;
     public bool HasSkills => Skills.Count > 0;
+    public List<FileAttachmentItem>? DisplayAttachments => HasAttachments ? Attachments : null;
+    public List<SkillReference>? DisplaySkills => HasSkills ? Skills : null;
 
     /// <summary>Command invoked when user clicks Edit on the message. Sets EditText to current content.</summary>
     public ICommand BeginEditCommand { get; }
@@ -229,10 +231,17 @@ public partial class AssistantMessageItem : TranscriptItem
     [ObservableProperty] private bool _hasSources;
     [ObservableProperty] private string _sourcesLabel = "";
 
+    partial void OnHasSkillsChanged(bool value) => OnPropertyChanged(nameof(DisplaySkills));
+    partial void OnHasFileAttachmentsChanged(bool value) => OnPropertyChanged(nameof(DisplayFileAttachments));
+    partial void OnHasSourcesChanged(bool value) => OnPropertyChanged(nameof(DisplaySourcesSection));
+
     public string? Author => _source.Author;
     public ObservableCollection<SkillReference> Skills { get; } = [];
     public ObservableCollection<FileAttachmentItem> FileAttachments { get; } = [];
     public ObservableCollection<SourceItem> Sources { get; } = [];
+    public ObservableCollection<SkillReference>? DisplaySkills => HasSkills ? Skills : null;
+    public ObservableCollection<FileAttachmentItem>? DisplayFileAttachments => HasFileAttachments ? FileAttachments : null;
+    public AssistantMessageItem? DisplaySourcesSection => HasSources ? this : null;
 
     public AssistantMessageItem(ChatMessageViewModel source, bool showTimestamps)
         : base(

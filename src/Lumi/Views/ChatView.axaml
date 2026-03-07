@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:model="using:Lumi.Models"
              xmlns:vm="using:Lumi.ViewModels"
              xmlns:lc="using:Lumi.Views.Controls"
              xmlns:sc="using:StrataTheme.Controls"
@@ -52,38 +53,50 @@
         <sc:StrataChatMessage.Content>
           <StackPanel Spacing="6">
             <lc:TranscriptTextContent Text="{Binding Content}" />
-            <ItemsControl ItemsSource="{Binding Attachments}"
-                          IsVisible="{Binding HasAttachments}">
-              <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
-              </ItemsControl.ItemsPanel>
-              <ItemsControl.ItemTemplate>
-                <DataTemplate DataType="vm:FileAttachmentItem">
-                  <sc:StrataFileAttachment FileName="{Binding FileName}"
-                                           FileSize="{Binding FileSize}"
-                                           Status="Completed"
-                                           IsRemovable="False" />
+            <ContentControl Content="{Binding DisplayAttachments}"
+                            IsVisible="{Binding HasAttachments}">
+              <ContentControl.DataTemplates>
+                <DataTemplate DataType="x:Object">
+                  <ItemsControl ItemsSource="{Binding}">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate DataType="vm:FileAttachmentItem">
+                        <sc:StrataFileAttachment FileName="{Binding FileName}"
+                                                 FileSize="{Binding FileSize}"
+                                                 Status="Completed"
+                                                 IsRemovable="False" />
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
                 </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-            <ItemsControl ItemsSource="{Binding Skills}"
-                          IsVisible="{Binding HasSkills}">
-              <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
-              </ItemsControl.ItemsPanel>
-              <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <Border Background="{DynamicResource Brush.SurfaceSubtle}"
-                          CornerRadius="10" Padding="8,3" Margin="0,0,4,0">
-                    <StackPanel Orientation="Horizontal" Spacing="4">
-                      <TextBlock Text="{Binding Glyph}" FontSize="11" VerticalAlignment="Center" />
-                      <TextBlock Text="{Binding Name}" Classes="caption"
-                                 Foreground="{DynamicResource Brush.TextSecondary}" />
-                    </StackPanel>
-                  </Border>
+              </ContentControl.DataTemplates>
+            </ContentControl>
+            <ContentControl Content="{Binding DisplaySkills}"
+                            IsVisible="{Binding HasSkills}">
+              <ContentControl.DataTemplates>
+                <DataTemplate DataType="x:Object">
+                  <ItemsControl ItemsSource="{Binding}">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate DataType="model:SkillReference">
+                        <Border Background="{DynamicResource Brush.SurfaceSubtle}"
+                                CornerRadius="10" Padding="8,3" Margin="0,0,4,0">
+                          <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Text="{Binding Glyph}" FontSize="11" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding Name}" Classes="caption"
+                                       Foreground="{DynamicResource Brush.TextSecondary}" />
+                          </StackPanel>
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
                 </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
+              </ContentControl.DataTemplates>
+            </ContentControl>
           </StackPanel>
         </sc:StrataChatMessage.Content>
       </sc:StrataChatMessage>
@@ -92,6 +105,8 @@
     <!-- ── Assistant message ────────────────────────── -->
     <DataTemplate DataType="vm:AssistantMessageItem">
       <sc:StrataChatMessage Role="Assistant"
+                            HorizontalAlignment="Left"
+                            MaxWidth="760"
                             Author="{Binding Author}"
                             Timestamp="{Binding TimestampText}"
                             IsStreaming="{Binding IsStreaming}">
@@ -100,67 +115,85 @@
             <lc:TranscriptTextContent Text="{Binding Content}" />
 
             <!-- Skills section -->
-            <ItemsControl ItemsSource="{Binding Skills}"
-                          IsVisible="{Binding HasSkills}">
-              <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
-              </ItemsControl.ItemsPanel>
-              <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <Border Background="{DynamicResource Brush.SurfaceSubtle}"
-                          CornerRadius="10" Padding="8,3" Margin="0,0,4,0">
-                    <StackPanel Orientation="Horizontal" Spacing="4">
-                      <TextBlock Text="{Binding Glyph}" FontSize="11" VerticalAlignment="Center" />
-                      <TextBlock Text="{Binding Name}" Classes="caption"
-                                 Foreground="{DynamicResource Brush.TextSecondary}" />
-                    </StackPanel>
-                  </Border>
+            <ContentControl Content="{Binding DisplaySkills}"
+                            IsVisible="{Binding HasSkills}">
+              <ContentControl.DataTemplates>
+                <DataTemplate DataType="x:Object">
+                  <ItemsControl ItemsSource="{Binding}">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate DataType="model:SkillReference">
+                        <Border Background="{DynamicResource Brush.SurfaceSubtle}"
+                                CornerRadius="10" Padding="8,3" Margin="0,0,4,0">
+                          <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Text="{Binding Glyph}" FontSize="11" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding Name}" Classes="caption"
+                                       Foreground="{DynamicResource Brush.TextSecondary}" />
+                          </StackPanel>
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
                 </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
+              </ContentControl.DataTemplates>
+            </ContentControl>
 
             <!-- File attachments -->
-            <ItemsControl ItemsSource="{Binding FileAttachments}"
-                          IsVisible="{Binding HasFileAttachments}">
-              <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
-              </ItemsControl.ItemsPanel>
-              <ItemsControl.ItemTemplate>
-                <DataTemplate DataType="vm:FileAttachmentItem">
-                  <sc:StrataFileAttachment FileName="{Binding FileName}"
-                                           FileSize="{Binding FileSize}"
-                                           Status="Completed"
-                                           IsRemovable="False" />
+            <ContentControl Content="{Binding DisplayFileAttachments}"
+                            IsVisible="{Binding HasFileAttachments}">
+              <ContentControl.DataTemplates>
+                <DataTemplate DataType="x:Object">
+                  <ItemsControl ItemsSource="{Binding}">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate DataType="vm:FileAttachmentItem">
+                        <sc:StrataFileAttachment FileName="{Binding FileName}"
+                                                 FileSize="{Binding FileSize}"
+                                                 Status="Completed"
+                                                 IsRemovable="False" />
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
                 </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
+              </ContentControl.DataTemplates>
+            </ContentControl>
 
             <!-- Sources section -->
-            <sc:StrataThink Label="{Binding SourcesLabel}"
+            <ContentControl Content="{Binding DisplaySourcesSection}"
                             IsVisible="{Binding HasSources}">
-              <sc:StrataThink.Content>
-                <ItemsControl ItemsSource="{Binding Sources}">
-                  <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate><StackPanel Spacing="2" /></ItemsPanelTemplate>
-                  </ItemsControl.ItemsPanel>
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate DataType="vm:SourceItem">
-                      <Button Classes="subtle" HorizontalAlignment="Stretch"
-                              HorizontalContentAlignment="Left"
-                              Command="{Binding OpenCommand}"
-                              Padding="6,4" Cursor="Hand">
-                        <StackPanel>
-                          <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis"
-                                     Classes="caption" FontWeight="SemiBold" />
-                          <TextBlock Text="{Binding Domain}" Classes="caption"
-                                     Foreground="{DynamicResource Brush.TextTertiary}" />
-                        </StackPanel>
-                      </Button>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-              </sc:StrataThink.Content>
-            </sc:StrataThink>
+              <ContentControl.DataTemplates>
+                <DataTemplate DataType="vm:AssistantMessageItem">
+                  <sc:StrataThink Label="{Binding SourcesLabel}">
+                    <sc:StrataThink.Content>
+                      <ItemsControl ItemsSource="{Binding Sources}">
+                        <ItemsControl.ItemsPanel>
+                          <ItemsPanelTemplate><StackPanel Spacing="2" /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate DataType="vm:SourceItem">
+                            <Button Classes="subtle" HorizontalAlignment="Stretch"
+                                    HorizontalContentAlignment="Left"
+                                    Command="{Binding OpenCommand}"
+                                    Padding="6,4" Cursor="Hand">
+                              <StackPanel>
+                                <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis"
+                                           Classes="caption" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding Domain}" Classes="caption"
+                                           Foreground="{DynamicResource Brush.TextTertiary}" />
+                              </StackPanel>
+                            </Button>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </sc:StrataThink.Content>
+                  </sc:StrataThink>
+                </DataTemplate>
+              </ContentControl.DataTemplates>
+            </ContentControl>
 
           </StackPanel>
         </sc:StrataChatMessage.Content>
@@ -594,7 +627,7 @@
 
         <sc:StrataChatShell.Transcript>
           <sc:StrataChatTranscript x:Name="Transcript"
-                                  ItemsSource="{Binding TranscriptTurns}" />
+                  ItemsSource="{Binding TranscriptTurns}" />
         </sc:StrataChatShell.Transcript>
 
         <sc:StrataChatShell.Composer>

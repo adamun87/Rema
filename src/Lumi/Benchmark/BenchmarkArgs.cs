@@ -21,6 +21,8 @@ internal sealed class BenchmarkArgs
     public bool WarmUp { get; set; } = true;
     public int Iterations { get; set; } = 1;
     public bool SimpleMode { get; set; }
+    public bool SimpleStockVirtualizingStackPanelMode { get; set; }
+    public bool TreeProfile { get; set; } = true;
 
     public static readonly IReadOnlyList<string> ValidScenarios =
     [
@@ -95,6 +97,15 @@ internal sealed class BenchmarkArgs
                     result.SimpleMode = true;
                     break;
 
+                case "--simple-stock-vsp":
+                    result.SimpleMode = true;
+                    result.SimpleStockVirtualizingStackPanelMode = true;
+                    break;
+
+                case "--no-tree-profile":
+                    result.TreeProfile = false;
+                    break;
+
                 case "--help" or "-h":
                     result.ShowHelp = true;
                     break;
@@ -119,6 +130,9 @@ internal sealed class BenchmarkArgs
           --output, -o <path>      Write JSON results to file
           --verbose, -v            Print per-frame timing data
           --no-warmup              Skip warm-up phase
+          --simple-stock-vsp       Use ListBox + Avalonia VirtualizingStackPanel
+                                   for the simple plain-text benchmark
+          --no-tree-profile        Skip the pre-scenario visual tree profile
           --iterations, -i <n>     Run each scenario N times (default: 1)
           --help, -h               Show this help
 

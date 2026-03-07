@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -222,7 +223,8 @@ public class TranscriptBuilder
                 var capturedGroup = _currentToolGroup;
                 var capturedTodoProgress = _currentTodoProgress;
                 var capturedTodoToolCall = _currentTodoToolCall;
-                msgVm.PropertyChanged += (_, args) =>
+                PropertyChangedEventHandler? handler = null;
+                handler = (_, args) =>
                 {
                     if (args.PropertyName == nameof(ChatMessageViewModel.ToolStatus) && capturedTodoProgress is not null)
                     {
@@ -238,8 +240,12 @@ public class TranscriptBuilder
                         }
 
                         UpdateToolGroupState(capturedGroup);
+
+                        if (msgVm.ToolStatus is "Completed" or "Failed")
+                            msgVm.PropertyChanged -= handler;
                     }
                 };
+                msgVm.PropertyChanged += handler;
             }
 
             return;
@@ -271,7 +277,8 @@ public class TranscriptBuilder
 
             if (!IsRebuildingTranscript)
             {
-                msgVm.PropertyChanged += (_, args) =>
+                PropertyChangedEventHandler? handler = null;
+                handler = (_, args) =>
                 {
                     if (args.PropertyName != nameof(ChatMessageViewModel.ToolStatus))
                         return;
@@ -290,7 +297,11 @@ public class TranscriptBuilder
                     }
 
                     UpdateToolGroupState(capturedTermGroup);
+
+                    if (msgVm.ToolStatus is "Completed" or "Failed")
+                        msgVm.PropertyChanged -= handler;
                 };
+                msgVm.PropertyChanged += handler;
             }
 
             _currentToolGroup!.ToolCalls.Add(termPreview);
@@ -332,7 +343,8 @@ public class TranscriptBuilder
 
         if (!IsRebuildingTranscript)
         {
-            msgVm.PropertyChanged += (_, args) =>
+            PropertyChangedEventHandler? handler = null;
+            handler = (_, args) =>
             {
                 if (args.PropertyName != nameof(ChatMessageViewModel.ToolStatus))
                     return;
@@ -354,7 +366,11 @@ public class TranscriptBuilder
                     PendingFileEdits.RemoveAll(fe => fe.FilePath == toolCall.DiffFilePath);
 
                 UpdateToolGroupState(capturedToolGroup);
+
+                if (msgVm.ToolStatus is "Completed" or "Failed")
+                    msgVm.PropertyChanged -= handler;
             };
+            msgVm.PropertyChanged += handler;
         }
 
         _currentToolGroup!.ToolCalls.Add(toolCall);
@@ -383,6 +399,7 @@ public class TranscriptBuilder
 
             var userItem = new UserMessageItem(msgVm, showTimestamps, (msg, edited) => _ = _resendFromMessageAction(msg, edited));
             AppendToCurrentTurn(userItem, TurnStableIdFor($"message:{msgVm.Message.Id}"));
+            FinalizeCurrentTurn();
             return;
         }
 
@@ -407,7 +424,8 @@ public class TranscriptBuilder
         {
             var capturedTurn = turn;
             var capturedItem = assistantItem;
-            msgVm.PropertyChanged += (_, args) =>
+            PropertyChangedEventHandler? handler = null;
+            handler = (_, args) =>
             {
                 if (args.PropertyName == nameof(ChatMessageViewModel.IsStreaming) && !msgVm.IsStreaming)
                 {
@@ -418,8 +436,10 @@ public class TranscriptBuilder
                     CollapseCompletedTurnBlocks(capturedTurn, capturedItem);
                     FlushPendingFileEdits();
                     FlushPendingPlanCard();
+                    msgVm.PropertyChanged -= handler;
                 }
             };
+            msgVm.PropertyChanged += handler;
         }
     }
 

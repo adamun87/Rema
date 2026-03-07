@@ -8,6 +8,25 @@ using StrataTheme.Controls;
 
 namespace Lumi.Views.Controls;
 
+public readonly record struct TranscriptTextContentDiagnosticsSnapshot(
+    long InstanceCount,
+    long MarkdownBranchCount,
+    long PlainTextCount,
+    long PlainTextCharacterCount)
+{
+    public double AveragePlainTextLength => PlainTextCount == 0
+        ? 0
+        : PlainTextCharacterCount / (double)PlainTextCount;
+
+    public static TranscriptTextContentDiagnosticsSnapshot operator -(
+        TranscriptTextContentDiagnosticsSnapshot after,
+        TranscriptTextContentDiagnosticsSnapshot before) => new(
+            after.InstanceCount - before.InstanceCount,
+            after.MarkdownBranchCount - before.MarkdownBranchCount,
+            after.PlainTextCount - before.PlainTextCount,
+            after.PlainTextCharacterCount - before.PlainTextCharacterCount);
+}
+
 public sealed class TranscriptTextContent : ContentControl
 {
     private static readonly Regex MarkdownBlockPattern = new(
@@ -29,7 +48,12 @@ public sealed class TranscriptTextContent : ContentControl
     public static readonly StyledProperty<string?> TextProperty =
         AvaloniaProperty.Register<TranscriptTextContent, string?>(nameof(Text));
 
-    private readonly SelectableTextBlock _textBlock;
+    private static long _diagnosticInstanceCount;
+    private static long _diagnosticMarkdownBranchCount;
+    private static long _diagnosticPlainTextCount;
+    private static long _diagnosticPlainTextCharacterCount;
+
+    private readonly TextBlock _textBlock;
     private readonly StrataMarkdown _markdown;
 
     static TranscriptTextContent()
@@ -39,7 +63,9 @@ public sealed class TranscriptTextContent : ContentControl
 
     public TranscriptTextContent()
     {
-        _textBlock = new SelectableTextBlock
+        System.Threading.Interlocked.Increment(ref _diagnosticInstanceCount);
+
+        _textBlock = new TextBlock
         {
             TextWrapping = TextWrapping.Wrap,
             HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -61,6 +87,12 @@ public sealed class TranscriptTextContent : ContentControl
         set => SetValue(TextProperty, value);
     }
 
+    public static TranscriptTextContentDiagnosticsSnapshot CaptureDiagnostics() => new(
+        System.Threading.Interlocked.Read(ref _diagnosticInstanceCount),
+        System.Threading.Interlocked.Read(ref _diagnosticMarkdownBranchCount),
+        System.Threading.Interlocked.Read(ref _diagnosticPlainTextCount),
+        System.Threading.Interlocked.Read(ref _diagnosticPlainTextCharacterCount));
+
     private void UpdateContent()
     {
         var text = Text ?? string.Empty;
@@ -68,6 +100,7 @@ public sealed class TranscriptTextContent : ContentControl
 
         if (ShouldRenderMarkdown(text))
         {
+            System.Threading.Interlocked.Increment(ref _diagnosticMarkdownBranchCount);
             _markdown.Markdown = text;
             var markdownDirection = direction ?? FlowDirection.LeftToRight;
             if (_markdown.FlowDirection != markdownDirection)
@@ -79,14 +112,16 @@ public sealed class TranscriptTextContent : ContentControl
             return;
         }
 
-        _textBlock.Text = text;
         var textDirection = direction ?? FlowDirection.LeftToRight;
-        if (_textBlock.FlowDirection != textDirection)
-            _textBlock.FlowDirection = textDirection;
-
         var targetAlignment = textDirection == FlowDirection.RightToLeft
             ? TextAlignment.Right
             : TextAlignment.Left;
+
+        System.Threading.Interlocked.Add(ref _diagnosticPlainTextCharacterCount, text.Length);
+        System.Threading.Interlocked.Increment(ref _diagnosticPlainTextCount);
+        _textBlock.Text = text;
+        if (_textBlock.FlowDirection != textDirection)
+            _textBlock.FlowDirection = textDirection;
         if (_textBlock.TextAlignment != targetAlignment)
             _textBlock.TextAlignment = targetAlignment;
 

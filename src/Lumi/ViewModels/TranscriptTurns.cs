@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Controls.Presenters;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
@@ -106,9 +107,9 @@ public sealed class TranscriptTurnControl : UserControl, IStrataVirtualizedItem
             _itemsHost.Children.Add(CreateItemHost(item));
     }
 
-    private static ContentControl CreateItemHost(TranscriptItem item)
+    private static Control CreateItemHost(TranscriptItem item)
     {
-        return new ContentControl
+        return new ContentPresenter
         {
             Content = item,
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch

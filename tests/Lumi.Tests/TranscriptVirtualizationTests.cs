@@ -62,7 +62,7 @@ public class TranscriptVirtualizationTests
     }
 
     [Fact]
-    public void Rebuild_GroupsUserReasoningToolsAndAssistantIntoSingleTurn()
+    public void Rebuild_SplitsUserIntoItsOwnTurn_AndGroupsAssistantWorkSeparately()
     {
         var builder = CreateBuilder();
 
@@ -73,12 +73,16 @@ public class TranscriptVirtualizationTests
             CreateMessage("assistant", "Here is a first draft itinerary.")
         ]);
 
-        var turn = Assert.Single(turns);
-        Assert.Collection(turn.Items,
-            item => Assert.IsType<UserMessageItem>(item),
+        Assert.Equal(2, turns.Count);
+
+        Assert.Single(turns[0].Items);
+        Assert.IsType<UserMessageItem>(turns[0].Items[0]);
+
+        Assert.Collection(turns[1].Items,
             item => Assert.IsType<TurnSummaryItem>(item),
             item => Assert.IsType<AssistantMessageItem>(item));
-        Assert.Equal(typeof(TranscriptTurnControl), turn.VirtualizationRecycleKey);
+        Assert.Equal(typeof(TranscriptTurnControl), turns[0].VirtualizationRecycleKey);
+        Assert.Equal(typeof(TranscriptTurnControl), turns[1].VirtualizationRecycleKey);
     }
 
     [Fact]
@@ -92,10 +96,10 @@ public class TranscriptVirtualizationTests
             CreateMessage("user", "Second question")
         ]);
 
-        Assert.Equal(2, turns.Count);
+        Assert.Equal(3, turns.Count);
         Assert.IsType<UserMessageItem>(turns[0].Items[0]);
-        Assert.IsType<AssistantMessageItem>(turns[0].Items[1]);
-        Assert.IsType<UserMessageItem>(turns[1].Items[0]);
+        Assert.IsType<AssistantMessageItem>(turns[1].Items[0]);
+        Assert.IsType<UserMessageItem>(turns[2].Items[0]);
     }
 
     private static TranscriptBuilder CreateBuilder()
