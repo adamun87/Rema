@@ -597,6 +597,10 @@ public partial class ChatViewModel : ObservableObject
                         NotificationService.ShowIfInactive(agentName, body);
                     }
 
+                    // Flush file changes only when session is truly idle (not between agentic turns).
+                    if (_activeSession == session)
+                        _transcriptBuilder.FlushPendingFileEdits();
+
                     // Memory checkpoint + suggestions only when session is truly idle.
                     // Running these on every AssistantTurnEndEvent creates a storm of
                     // background sessions that can starve the CLI process and stall
@@ -658,6 +662,7 @@ public partial class ChatViewModel : ObservableObject
                         // Clean up typing indicator and tool groups
                         _transcriptBuilder.HideTypingIndicator();
                         _transcriptBuilder.CloseCurrentToolGroup();
+                        _transcriptBuilder.FlushPendingFileEdits();
 
                         StatusText = runtime.StatusText;
                         IsBusy = runtime.IsBusy;

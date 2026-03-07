@@ -439,7 +439,6 @@ public class TranscriptBuilder
                     PendingFetchedSkillRefs.Clear();
 
                     CollapseCompletedTurnBlocks(capturedTurn, capturedItem);
-                    FlushPendingFileEdits();
                     FlushPendingPlanCard();
                     msgVm.PropertyChanged -= handler;
                 }
@@ -448,7 +447,7 @@ public class TranscriptBuilder
         }
     }
 
-    private void FlushPendingFileEdits()
+    public void FlushPendingFileEdits()
     {
         if (PendingFileEdits.Count == 0)
             return;
