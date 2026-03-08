@@ -1,4 +1,3 @@
-using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -22,7 +21,6 @@ public static class NotificationService
 
         Show(title, body);
 
-        // Flash the taskbar icon as a reliable visual cue
         if (OperatingSystem.IsWindows())
             FlashMainWindow();
     }
@@ -41,7 +39,7 @@ public static class NotificationService
         }
         catch (Exception ex)
         {
-            Trace.TraceWarning($"[Notification] Failed to show toast: {ex.GetType().Name}: {ex.Message}");
+            Trace.TraceWarning($"[Notification] Failed: {ex.GetType().Name}: {ex.Message}");
         }
     }
 
@@ -57,6 +55,17 @@ public static class NotificationService
         return true;
     }
 
+    private static void ActivateMainWindow()
+    {
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            if (Avalonia.Application.Current is App app)
+                app.ShowMainWindow();
+        });
+    }
+
+    // ── Windows toast ──────────────────────────────────────────────
+
     /// <summary>Ensures the CommunityToolkit compat layer is set up (AUMID + COM activation).
     /// Must be called before creating a notifier. Safe to call multiple times.</summary>
     private static void EnsureWindowsCompat()
@@ -66,21 +75,12 @@ public static class NotificationService
 
         try
         {
-            // The toolkit creates a Start Menu shortcut named after the process (e.g. Lumi.lnk)
-            // with the AUMID derived from the executable path. If the build output path changes
-            // (e.g. net10 → net11, Debug → Release), the stale shortcut causes AUMID mismatches
-            // that silently prevent toast notifications. Delete the stale shortcut so the toolkit
-            // recreates it with the correct target and AUMID.
+            // The toolkit creates a Start Menu shortcut (e.g. Lumi.lnk) with the AUMID
+            // derived from the executable path. If the build output path changes
+            // (e.g. net10→net11, Debug→Release), the stale shortcut causes AUMID mismatches
+            // that silently drop toast notifications. Delete it so the toolkit recreates it.
             CleanStaleShortcut();
-
-            Microsoft.Toolkit.Uwp.Notifications.ToastNotificationManagerCompat.OnActivated += _ =>
-            {
-                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-                {
-                    if (Avalonia.Application.Current is App app)
-                        app.ShowMainWindow();
-                });
-            };
+            Microsoft.Toolkit.Uwp.Notifications.ToastNotificationManagerCompat.OnActivated += _ => ActivateMainWindow();
         }
         catch (Exception ex)
         {
@@ -95,42 +95,37 @@ public static class NotificationService
     {
         try
         {
-            var processName = Path.GetFileNameWithoutExtension(Environment.ProcessPath);
-            if (string.IsNullOrEmpty(processName)) return;
+            var currentExe = Environment.ProcessPath;
+            if (string.IsNullOrEmpty(currentExe)) return;
 
             var shortcutPath = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                 @"Microsoft\Windows\Start Menu\Programs",
-                processName + ".lnk");
+                Path.GetFileNameWithoutExtension(currentExe) + ".lnk");
 
             if (!File.Exists(shortcutPath))
                 return;
 
-            var currentExe = Environment.ProcessPath;
-            if (string.IsNullOrEmpty(currentExe)) return;
-
-            // Read the shortcut target using COM IShellLink
+            // If reading fails, delete anyway — a stale shortcut is worse than recreating.
             var targetPath = ReadShortcutTarget(shortcutPath);
-            if (targetPath is not null
-                && !string.Equals(targetPath, currentExe, StringComparison.OrdinalIgnoreCase))
+            if (targetPath is null
+                || !string.Equals(targetPath, currentExe, StringComparison.OrdinalIgnoreCase))
             {
                 File.Delete(shortcutPath);
             }
         }
-        catch { /* Best-effort cleanup */ }
+        catch { }
     }
 
-    /// <summary>Reads the target path from a .lnk shortcut file via COM.</summary>
     private static string? ReadShortcutTarget(string lnkPath)
     {
         try
         {
             var shellLink = (IShellLinkW)new CShellLink();
-            var persistFile = (System.Runtime.InteropServices.ComTypes.IPersistFile)shellLink;
-            persistFile.Load(lnkPath, 0);
-            var sb = new char[260];
-            shellLink.GetPath(sb, sb.Length, IntPtr.Zero, 0);
-            return new string(sb).TrimEnd('\0');
+            ((System.Runtime.InteropServices.ComTypes.IPersistFile)shellLink).Load(lnkPath, 0);
+            var buf = new char[260];
+            shellLink.GetPath(buf, buf.Length, nint.Zero, 0);
+            return new string(buf).TrimEnd('\0');
         }
         catch { return null; }
     }
@@ -143,7 +138,7 @@ public static class NotificationService
     private interface IShellLinkW
     {
         void GetPath([Out, MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 1)] char[] pszFile,
-                      int cch, IntPtr pfd, uint fFlags);
+                      int cch, nint pfd, uint fFlags);
     }
 
     private static void ShowWindows(string title, string body)
@@ -161,18 +156,12 @@ public static class NotificationService
         textNodes[1].AppendChild(toastXml.CreateTextNode(body));
 
         var toast = new Windows.UI.Notifications.ToastNotification(toastXml);
-        toast.Activated += (_, _) =>
-        {
-            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-            {
-                if (Avalonia.Application.Current is App app)
-                    app.ShowMainWindow();
-            });
-        };
+        toast.Activated += (_, _) => ActivateMainWindow();
         notifier.Show(toast);
     }
 
-    /// <summary>Flashes the main window's taskbar icon to attract attention.</summary>
+    // ── Taskbar flash ──────────────────────────────────────────────
+
     private static void FlashMainWindow()
     {
         try
@@ -180,7 +169,7 @@ public static class NotificationService
             if (Avalonia.Application.Current?.ApplicationLifetime
                 is IClassicDesktopStyleApplicationLifetime desktop
                 && desktop.MainWindow?.TryGetPlatformHandle()?.Handle is { } hwnd
-                && hwnd != IntPtr.Zero)
+                && hwnd != nint.Zero)
             {
                 var fi = new FLASHWINFO
                 {
@@ -193,7 +182,7 @@ public static class NotificationService
                 FlashWindowEx(ref fi);
             }
         }
-        catch { /* Flash is best-effort */ }
+        catch { }
     }
 
     [DllImport("user32.dll")]
@@ -203,11 +192,13 @@ public static class NotificationService
     private struct FLASHWINFO
     {
         public uint cbSize;
-        public IntPtr hwnd;
+        public nint hwnd;
         public uint dwFlags;
         public uint uCount;
         public uint dwTimeout;
     }
+
+    // ── macOS / Linux ──────────────────────────────────────────────
 
     private static void ShowMacOS(string title, string body)
     {
