@@ -887,40 +887,20 @@ public partial class ChatViewModel
         });
     }
 
-    /// <summary>Toggles worktree mode. Only works before a chat is created (on the welcome screen).</summary>
-    [RelayCommand(AllowConcurrentExecutions = true)]
-    private async Task ToggleWorktreePreChatAsync()
+    /// <summary>Toggles worktree mode. Only works before a chat is created (on the welcome screen).
+    /// The actual worktree is created lazily when the first message is sent.</summary>
+    [RelayCommand]
+    private void ToggleWorktreePreChat()
     {
         // Locked once a chat exists
         if (CurrentChat is not null) return;
 
-        if (IsWorktreeMode)
-        {
-            // Switch back to local — remove the worktree since it was never committed to a chat
-            var oldPath = WorktreePath;
+        var projectDir = GetProjectWorkingDirectory();
+        if (!IsWorktreeMode && !GitService.IsGitRepo(projectDir)) return;
+
+        IsWorktreeMode = !IsWorktreeMode;
+        if (!IsWorktreeMode)
             WorktreePath = null;
-            IsWorktreeMode = false;
-
-            if (oldPath is { Length: > 0 })
-            {
-                var projectDir = GetProjectWorkingDirectory();
-                await GitService.RemoveWorktreeAsync(projectDir, oldPath);
-            }
-        }
-        else
-        {
-            var projectDir = GetProjectWorkingDirectory();
-            if (!GitService.IsGitRepo(projectDir)) return;
-
-            var chatId = Guid.NewGuid().ToString("N")[..8];
-            var branchName = $"lumi/{chatId}";
-            var path = await GitService.CreateWorktreeAsync(projectDir, branchName);
-            if (path is not null)
-            {
-                WorktreePath = path;
-                IsWorktreeMode = true;
-            }
-        }
     }
 
     [RelayCommand]

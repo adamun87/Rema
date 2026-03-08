@@ -130,6 +130,7 @@
   "Status_Resuming": "מחדש הפעלה\u2026",
   "Status_Reconnecting": "מתחבר מחדש\u2026",
   "Status_ConnectingMcp": "מתחבר לשרתי MCP\u2026",
+  "Status_CreatingWorktree": "יוצר worktree\u2026",
 
   "Author_Lumi": "לומי",
   "Author_Thinking": "חשיבה",

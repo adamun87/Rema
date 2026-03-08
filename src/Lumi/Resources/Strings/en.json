@@ -130,6 +130,7 @@
   "Status_Resuming": "Resuming session\u2026",
   "Status_Reconnecting": "Reconnecting\u2026",
   "Status_ConnectingMcp": "Connecting MCP servers\u2026",
+  "Status_CreatingWorktree": "Creating worktree\u2026",
 
   "Author_Lumi": "Lumi",
   "Author_Thinking": "Thinking",

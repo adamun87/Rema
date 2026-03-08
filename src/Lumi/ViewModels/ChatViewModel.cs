@@ -1608,6 +1608,41 @@ public partial class ChatViewModel : ObservableObject
         // Create chat if needed
         if (CurrentChat is null)
         {
+            // Lazily create the worktree now if worktree mode was toggled on.
+            // Use transcript builder directly — avoid toggling IsBusy which triggers
+            // RefreshCodingProjectState and resets worktree state before chat exists.
+            if (IsWorktreeMode && WorktreePath is null)
+            {
+                var projectDir = GetProjectWorkingDirectory();
+                if (GitService.IsGitRepo(projectDir))
+                {
+                    _transcriptBuilder.ShowTypingIndicator(Loc.Status_CreatingWorktree);
+                    try
+                    {
+                        var chatId = Guid.NewGuid().ToString("N")[..8];
+                        var branchName = $"lumi/{chatId}";
+                        var path = await GitService.CreateWorktreeAsync(projectDir, branchName);
+
+                        if (path is not null)
+                            WorktreePath = path;
+                        else
+                            IsWorktreeMode = false;
+                    }
+                    catch
+                    {
+                        IsWorktreeMode = false;
+                    }
+                    finally
+                    {
+                        _transcriptBuilder.HideTypingIndicator();
+                    }
+                }
+                else
+                {
+                    IsWorktreeMode = false;
+                }
+            }
+
             var chat = new Chat
             {
                 Title = prompt.Length > 40 ? prompt[..40].Trim() + "…" : prompt,
