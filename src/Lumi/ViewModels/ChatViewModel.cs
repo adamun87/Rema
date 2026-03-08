@@ -24,7 +24,6 @@ public partial class ChatViewModel : ObservableObject
 {
     private readonly DataStore _dataStore;
     private readonly CopilotService _copilotService;
-    private readonly BrowserService _browserService;
     private readonly MemoryAgentService _memoryAgentService;
     private readonly CodingToolService _codingToolService;
     private readonly UIAutomationService _uiAutomation = new();
@@ -47,6 +46,8 @@ public partial class ChatViewModel : ObservableObject
     private readonly Dictionary<Guid, ChatMessage> _inProgressMessages = new();
     /// <summary>Per-chat runtime state sourced from live session events.</summary>
     private readonly Dictionary<Guid, ChatRuntimeState> _runtimeStates = new();
+    /// <summary>Maps chat ID → per-chat BrowserService instance. Created lazily on first browser tool use.</summary>
+    private readonly Dictionary<Guid, BrowserService> _chatBrowserServices = new();
     /// <summary>Skills activated mid-chat (after session exists). Consumed on next SendMessage to inject into prompt.</summary>
     private readonly List<Guid> _pendingSkillInjections = new();
     /// <summary>Per-chat guard so suggestion generation is queued at most once concurrently.</summary>
@@ -67,7 +68,29 @@ public partial class ChatViewModel : ObservableObject
         public string StatusText { get; set; } = "";
         public long TotalInputTokens { get; set; }
         public long TotalOutputTokens { get; set; }
+        public bool HasUsedBrowser { get; set; }
     }
+
+    /// <summary>Gets or lazily creates a per-chat BrowserService instance.</summary>
+    private BrowserService GetOrCreateBrowserService(Guid chatId)
+    {
+        if (!_chatBrowserServices.TryGetValue(chatId, out var service))
+        {
+            service = new BrowserService();
+            _chatBrowserServices[chatId] = service;
+        }
+        return service;
+    }
+
+    /// <summary>Gets the BrowserService for a chat if one exists, without creating.</summary>
+    public BrowserService? GetBrowserServiceForChat(Guid chatId)
+    {
+        _chatBrowserServices.TryGetValue(chatId, out var service);
+        return service;
+    }
+
+    /// <summary>Gets all per-chat BrowserService instances (for theme propagation etc.).</summary>
+    public IReadOnlyDictionary<Guid, BrowserService> ChatBrowserServices => _chatBrowserServices;
 
     /// <summary>True while LoadChat is bulk-adding messages. The View skips CollectionChanged.Add during this.</summary>
     [ObservableProperty] private bool _isLoadingChat;
@@ -164,11 +187,10 @@ public partial class ChatViewModel : ObservableObject
     /// <summary>Raised when the view should rebuild DataTemplates (e.g. settings changed).</summary>
     public event Action? TranscriptRebuilt;
 
-    public ChatViewModel(DataStore dataStore, CopilotService copilotService, BrowserService browserService)
+    public ChatViewModel(DataStore dataStore, CopilotService copilotService)
     {
         _dataStore = dataStore;
         _copilotService = copilotService;
-        _browserService = browserService;
         _memoryAgentService = new MemoryAgentService(dataStore, copilotService);
         _codingToolService = new CodingToolService(copilotService, GetCurrentCancellationToken);
         _selectedModel = dataStore.Data.Settings.PreferredModel;
@@ -1044,6 +1066,13 @@ public partial class ChatViewModel : ObservableObject
         _runtimeStates.Remove(chatId);
         _suggestionGenerationInFlightChats.Remove(chatId);
         _lastSuggestedAssistantMessageByChat.Remove(chatId);
+
+        // Dispose per-chat browser service
+        if (_chatBrowserServices.TryGetValue(chatId, out var browserSvc))
+        {
+            _ = browserSvc.DisposeAsync();
+            _chatBrowserServices.Remove(chatId);
+        }
     }
 
     /// <summary>Called when the CopilotService reconnects (new CLI process).
@@ -1170,7 +1199,7 @@ public partial class ChatViewModel : ObservableObject
         }
 
         var customAgents = BuildCustomAgents();
-        var customTools = BuildCustomTools();
+        var customTools = BuildCustomTools(chat.Id);
         var workDir = GetEffectiveWorkingDirectory();
         var mcpServers = BuildMcpServers(workDir);
         var reasoningEffort = _dataStore.Data.Settings.ReasoningEffort;
@@ -1339,7 +1368,6 @@ public partial class ChatViewModel : ObservableObject
         {
             BrowserHideRequested?.Invoke();
             DiffHideRequested?.Invoke();
-            HasUsedBrowser = false;
             ClearSuggestions();
         }
 
@@ -1372,6 +1400,7 @@ public partial class ChatViewModel : ObservableObject
             StatusText = runtime.StatusText;
             TotalInputTokens = runtime.TotalInputTokens;
             TotalOutputTokens = runtime.TotalOutputTokens;
+            HasUsedBrowser = runtime.HasUsedBrowser;
 
             Messages.Clear();
             foreach (var msg in chat.Messages)
@@ -1387,6 +1416,11 @@ public partial class ChatViewModel : ObservableObject
                 Messages.Add(new ChatMessageViewModel(inProgress));
 
             CurrentChat = chat;
+
+            // If this chat has an active browser, show its panel (after CurrentChat is set
+            // so ActiveChatId is already updated when the MainWindow handler runs)
+            if (runtime.HasUsedBrowser && _chatBrowserServices.ContainsKey(chat.Id))
+                BrowserShowRequested?.Invoke(chat.Id);
 
             // Rebuild transcript items from loaded messages
             RebuildTranscript();

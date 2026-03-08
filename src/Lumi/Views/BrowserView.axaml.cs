@@ -24,6 +24,7 @@ public partial class BrowserView : UserControl
     private bool _isInitialized;
     private bool _isImportInProgress;
     private BrowserCookieService.BrowserProfile? _selectedProfile;
+    private EventHandler<Microsoft.Web.WebView2.Core.CoreWebView2SourceChangedEventArgs>? _sourceChangedHandler;
 
     public BrowserView()
     {
@@ -43,11 +44,23 @@ public partial class BrowserView : UserControl
         _urlBar = this.FindControl<Border>("UrlBar");
     }
 
-    /// <summary>Binds the BrowserService and DataStore to this view.</summary>
+    /// <summary>Binds a BrowserService and DataStore to this view. Can be called multiple times to switch between per-chat services.</summary>
     public void SetBrowserService(BrowserService browserService, DataStore dataStore)
     {
+        // Unsub from old service
+        if (_browserService is not null)
+        {
+            _browserService.BrowserReady -= OnBrowserReady;
+            if (_browserService.Controller is not null)
+                _browserService.Controller.IsVisible = false;
+            if (_browserService.WebView is not null && _sourceChangedHandler is not null)
+                _browserService.WebView.SourceChanged -= _sourceChangedHandler;
+            _sourceChangedHandler = null;
+        }
+
         _browserService = browserService;
         _dataStore = dataStore;
+        _isInitialized = false;
         _browserService.BrowserReady += OnBrowserReady;
 
         // Pre-set the HWND so tools can trigger lazy initialization
@@ -58,6 +71,36 @@ public partial class BrowserView : UserControl
             if (handle is not null)
                 _browserService.SetParentHwnd(handle.Handle);
         }
+
+        // If the new service is already initialized, update immediately
+        if (_browserService.IsInitialized)
+        {
+            OnBrowserReady();
+            UpdateUrl();
+        }
+        else
+        {
+            // Show loading overlay while initializing
+            if (_loadingOverlay is not null)
+                _loadingOverlay.IsVisible = true;
+            if (_urlText is not null)
+                _urlText.Text = "about:blank";
+            TryInitialize();
+        }
+    }
+
+    /// <summary>Hides the current browser service's controller overlay.</summary>
+    public void HideCurrentController()
+    {
+        if (_browserService?.Controller is not null)
+            _browserService.Controller.IsVisible = false;
+    }
+
+    /// <summary>Shows the current browser service's controller overlay.</summary>
+    public void ShowCurrentController()
+    {
+        if (_browserService?.Controller is not null)
+            _browserService.Controller.IsVisible = true;
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
@@ -154,8 +197,12 @@ public partial class BrowserView : UserControl
 
             if (_browserService?.WebView is not null)
             {
-                _browserService.WebView.SourceChanged += (_, _) =>
-                    Dispatcher.UIThread.Post(UpdateUrl);
+                // Unsub old handler if switching services
+                if (_sourceChangedHandler is not null)
+                    _browserService.WebView.SourceChanged -= _sourceChangedHandler;
+
+                _sourceChangedHandler = (_, _) => Dispatcher.UIThread.Post(UpdateUrl);
+                _browserService.WebView.SourceChanged += _sourceChangedHandler;
             }
 
             // Show cookie onboarding if user hasn't imported yet

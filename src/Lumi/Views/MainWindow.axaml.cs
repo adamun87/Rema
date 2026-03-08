@@ -403,10 +403,18 @@ public partial class MainWindow : Window
             // Apply initial font size
             ApplyFontSize(vm.SettingsVM.FontSize);
 
-            // Wire browser panel show/hide
-            vm.ChatVM.BrowserShowRequested += () =>
+            // Wire browser panel show/hide (per-chat aware)
+            vm.ChatVM.BrowserShowRequested += (chatId) =>
             {
-                Dispatcher.UIThread.Post(() => { ShowBrowserPanel(); vm.ChatVM.IsBrowserOpen = IsBrowserOpen; });
+                Dispatcher.UIThread.Post(() =>
+                {
+                    // Only show browser panel if the requesting chat is currently active
+                    if (vm.ActiveChatId == chatId)
+                    {
+                        ShowBrowserPanel(chatId);
+                        vm.ChatVM.IsBrowserOpen = IsBrowserOpen;
+                    }
+                });
             };
             vm.ChatVM.BrowserHideRequested += () =>
             {
@@ -455,7 +463,9 @@ public partial class MainWindow : Window
                 closePlanBtn.Click += (_, _) => { HidePlanPanel(); if (DataContext is MainViewModel m) m.ChatVM.IsPlanOpen = false; };
 
             // Sync initial browser theme
-            vm.BrowserService.SetTheme(vm.IsDarkTheme);
+            vm.SettingsBrowserService.SetTheme(vm.IsDarkTheme);
+            foreach (var svc in vm.ChatVM.ChatBrowserServices.Values)
+                svc.SetTheme(vm.IsDarkTheme);
 
             vm.PropertyChanged += (_, args) =>
             {
@@ -465,7 +475,9 @@ public partial class MainWindow : Window
                         Application.Current.RequestedThemeVariant = vm.IsDarkTheme
                             ? ThemeVariant.Dark
                             : ThemeVariant.Light;
-                    vm.BrowserService.SetTheme(vm.IsDarkTheme);
+                    vm.SettingsBrowserService.SetTheme(vm.IsDarkTheme);
+                    foreach (var svc in vm.ChatVM.ChatBrowserServices.Values)
+                        svc.SetTheme(vm.IsDarkTheme);
                 }
                 else if (args.PropertyName == nameof(MainViewModel.IsCompactDensity))
                 {
@@ -495,7 +507,7 @@ public partial class MainWindow : Window
                 }
                 else if (args.PropertyName == nameof(MainViewModel.ActiveChatId))
                 {
-                    // Hide browser/diff/plan when switching chats — each chat starts fresh
+                    // Hide browser/diff/plan when switching chats
                     HideBrowserPanel();
                     HideDiffPanel();
                     HidePlanPanel();
@@ -578,8 +590,7 @@ public partial class MainWindow : Window
         else if (_browserIsland is { IsVisible: true })
         {
             // Returning to chat with browser open — show the overlay and refresh bounds
-            if (DataContext is MainViewModel vm2 && vm2.BrowserService.Controller is not null)
-                vm2.BrowserService.Controller.IsVisible = true;
+            _browserView?.ShowCurrentController();
             Dispatcher.UIThread.Post(() => _browserView?.RefreshBounds(), DispatcherPriority.Loaded);
         }
 
@@ -1181,20 +1192,27 @@ public partial class MainWindow : Window
         }
     }
 
-    private void EnsureBrowserViewLoaded(MainViewModel vm)
+    private void EnsureBrowserViewLoaded(MainViewModel vm, BrowserService browserService)
     {
-        if (_browserView is not null) return;
-        if (_browserHost is null) return;
-
-        _browserView = new BrowserView();
-        _browserHost.Content = _browserView;
-        _browserView.SetBrowserService(vm.BrowserService, vm.DataStore);
+        if (_browserView is null)
+        {
+            if (_browserHost is null) return;
+            _browserView = new BrowserView();
+            _browserHost.Content = _browserView;
+        }
+        _browserView.SetBrowserService(browserService, vm.DataStore);
     }
 
-    private async void ShowBrowserPanel()
+    private async void ShowBrowserPanel(Guid chatId)
     {
         if (_browserIsland is null || _chatContentGrid is null || _chatIsland is null) return;
-        if (_browserIsland.IsVisible) return;
+
+        var vm = DataContext as MainViewModel;
+        if (vm is null) return;
+
+        // Get the per-chat browser service
+        var browserService = vm.ChatVM.GetBrowserServiceForChat(chatId);
+        if (browserService is null) return;
 
         // Hide diff panel if open (they share column 2)
         if (_diffIsland is { IsVisible: true })
@@ -1202,7 +1220,7 @@ public partial class MainWindow : Window
             _diffIsland.IsVisible = false;
             _diffIsland.Opacity = 1;
             _diffIsland.RenderTransform = null;
-            if (DataContext is MainViewModel vmd) vmd.ChatVM.IsDiffOpen = false;
+            vm.ChatVM.IsDiffOpen = false;
         }
 
         // Hide plan panel if open (they share column 2)
@@ -1211,20 +1229,28 @@ public partial class MainWindow : Window
             _planIsland.IsVisible = false;
             _planIsland.Opacity = 1;
             _planIsland.RenderTransform = null;
-            if (DataContext is MainViewModel vmp) vmp.ChatVM.IsPlanOpen = false;
+            vm.ChatVM.IsPlanOpen = false;
+        }
+
+        // Switch to the correct per-chat BrowserService
+        EnsureBrowserViewLoaded(vm, browserService);
+
+        // If browser panel is already visible (switching chats), just refresh bounds
+        if (_browserIsland.IsVisible)
+        {
+            // Hide old controller, show new one
+            _browserView?.RefreshBounds();
+            if (browserService.Controller is not null)
+                browserService.Controller.IsVisible = true;
+            return;
         }
 
         // Cancel any in-progress animation
         var ct = ReplaceCancellationTokenSource(ref _browserAnimCts).Token;
 
-        var vm = DataContext as MainViewModel;
-
         // Ensure we're on the Chat tab
-        if (vm is not null && vm.SelectedNavIndex != 0)
+        if (vm.SelectedNavIndex != 0)
             vm.SelectedNavIndex = 0;
-
-        if (vm is not null)
-            EnsureBrowserViewLoaded(vm);
 
         // Switch to split layout: chat (1*) | splitter (Auto) | browser (1*)
         const double browserOffsetX = 40.0;
@@ -1282,8 +1308,8 @@ public partial class MainWindow : Window
         _browserIsland.Opacity = 1;
         _browserIsland.RenderTransform = null;
 
-        if (vm?.BrowserService.Controller is not null)
-            vm.BrowserService.Controller.IsVisible = true;
+        if (browserService.Controller is not null)
+            browserService.Controller.IsVisible = true;
         Dispatcher.UIThread.Post(() => _browserView?.RefreshBounds(), DispatcherPriority.Loaded);
     }
 
@@ -1297,8 +1323,7 @@ public partial class MainWindow : Window
         var ct = ReplaceCancellationTokenSource(ref _browserAnimCts).Token;
 
         // Hide WebView2 overlay immediately so it doesn't float during animation
-        if (DataContext is MainViewModel vm && vm.BrowserService.Controller is not null)
-            vm.BrowserService.Controller.IsVisible = false;
+        _browserView?.HideCurrentController();
 
         const double browserOffsetX = 40.0;
 
@@ -1383,12 +1408,9 @@ public partial class MainWindow : Window
             _browserIsland.Opacity = 1;
             _browserIsland.RenderTransform = null;
             if (_browserSplitter is not null) _browserSplitter.IsVisible = false;
+            _browserView?.HideCurrentController();
             if (DataContext is MainViewModel vmb)
-            {
-                if (vmb.BrowserService.Controller is not null)
-                    vmb.BrowserService.Controller.IsVisible = false;
                 vmb.ChatVM.IsBrowserOpen = false;
-            }
         }
 
         // Hide plan panel if open (they share column 2)
@@ -1762,12 +1784,9 @@ public partial class MainWindow : Window
             _browserIsland.Opacity = 1;
             _browserIsland.RenderTransform = null;
             if (_browserSplitter is not null) _browserSplitter.IsVisible = false;
+            _browserView?.HideCurrentController();
             if (DataContext is MainViewModel vmb)
-            {
-                if (vmb.BrowserService.Controller is not null)
-                    vmb.BrowserService.Controller.IsVisible = false;
                 vmb.ChatVM.IsBrowserOpen = false;
-            }
         }
 
         // Hide plan panel if open
@@ -1832,12 +1851,9 @@ public partial class MainWindow : Window
             _browserIsland.Opacity = 1;
             _browserIsland.RenderTransform = null;
             if (_browserSplitter is not null) _browserSplitter.IsVisible = false;
+            _browserView?.HideCurrentController();
             if (DataContext is MainViewModel vmb)
-            {
-                if (vmb.BrowserService.Controller is not null)
-                    vmb.BrowserService.Controller.IsVisible = false;
                 vmb.ChatVM.IsBrowserOpen = false;
-            }
         }
 
         // Hide diff panel if open

@@ -22,7 +22,8 @@ public partial class MainViewModel : ObservableObject
 {
     private readonly DataStore _dataStore;
     private readonly CopilotService _copilotService;
-    private readonly BrowserService _browserService;
+    /// <summary>A dedicated BrowserService for Settings cookie import/clear (not tied to any chat).</summary>
+    private readonly BrowserService _settingsBrowserService;
     private bool _isRefreshingCopilotState;
 
     [ObservableProperty] private int _selectedNavIndex;
@@ -49,8 +50,8 @@ public partial class MainViewModel : ObservableObject
     public McpServersViewModel McpServersVM { get; }
     public SettingsViewModel SettingsVM { get; }
 
-    /// <summary>The shared browser service for embedded WebView2 automation.</summary>
-    public BrowserService BrowserService => _browserService;
+    /// <summary>The browser service used for Settings cookie import/clear.</summary>
+    public BrowserService SettingsBrowserService => _settingsBrowserService;
 
     /// <summary>The application data store.</summary>
     public DataStore DataStore => _dataStore;
@@ -65,7 +66,7 @@ public partial class MainViewModel : ObservableObject
     {
         _dataStore = dataStore;
         _copilotService = copilotService;
-        _browserService = new BrowserService();
+        _settingsBrowserService = new BrowserService();
 
         var settings = _dataStore.Data.Settings;
         _isDarkTheme = settings.IsDarkTheme;
@@ -73,13 +74,13 @@ public partial class MainViewModel : ObservableObject
         _userName = settings.UserName ?? "";
         _isOnboarded = settings.IsOnboarded;
 
-        ChatVM = new ChatViewModel(dataStore, copilotService, _browserService);
+        ChatVM = new ChatViewModel(dataStore, copilotService);
         SkillsVM = new SkillsViewModel(dataStore);
         AgentsVM = new AgentsViewModel(dataStore);
         ProjectsVM = new ProjectsViewModel(dataStore);
         MemoriesVM = new MemoriesViewModel(dataStore);
         McpServersVM = new McpServersViewModel(dataStore);
-        SettingsVM = new SettingsViewModel(dataStore, copilotService, _browserService);
+        SettingsVM = new SettingsViewModel(dataStore, copilotService, _settingsBrowserService);
 
         // Sync settings changes back to MainViewModel
         SettingsVM.PropertyChanged += (_, args) =>

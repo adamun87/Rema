@@ -62,7 +62,7 @@ public partial class ChatViewModel
         return agent.ToolNames.Exists(toolGroup.Contains);
     }
 
-    private List<AIFunction> BuildCustomTools()
+    private List<AIFunction> BuildCustomTools(Guid chatId)
     {
         var tools = new List<AIFunction>();
         tools.AddRange(BuildMemoryTools());
@@ -71,7 +71,7 @@ public partial class ChatViewModel
         tools.Add(BuildAskQuestionTool());
         tools.AddRange(BuildWebTools());
         if (ActiveAgentAllows(BrowserToolNames))
-            tools.AddRange(BuildBrowserTools());
+            tools.AddRange(BuildBrowserTools(chatId));
         if (ActiveAgentAllows(CodingToolNames))
             tools.AddRange(_codingToolService.BuildCodingTools());
         if (OperatingSystem.IsWindows() && ActiveAgentAllows(UIToolNames))
@@ -275,15 +275,22 @@ public partial class ChatViewModel
         ];
     }
 
-    private List<AIFunction> BuildBrowserTools()
+    private List<AIFunction> BuildBrowserTools(Guid chatId)
     {
         return
         [
             AIFunctionFactory.Create(
                 ([Description("The full URL to navigate to (e.g. https://mail.google.com)")] string url) =>
                 {
-                    Dispatcher.UIThread.Post(() => { HasUsedBrowser = true; BrowserShowRequested?.Invoke(); });
-                    return _browserService.OpenAndSnapshotAsync(url);
+                    var svc = GetOrCreateBrowserService(chatId);
+                    var runtime = GetOrCreateRuntimeState(chatId);
+                    runtime.HasUsedBrowser = true;
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        if (CurrentChat?.Id == chatId) HasUsedBrowser = true;
+                        BrowserShowRequested?.Invoke(chatId);
+                    });
+                    return svc.OpenAndSnapshotAsync(url);
                 },
                 "browser",
                 "Open a URL in the browser and return the page with numbered interactive elements and a text preview. The browser has persistent cookies/sessions — the user may already be logged in. Returns element numbers you can use with browser_do. If the URL triggers a file download (e.g. an export URL), the download is detected automatically and reported instead of a page snapshot."),
@@ -291,7 +298,8 @@ public partial class ChatViewModel
             AIFunctionFactory.Create(
                 ([Description("Optional text filter to narrow elements (e.g. 'button', 'download', 'search', 'Export'). Omit to see all.")] string? filter = null) =>
                 {
-                    return _browserService.LookAsync(filter);
+                    var svc = GetOrCreateBrowserService(chatId);
+                    return svc.LookAsync(filter);
                 },
                 "browser_look",
                 "Returns the current page state: numbered interactive elements and text preview. Use filter to narrow results."),
@@ -302,7 +310,8 @@ public partial class ChatViewModel
                  [Description("Maximum matches to return (1-50).")]
                     int limit = 12) =>
                 {
-                    return _browserService.FindElementsAsync(query, limit, preferDialog: true);
+                    var svc = GetOrCreateBrowserService(chatId);
+                    return svc.FindElementsAsync(query, limit, preferDialog: true);
                 },
                 "browser_find",
                 "Find and rank interactive elements by query. Matches against text, aria-label, tooltip, title, and href. Returns stable element indices usable with browser_do."),
@@ -312,10 +321,19 @@ public partial class ChatViewModel
                  [Description("Target: element number from browser/browser_look (e.g. '3'), button text (e.g. 'Export'), CSS selector (e.g. '.btn'), key name (for press), direction (for scroll), or file pattern (for download)")] string? target = null,
                  [Description("Value: text to type (for type action), option text (for select), pixels (for scroll)")] string? value = null) =>
                 {
+                    var svc = GetOrCreateBrowserService(chatId);
                     var act = (action ?? "").Trim().ToLowerInvariant();
                     if (act is "click" or "type" or "press" or "select" or "download" or "back")
-                        Dispatcher.UIThread.Post(() => { HasUsedBrowser = true; BrowserShowRequested?.Invoke(); });
-                    return _browserService.DoAsync(action ?? "", target, value);
+                    {
+                        var runtime = GetOrCreateRuntimeState(chatId);
+                        runtime.HasUsedBrowser = true;
+                        Dispatcher.UIThread.Post(() =>
+                        {
+                            if (CurrentChat?.Id == chatId) HasUsedBrowser = true;
+                            BrowserShowRequested?.Invoke(chatId);
+                        });
+                    }
+                    return svc.DoAsync(action ?? "", target, value);
                 },
                 "browser_do",
                 "Interact with the page. Actions: click (target: element #, text, or CSS selector), type (target: element # or selector, value: text), press (target: key name), select (target: element # or selector, value: option text), scroll (target: up/down), back, wait (target: CSS selector), download (target: file glob pattern — checks for a pending download, does NOT trigger one)."),
@@ -323,15 +341,16 @@ public partial class ChatViewModel
             AIFunctionFactory.Create(
                 ([Description("JavaScript code to execute in the page context")] string script) =>
                 {
-                    return _browserService.EvaluateAsync(script);
+                    var svc = GetOrCreateBrowserService(chatId);
+                    return svc.EvaluateAsync(script);
                 },
                 "browser_js",
                 "Run JavaScript in the browser page context."),
         ];
     }
 
-    /// <summary>Raised when a browser tool requests the browser panel to be visible.</summary>
-    public event Action? BrowserShowRequested;
+    /// <summary>Raised when a browser tool requests the browser panel to be visible. Carries the chat ID.</summary>
+    public event Action<Guid>? BrowserShowRequested;
 
     /// <summary>True if browser tools have been used in the current session.</summary>
     [ObservableProperty] bool _hasUsedBrowser;
@@ -339,16 +358,20 @@ public partial class ChatViewModel
     /// <summary>True when the browser panel is currently visible.</summary>
     [ObservableProperty] bool _isBrowserOpen;
 
-    /// <summary>Allows the view to request the browser panel to be shown.</summary>
-    public void RequestShowBrowser() => BrowserShowRequested?.Invoke();
+    /// <summary>Allows the view to request the browser panel to be shown for the current chat.</summary>
+    public void RequestShowBrowser()
+    {
+        if (CurrentChat is not null)
+            BrowserShowRequested?.Invoke(CurrentChat.Id);
+    }
 
-    /// <summary>Toggles the browser panel visibility.</summary>
+    /// <summary>Toggles the browser panel visibility for the current chat.</summary>
     public void ToggleBrowser()
     {
         if (IsBrowserOpen)
             BrowserHideRequested?.Invoke();
-        else
-            BrowserShowRequested?.Invoke();
+        else if (CurrentChat is not null)
+            BrowserShowRequested?.Invoke(CurrentChat.Id);
     }
 
     /// <summary>True when the diff preview panel is currently visible.</summary>

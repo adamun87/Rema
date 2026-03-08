@@ -20,6 +20,10 @@ namespace Lumi.Services;
 /// </summary>
 public sealed class BrowserService : IAsyncDisposable
 {
+    // Shared environment so all per-chat instances share cookies/sessions
+    private static CoreWebView2Environment? _sharedEnvironment;
+    private static readonly SemaphoreSlim _sharedEnvLock = new(1, 1);
+
     private CoreWebView2Environment? _environment;
     private CoreWebView2Controller? _controller;
     private CoreWebView2? _webView;
@@ -66,9 +70,6 @@ public sealed class BrowserService : IAsyncDisposable
     /// <summary>Raised when the browser is first initialized or needs to show.</summary>
     public event Action? BrowserReady;
 
-    /// <summary>Raised when the browser should become visible in the UI.</summary>
-    public event Action? ShowRequested;
-
     /// <summary>The current URL loaded in the browser.</summary>
     public string CurrentUrl => _webView?.Source ?? "about:blank";
 
@@ -107,6 +108,7 @@ public sealed class BrowserService : IAsyncDisposable
 
     /// <summary>
     /// Initializes the WebView2 environment and controller with a persistent user data folder.
+    /// Uses a shared environment so all per-chat instances share cookies/sessions.
     /// Must be called from the UI thread with a valid HWND.
     /// </summary>
     public async Task InitializeAsync(IntPtr parentHwnd)
@@ -118,12 +120,24 @@ public sealed class BrowserService : IAsyncDisposable
             if (_initialized) return;
             _parentHwnd = parentHwnd;
 
-            var userDataFolder = GetUserDataFolder();
-            Directory.CreateDirectory(userDataFolder);
-
-            _environment = await CoreWebView2Environment.CreateAsync(
-                browserExecutableFolder: null,
-                userDataFolder: userDataFolder);
+            // Get or create the shared environment (all instances share cookies)
+            await _sharedEnvLock.WaitAsync();
+            try
+            {
+                if (_sharedEnvironment is null)
+                {
+                    var userDataFolder = GetUserDataFolder();
+                    Directory.CreateDirectory(userDataFolder);
+                    _sharedEnvironment = await CoreWebView2Environment.CreateAsync(
+                        browserExecutableFolder: null,
+                        userDataFolder: userDataFolder);
+                }
+                _environment = _sharedEnvironment;
+            }
+            finally
+            {
+                _sharedEnvLock.Release();
+            }
 
             _controller = await _environment.CreateCoreWebView2ControllerAsync(_parentHwnd);
             _webView = _controller.CoreWebView2;
@@ -341,7 +355,6 @@ public sealed class BrowserService : IAsyncDisposable
         await _actionLock.WaitAsync();
         try
         {
-            ShowRequested?.Invoke();
             TaskCompletionSource<bool> navTcs = new();
             var previousUrl = await InvokeOnUiThreadAsync(() => _webView!.Source ?? "about:blank");
             var startedAt = DateTime.UtcNow;
