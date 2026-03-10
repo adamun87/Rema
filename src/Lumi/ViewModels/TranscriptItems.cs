@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
@@ -16,145 +15,22 @@ using StrataTheme.Controls;
 
 namespace Lumi.ViewModels;
 
-internal static class TranscriptVirtualization
+internal static class TranscriptIds
 {
-    public static string CreateRuntimeKey(string prefix) => $"{prefix}:{Guid.NewGuid():N}";
-
-    public static double EstimateWrappedTextHeight(
-        string? text,
-        double minimumHeight,
-        int charsPerLine,
-        double lineHeight,
-        double chromeHeight,
-        double maximumHeight = 12000d)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-            return minimumHeight;
-
-        var wrappedLines = 0;
-        var normalized = text.Replace("\r\n", "\n");
-        foreach (var rawLine in normalized.Split('\n'))
-        {
-            var lineLength = Math.Max(1, rawLine.Length);
-            wrappedLines += Math.Max(1, (int)Math.Ceiling(lineLength / (double)Math.Max(12, charsPerLine)));
-        }
-
-        var estimatedHeight = chromeHeight + (wrappedLines * lineHeight);
-        return Math.Clamp(estimatedHeight, minimumHeight, maximumHeight);
-    }
-
-    public static double EstimateUserMessageHeight(string? content, int attachmentCount = 0, int skillCount = 0)
-    {
-        var chrome = 40d + (attachmentCount * 34d) + (skillCount * 20d);
-        return EstimateWrappedTextHeight(content, 72d, 56, 18d, chrome, 5000d);
-    }
-
-    public static double EstimateAssistantMessageHeight(string? content, int skillCount = 0, int attachmentCount = 0, int sourceCount = 0)
-    {
-        var chrome = 42d + (skillCount * 20d) + (attachmentCount * 30d) + (sourceCount * 18d);
-        return EstimateWrappedTextHeight(content, 72d, 68, 18d, chrome, 6000d);
-    }
-
-    public static double EstimateErrorHeight(string? content)
-    {
-        return EstimateWrappedTextHeight(content, 56d, 64, 18d, 36d, 1200d);
-    }
-
-    public static double EstimateReasoningHeight(string? content, bool isExpanded)
-    {
-        if (!isExpanded)
-            return 32d;
-
-        return EstimateWrappedTextHeight(content, 72d, 72, 17d, 28d, 3000d);
-    }
-
-    public static double EstimateToolGroupHeight(string? label, IEnumerable<ToolCallItemBase> toolCalls, bool isExpanded)
-    {
-        var collapsed = 36d;
-        if (!isExpanded)
-            return collapsed;
-
-        var callsHeight = toolCalls.Sum(call => Math.Max(32d, call.EstimatedHeightHint));
-        var callCount = toolCalls.Count();
-        return collapsed + callsHeight + Math.Max(0, callCount - 1) * 8d + 12d;
-    }
-
-    public static double EstimateToolCallHeight(string? inputParameters, string? moreInfo, bool hasDiff, bool isCompact)
-    {
-        var minimum = 32d;
-        var chrome = 18d + (hasDiff ? 20d : 0d);
-        var text = string.Join("\n", new[] { inputParameters, moreInfo }.Where(static s => !string.IsNullOrWhiteSpace(s)));
-        return EstimateWrappedTextHeight(text, minimum, 84, 17d, chrome, 720d);
-    }
-
-    public static double EstimateTerminalHeight(string? command, string? output, bool isExpanded)
-    {
-        var commandHeight = EstimateWrappedTextHeight(command, 34d, 84, 17d, 18d, 160d);
-        if (!isExpanded || string.IsNullOrWhiteSpace(output))
-            return commandHeight;
-
-        var outputHeight = EstimateWrappedTextHeight(output, 0d, 92, 16d, 18d, 1400d);
-        return commandHeight + outputHeight;
-    }
-
-    public static double EstimateTodoHeight(string? inputParameters)
-    {
-        return EstimateWrappedTextHeight(inputParameters, 34d, 84, 17d, 18d, 900d);
-    }
-
-    public static double EstimateQuestionHeight(string? question, string? options, bool allowFreeText)
-    {
-        var chrome = 108d + (allowFreeText ? 44d : 0d);
-        var text = string.Join("\n", new[] { question, options }.Where(static s => !string.IsNullOrWhiteSpace(s)));
-        return EstimateWrappedTextHeight(text, 156d, 54, 19d, chrome, 1800d);
-    }
-
-    public static double EstimateTurnSummaryHeight(string? label, int innerItemCount, bool isExpanded)
-    {
-        var collapsed = 28d;
-        if (!isExpanded)
-            return collapsed;
-
-        return collapsed + (innerItemCount * 44d) + Math.Max(0, innerItemCount - 1) * 6d;
-    }
-
-    public static double EstimateFileChangesHeight(IReadOnlyCollection<FileChangeItem> fileChanges)
-    {
-        var editCount = fileChanges.Sum(fileChange => Math.Max(1, fileChange.Edits.Count));
-        return Math.Clamp(56d + fileChanges.Count * 46d + editCount * 10d, 72d, 1400d);
-    }
-
-    public static double EstimatePlanCardHeight(string? statusText)
-    {
-        return EstimateWrappedTextHeight(statusText, 48d, 72, 17d, 24d, 180d);
-    }
+    public static string Create(string prefix) => $"{prefix}:{Guid.NewGuid():N}";
 }
 
 // ── Base ─────────────────────────────────────────────
 
 /// <summary>Base class for all items displayed in the chat transcript.</summary>
-public abstract partial class TranscriptItem : ObservableObject, IStrataVirtualizedItem
+public abstract partial class TranscriptItem : ObservableObject
 {
-    protected TranscriptItem(object virtualizationMeasureKey, object virtualizationRecycleKey, double virtualizationHeightHint)
+    protected TranscriptItem(string stableId)
     {
-        VirtualizationMeasureKey = virtualizationMeasureKey;
-        VirtualizationRecycleKey = virtualizationRecycleKey;
-        VirtualizationHeightHint = virtualizationHeightHint;
+        StableId = stableId;
     }
 
-    public object? VirtualizationRecycleKey { get; protected set; }
-    public object? VirtualizationMeasureKey { get; protected set; }
-    public double? VirtualizationHeightHint { get; protected set; }
-
-    protected void UpdateVirtualizationHeightHint(double heightHint)
-    {
-        var newHeight = Math.Max(24d, heightHint);
-        if (VirtualizationHeightHint is double current && Math.Abs(current - newHeight) < 0.5d)
-            return;
-
-        VirtualizationHeightHint = newHeight;
-        OnPropertyChanged(nameof(VirtualizationHeightHint));
-    }
+    public string StableId { get; }
 }
 
 // ── User message ─────────────────────────────────────
@@ -186,10 +62,7 @@ public partial class UserMessageItem : TranscriptItem
     public ICommand ResendCommand { get; }
 
     public UserMessageItem(ChatMessageViewModel source, bool showTimestamps, Action<ChatMessage, bool>? resendAction = null)
-        : base(
-            $"message:user:{source.Message.Id}",
-            typeof(UserMessageItem),
-            TranscriptVirtualization.EstimateUserMessageHeight(source.Content, source.Message.Attachments.Count, source.Message.ActiveSkills.Count))
+        : base($"message:user:{source.Message.Id}")
     {
         _source = source;
         _resendAction = resendAction;
@@ -210,7 +83,6 @@ public partial class UserMessageItem : TranscriptItem
         _source.Message.Content = newContent;
         _source.NotifyContentChanged();
         Content = newContent;
-        UpdateVirtualizationHeightHint(TranscriptVirtualization.EstimateUserMessageHeight(newContent, Attachments.Count, Skills.Count));
         _resendAction?.Invoke(_source.Message, true);
     }
 }
@@ -244,14 +116,7 @@ public partial class AssistantMessageItem : TranscriptItem
     public AssistantMessageItem? DisplaySourcesSection => HasSources ? this : null;
 
     public AssistantMessageItem(ChatMessageViewModel source, bool showTimestamps)
-        : base(
-            $"message:assistant:{source.Message.Id}",
-            typeof(AssistantMessageItem),
-            TranscriptVirtualization.EstimateAssistantMessageHeight(
-                source.Content,
-                source.Message.ActiveSkills.Count,
-                source.Message.Attachments.Count,
-                source.Message.Sources.Count))
+        : base($"message:assistant:{source.Message.Id}")
     {
         _source = source;
         _content = source.Content;
@@ -275,7 +140,6 @@ public partial class AssistantMessageItem : TranscriptItem
         else if (e.PropertyName == nameof(ChatMessageViewModel.IsStreaming) && !_source.IsStreaming)
         {
             IsStreaming = false;
-            UpdateVirtualizationHeightHint(TranscriptVirtualization.EstimateAssistantMessageHeight(Content, Skills.Count, FileAttachments.Count, Sources.Count));
             _source.PropertyChanged -= OnSourcePropertyChanged;
         }
     }
@@ -307,7 +171,6 @@ public partial class AssistantMessageItem : TranscriptItem
             Sources.Add(new SourceItem(src));
         HasSources = Sources.Count > 0;
         SourcesLabel = Sources.Count == 1 ? Loc.Sources_One : string.Format(Loc.Sources_N, Sources.Count);
-        UpdateVirtualizationHeightHint(TranscriptVirtualization.EstimateAssistantMessageHeight(Content, Skills.Count, FileAttachments.Count, Sources.Count));
     }
 }
 
@@ -321,7 +184,7 @@ public partial class ErrorMessageItem : TranscriptItem
     public string? Author { get; }
 
     public ErrorMessageItem(ChatMessageViewModel source, bool showTimestamps)
-        : base($"message:error:{source.Message.Id}", typeof(ErrorMessageItem), TranscriptVirtualization.EstimateErrorHeight(source.Content))
+        : base($"message:error:{source.Message.Id}")
     {
         Author = source.Author;
         _content = source.Content;
@@ -329,7 +192,7 @@ public partial class ErrorMessageItem : TranscriptItem
     }
 
     public ErrorMessageItem(string content, string? author = null)
-        : base(TranscriptVirtualization.CreateRuntimeKey("error"), typeof(ErrorMessageItem), TranscriptVirtualization.EstimateErrorHeight(content))
+        : base(TranscriptIds.Create("error"))
     {
         Author = author;
         _content = content;
@@ -349,10 +212,7 @@ public partial class ReasoningItem : TranscriptItem
     private readonly bool _expandWhileStreaming;
 
     public ReasoningItem(ChatMessageViewModel source, bool expandWhileStreaming)
-        : base(
-            $"message:reasoning:{source.Message.Id}",
-            typeof(ReasoningItem),
-            TranscriptVirtualization.EstimateReasoningHeight(source.Content, expandWhileStreaming && source.IsStreaming))
+        : base($"message:reasoning:{source.Message.Id}")
     {
         _content = source.Content;
         _isActive = source.IsStreaming;
@@ -379,14 +239,8 @@ public partial class ReasoningItem : TranscriptItem
             IsActive = false;
             if (_expandWhileStreaming)
                 IsExpanded = false;
-            UpdateVirtualizationHeightHint(TranscriptVirtualization.EstimateReasoningHeight(Content, IsExpanded || IsActive));
             _source.PropertyChanged -= OnSourcePropertyChanged;
         }
-    }
-
-    partial void OnIsExpandedChanged(bool value)
-    {
-        UpdateVirtualizationHeightHint(TranscriptVirtualization.EstimateReasoningHeight(Content, value || IsActive));
     }
 }
 
@@ -403,41 +257,9 @@ public partial class ToolGroupItem : TranscriptItem
     public ObservableCollection<ToolCallItemBase> ToolCalls { get; } = [];
 
     public ToolGroupItem(string label, string? stableId = null)
-        : base(stableId ?? TranscriptVirtualization.CreateRuntimeKey("tool-group"), typeof(ToolGroupItem), 96d)
+        : base(stableId ?? TranscriptIds.Create("tool-group"))
     {
         _label = label;
-        ToolCalls.CollectionChanged += OnToolCallsChanged;
-        RefreshHeightHint();
-    }
-
-    partial void OnIsExpandedChanged(bool value) => RefreshHeightHint();
-
-    private void OnToolCallsChanged(object? sender, NotifyCollectionChangedEventArgs e)
-    {
-        if (e.OldItems is not null)
-        {
-            foreach (var call in e.OldItems.OfType<ToolCallItemBase>())
-                call.PropertyChanged -= OnToolCallPropertyChanged;
-        }
-
-        if (e.NewItems is not null)
-        {
-            foreach (var call in e.NewItems.OfType<ToolCallItemBase>())
-                call.PropertyChanged += OnToolCallPropertyChanged;
-        }
-
-        RefreshHeightHint();
-    }
-
-    private void OnToolCallPropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName == nameof(ToolCallItemBase.EstimatedHeightHint))
-            RefreshHeightHint();
-    }
-
-    private void RefreshHeightHint()
-    {
-        UpdateVirtualizationHeightHint(TranscriptVirtualization.EstimateToolGroupHeight(Label, ToolCalls, IsExpanded));
     }
 }
 
@@ -504,7 +326,7 @@ public partial class SingleToolItem : TranscriptItem
     public ICommand? ShowDiffCommand => Inner is ToolCallItem tc ? tc.ShowDiffCommand : null;
 
     public SingleToolItem(ToolCallItemBase inner)
-        : base($"single:{inner.StableId}", typeof(SingleToolItem), inner.EstimatedHeightHint)
+        : base($"single:{inner.StableId}")
     {
         Inner = inner;
     }
@@ -514,24 +336,12 @@ public partial class SingleToolItem : TranscriptItem
 
 public abstract partial class ToolCallItemBase : ObservableObject
 {
-    protected ToolCallItemBase(string stableId, double estimatedHeightHint)
+    protected ToolCallItemBase(string stableId)
     {
         StableId = stableId;
-        EstimatedHeightHint = estimatedHeightHint;
     }
 
     public string StableId { get; }
-    public double EstimatedHeightHint { get; protected set; }
-
-    protected void UpdateEstimatedHeightHint(double estimatedHeightHint)
-    {
-        var newHeight = Math.Max(24d, estimatedHeightHint);
-        if (Math.Abs(EstimatedHeightHint - newHeight) < 0.5d)
-            return;
-
-        EstimatedHeightHint = newHeight;
-        OnPropertyChanged(nameof(EstimatedHeightHint));
-    }
 }
 
 // ── Regular tool call ────────────────────────────────
@@ -553,21 +363,10 @@ public partial class ToolCallItem : ToolCallItemBase
     public Action<FileChangeItem>? ShowFileChangeAction { get; set; }
 
     public ToolCallItem(string toolName, StrataAiToolCallStatus status, string? stableId = null)
-        : base(stableId ?? TranscriptVirtualization.CreateRuntimeKey("tool"), 88d)
+        : base(stableId ?? TranscriptIds.Create("tool"))
     {
         _toolName = toolName;
         _status = status;
-        RefreshHeightHint();
-    }
-
-    partial void OnInputParametersChanged(string? value) => RefreshHeightHint();
-    partial void OnMoreInfoChanged(string? value) => RefreshHeightHint();
-    partial void OnHasDiffChanged(bool value) => RefreshHeightHint();
-    partial void OnIsCompactChanged(bool value) => RefreshHeightHint();
-
-    private void RefreshHeightHint()
-    {
-        UpdateEstimatedHeightHint(TranscriptVirtualization.EstimateToolCallHeight(InputParameters, MoreInfo, HasDiff, IsCompact));
     }
 
     [RelayCommand]
@@ -595,21 +394,11 @@ public partial class TerminalPreviewItem : ToolCallItemBase
     [ObservableProperty] private bool _isExpanded;
 
     public TerminalPreviewItem(string toolName, string command, StrataAiToolCallStatus status, string? stableId = null)
-        : base(stableId ?? TranscriptVirtualization.CreateRuntimeKey("terminal"), 168d)
+        : base(stableId ?? TranscriptIds.Create("terminal"))
     {
         _toolName = toolName;
         _command = command;
         _status = status;
-        RefreshHeightHint();
-    }
-
-    partial void OnCommandChanged(string value) => RefreshHeightHint();
-    partial void OnOutputChanged(string value) => RefreshHeightHint();
-    partial void OnIsExpandedChanged(bool value) => RefreshHeightHint();
-
-    private void RefreshHeightHint()
-    {
-        UpdateEstimatedHeightHint(TranscriptVirtualization.EstimateTerminalHeight(Command, Output, IsExpanded));
     }
 }
 
@@ -624,18 +413,10 @@ public partial class TodoProgressItem : ToolCallItemBase
     [ObservableProperty] private string? _moreInfo;
 
     public TodoProgressItem(string toolName, StrataAiToolCallStatus status, string? stableId = null)
-        : base(stableId ?? TranscriptVirtualization.CreateRuntimeKey("todo"), 140d)
+        : base(stableId ?? TranscriptIds.Create("todo"))
     {
         _toolName = toolName;
         _status = status;
-        RefreshHeightHint();
-    }
-
-    partial void OnInputParametersChanged(string? value) => RefreshHeightHint();
-
-    private void RefreshHeightHint()
-    {
-        UpdateEstimatedHeightHint(TranscriptVirtualization.EstimateTodoHeight(InputParameters));
     }
 }
 
@@ -656,10 +437,7 @@ public partial class QuestionItem : TranscriptItem
 
     public QuestionItem(string questionId, string question, string options, bool allowFreeText,
         Action<string, string>? submitAction = null, bool allowMultiSelect = false)
-        : base(
-            $"question:{questionId}",
-            typeof(QuestionItem),
-            TranscriptVirtualization.EstimateQuestionHeight(question, options, allowFreeText))
+        : base($"question:{questionId}")
     {
         QuestionId = questionId;
         _question = question;
@@ -687,21 +465,6 @@ public partial class QuestionItem : TranscriptItem
         _submitAction?.Invoke(QuestionId, answer);
         _isSubmitting = false;
     }
-
-    partial void OnQuestionChanged(string value)
-    {
-        UpdateVirtualizationHeightHint(TranscriptVirtualization.EstimateQuestionHeight(Question, Options, AllowFreeText));
-    }
-
-    partial void OnOptionsChanged(string value)
-    {
-        UpdateVirtualizationHeightHint(TranscriptVirtualization.EstimateQuestionHeight(Question, Options, AllowFreeText));
-    }
-
-    partial void OnAllowFreeTextChanged(bool value)
-    {
-        UpdateVirtualizationHeightHint(TranscriptVirtualization.EstimateQuestionHeight(Question, Options, AllowFreeText));
-    }
 }
 
 // ── Typing indicator ─────────────────────────────────
@@ -712,7 +475,7 @@ public partial class TypingIndicatorItem : TranscriptItem
     [ObservableProperty] private bool _isActive;
 
     public TypingIndicatorItem(string label)
-        : base("typing-indicator", typeof(TypingIndicatorItem), 52d)
+        : base("typing-indicator")
     {
         _label = label;
         _isActive = true;
@@ -730,20 +493,9 @@ public partial class TurnSummaryItem : TranscriptItem
     public ObservableCollection<TranscriptItem> InnerItems { get; } = [];
 
     public TurnSummaryItem(string label, string? stableId = null)
-        : base(stableId ?? TranscriptVirtualization.CreateRuntimeKey("turn-summary"), typeof(TurnSummaryItem), 92d)
+        : base(stableId ?? TranscriptIds.Create("turn-summary"))
     {
         _label = label;
-        InnerItems.CollectionChanged += OnInnerItemsChanged;
-        RefreshHeightHint();
-    }
-
-    partial void OnIsExpandedChanged(bool value) => RefreshHeightHint();
-
-    private void OnInnerItemsChanged(object? sender, NotifyCollectionChangedEventArgs e) => RefreshHeightHint();
-
-    private void RefreshHeightHint()
-    {
-        UpdateVirtualizationHeightHint(TranscriptVirtualization.EstimateTurnSummaryHeight(Label, InnerItems.Count, IsExpanded));
     }
 }
 
@@ -920,10 +672,7 @@ public partial class FileChangesSummaryItem : TranscriptItem
     public ObservableCollection<FileChangeItem> FileChanges { get; } = [];
 
     public FileChangesSummaryItem(List<FileChangeItem> fileChanges, string? stableId = null)
-        : base(
-            stableId ?? TranscriptVirtualization.CreateRuntimeKey("file-changes"),
-            typeof(FileChangesSummaryItem),
-            TranscriptVirtualization.EstimateFileChangesHeight(fileChanges))
+        : base(stableId ?? TranscriptIds.Create("file-changes"))
     {
         foreach (var fc in fileChanges)
             FileChanges.Add(fc);
@@ -946,18 +695,10 @@ public partial class PlanCardItem : TranscriptItem
     [ObservableProperty] private string _statusText;
 
     public PlanCardItem(string statusText, Action? openAction, string? stableId = null)
-        : base(
-            stableId ?? TranscriptVirtualization.CreateRuntimeKey("plan-card"),
-            typeof(PlanCardItem),
-            TranscriptVirtualization.EstimatePlanCardHeight(statusText))
+        : base(stableId ?? TranscriptIds.Create("plan-card"))
     {
         _statusText = statusText;
         _openAction = openAction;
-    }
-
-    partial void OnStatusTextChanged(string value)
-    {
-        UpdateVirtualizationHeightHint(TranscriptVirtualization.EstimatePlanCardHeight(value));
     }
 
     [RelayCommand]

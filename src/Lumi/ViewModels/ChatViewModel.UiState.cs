@@ -186,7 +186,7 @@ public partial class ChatViewModel
     /// <summary>
     /// Discovers workspace agents and skills from the .github directory.
     /// Supports two GitHub Copilot skill conventions:
-    ///   1. Flat: .github/skills/*.md (e.g., benchmark.md)
+    ///   1. Flat: .github/skills/*.md (e.g., travel-planner.md)
     ///   2. Folder: .github/Skills/&lt;name&gt;/SKILL.md (e.g., fluentsearch-translate/SKILL.md)
     /// Agent convention: .github/agents/*.md
     /// The SDK discovers these via ConfigDir when creating a session.

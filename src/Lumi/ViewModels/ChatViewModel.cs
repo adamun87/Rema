@@ -139,7 +139,7 @@ public partial class ChatViewModel : ObservableObject
     };
 
     public ObservableCollection<ChatMessageViewModel> Messages { get; } = [];
-    /// <summary>Virtualized turn list for the chat transcript. Bound to StrataChatTranscript.ItemsSource.</summary>
+    /// <summary>Turn list for the chat transcript. Bound to the transcript ItemsControl.</summary>
     [ObservableProperty] private ObservableCollection<TranscriptTurnControl> _transcriptTurns = [];
 
     public ObservableCollection<string> AvailableModels { get; } = [];

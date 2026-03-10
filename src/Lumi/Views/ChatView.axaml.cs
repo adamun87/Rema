@@ -19,7 +19,6 @@ namespace Lumi.Views;
 public partial class ChatView : UserControl
 {
     private StrataChatShell? _chatShell;
-    private StrataChatTranscript? _transcript;
     private StrataChatComposer? _composer;
     private Panel? _composerSpacer;
     private Panel? _dropOverlay;
@@ -43,7 +42,6 @@ public partial class ChatView : UserControl
         AvaloniaXamlLoader.Load(this);
 
         _chatShell = this.FindControl<StrataChatShell>("ChatShell");
-        _transcript = this.FindControl<StrataChatTranscript>("Transcript");
         _composer = this.FindControl<StrataChatComposer>("Composer");
         _composerSpacer = this.FindControl<Panel>("ComposerSpacer");
         _dropOverlay = this.FindControl<Panel>("DropOverlay");
@@ -143,11 +141,11 @@ public partial class ChatView : UserControl
     private void OnTranscriptRebuilt()
     {
         _chatShell?.ResetAutoScroll();
-        var count = _subscribedVm?.TranscriptTurns.Count ?? 0;
-        if (count > 0)
-            _transcript?.PrepareScrollToIndex(count - 1, ScrollToAlignment.End);
-
-        Dispatcher.UIThread.Post(FocusComposer, DispatcherPriority.Input);
+        Dispatcher.UIThread.Post(() =>
+        {
+            _chatShell?.ScrollToEnd();
+            FocusComposer();
+        }, DispatcherPriority.Loaded);
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)

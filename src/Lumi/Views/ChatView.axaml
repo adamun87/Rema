@@ -655,8 +655,14 @@
 
 
         <sc:StrataChatShell.Transcript>
-          <sc:StrataChatTranscript x:Name="Transcript"
-                  ItemsSource="{Binding TranscriptTurns}" />
+          <ItemsControl x:Name="Transcript"
+                        ItemsSource="{Binding TranscriptTurns}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <StackPanel Spacing="8" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+          </ItemsControl>
         </sc:StrataChatShell.Transcript>
 
         <sc:StrataChatShell.Composer>

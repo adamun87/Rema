@@ -1,5 +1,4 @@
 using Avalonia;
-using Lumi.Benchmark;
 using System;
 #if DEBUG
 using AvaloniaMcp.Diagnostics;
@@ -9,16 +8,9 @@ namespace Lumi;
 
 class Program
 {
-    /// <summary>Parsed benchmark arguments, if --benchmark was passed.</summary>
-    internal static BenchmarkArgs? BenchmarkConfig { get; private set; }
-
     [STAThread]
     public static void Main(string[] args)
     {
-        var benchArgs = BenchmarkArgs.Parse(args);
-        if (benchArgs.IsBenchmark)
-            BenchmarkConfig = benchArgs;
-
         BuildAvaloniaApp()
             .StartWithClassicDesktopLifetime(args);
     }

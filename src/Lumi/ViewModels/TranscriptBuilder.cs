@@ -518,7 +518,7 @@ public class TranscriptBuilder
             ProgressValue = -1,
         };
 
-        AppendToCurrentTurn(_currentToolGroup, turnStableId ?? TurnStableIdFor(stableIdSeed ?? TranscriptVirtualization.CreateRuntimeKey("tool-group")));
+        AppendToCurrentTurn(_currentToolGroup, turnStableId ?? TurnStableIdFor(stableIdSeed ?? TranscriptIds.Create("tool-group")));
     }
 
     public void CloseCurrentToolGroup()
@@ -702,7 +702,7 @@ public class TranscriptBuilder
             _currentTodoToolCall = new TodoProgressItem(
                 $"✅ {Loc.ToolTodo_Title}",
                 StrataAiToolCallStatus.InProgress,
-                $"todo:{_currentToolGroup?.VirtualizationMeasureKey}")
+                $"todo:{_currentToolGroup?.StableId}")
             {
                 InputParameters = detailsMarkdown,
             };
@@ -810,7 +810,7 @@ public class TranscriptBuilder
         foreach (var block in blocksToMerge)
             items.Remove(block);
 
-        var summary = new TurnSummaryItem(label, $"turn-summary:{assistantItem.VirtualizationMeasureKey}")
+        var summary = new TurnSummaryItem(label, $"turn-summary:{assistantItem.StableId}")
         {
             IsExpanded = hasTodoProgress && !IsRebuildingTranscript,
             HasFailures = failedCount > 0,
