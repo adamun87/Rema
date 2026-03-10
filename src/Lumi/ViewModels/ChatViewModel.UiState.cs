@@ -55,6 +55,7 @@ public partial class ChatViewModel
     partial void OnIsCodingProjectChanged(bool value) => OnPropertyChanged(nameof(ShowInfoStrip));
     [ObservableProperty] private string? _gitBranch;
     [ObservableProperty] private int _gitChangedFileCount;
+    [ObservableProperty] private bool _isRefreshingGitStatus;
     [ObservableProperty] private bool _isWorktreeMode;
     [ObservableProperty] private string? _worktreePath;
     /// <summary>True when a chat exists (toggle is locked).</summary>
@@ -62,8 +63,10 @@ public partial class ChatViewModel
     private int _gitRefreshVersion;
     public ObservableCollection<GitFileChangeViewModel> GitChangedFiles { get; } = [];
     public bool HasGitChanges => GitChangedFileCount > 0;
+    public bool ShowGitStatusBadge => IsRefreshingGitStatus || HasGitChanges;
     public string GitChangesLabel => GitChangedFileCount switch
     {
+        _ when IsRefreshingGitStatus => Loc.Git_Refreshing,
         0 => Loc.Git_NoChanges,
         1 => Loc.Git_OneChange,
         _ => string.Format(Loc.Git_NChanges, GitChangedFileCount)
@@ -403,6 +406,13 @@ public partial class ChatViewModel
     partial void OnGitChangedFileCountChanged(int value)
     {
         OnPropertyChanged(nameof(HasGitChanges));
+        OnPropertyChanged(nameof(ShowGitStatusBadge));
+        OnPropertyChanged(nameof(GitChangesLabel));
+    }
+
+    partial void OnIsRefreshingGitStatusChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ShowGitStatusBadge));
         OnPropertyChanged(nameof(GitChangesLabel));
     }
 
@@ -845,8 +855,10 @@ public partial class ChatViewModel
 
         // Worktree state comes exclusively from the current chat's persisted data.
         // On welcome screen (no chat), always reset to local.
+        string? savedWorktreePath = null;
         if (CurrentChat?.WorktreePath is { Length: > 0 } savedWt && Directory.Exists(savedWt))
         {
+            savedWorktreePath = savedWt;
             WorktreePath = savedWt;
             IsWorktreeMode = true;
         }
@@ -856,18 +868,26 @@ public partial class ChatViewModel
             IsWorktreeMode = false;
         }
 
+        // Reset stale branch/change data immediately when switching chats.
+        GitBranch = null;
+        GitChangedFileCount = 0;
+        GitChangedFiles.Clear();
+        IsRefreshingGitStatus = isGit;
+
         if (!isGit)
         {
-            GitBranch = null;
-            GitChangedFileCount = 0;
-            GitChangedFiles.Clear();
             return;
         }
 
         // Use the effective dir (worktree or project) for status
-        var workDir = GetEffectiveWorkingDirectory();
-        var branch = await GitService.GetCurrentBranchAsync(workDir);
-        var changes = await GitService.GetChangedFilesAsync(workDir);
+        var workDir = savedWorktreePath ?? projectDir;
+        var branchTask = GitService.GetCurrentBranchAsync(workDir);
+        var changesTask = GitService.GetChangedFilesAsync(workDir);
+
+        await Task.WhenAll(branchTask, changesTask).ConfigureAwait(false);
+
+        var branch = await branchTask;
+        var changes = await changesTask;
 
         // A newer refresh was started while we were awaiting — discard these stale results.
         if (version != Volatile.Read(ref _gitRefreshVersion))
@@ -884,6 +904,7 @@ public partial class ChatViewModel
             GitChangedFiles.Clear();
             foreach (var c in changes)
                 GitChangedFiles.Add(new GitFileChangeViewModel(c));
+            IsRefreshingGitStatus = false;
         });
     }
 

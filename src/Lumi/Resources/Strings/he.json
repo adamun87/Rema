@@ -430,6 +430,7 @@
   "Git_WorktreeTooltip": "עבוד ב-worktree נפרד כדי לבודד שינויי סוכן",
   "Git_LocalTooltip": "עבוד ישירות במאגר המקומי",
   "Git_RefreshTooltip": "רענן סטטוס Git",
+  "Git_Refreshing": "מרענן מצב Git…",
   "Git_OpenTerminal": "פתח בטרמינל",
   "Git_OpenExplorer": "פתח בסייר קבצים",
   "Git_OpenIDE": "פתח ב-IDE",

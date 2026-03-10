@@ -30,14 +30,14 @@ public static class GitService
     /// <summary>Gets the current branch name, or null if not a git repo.</summary>
     public static async Task<string?> GetCurrentBranchAsync(string dir)
     {
-        var result = await RunGitAsync(dir, "branch --show-current");
+        var result = await RunGitAsync(dir, "branch --show-current").ConfigureAwait(false);
         return string.IsNullOrWhiteSpace(result) ? null : result.Trim();
     }
 
     /// <summary>Returns the list of changed files (staged + unstaged + untracked) with line stats.</summary>
     public static async Task<List<GitFileChange>> GetChangedFilesAsync(string dir)
     {
-        var output = await RunGitAsync(dir, "status --porcelain -uall");
+        var output = await RunGitAsync(dir, "status --porcelain -uall").ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(output)) return [];
 
         var changes = new List<GitFileChange>();
@@ -73,8 +73,8 @@ public static class GitService
         }
 
         // Enrich with line stats from numstat
-        var numstat = await RunGitAsync(dir, "diff --numstat");
-        var cachedNumstat = await RunGitAsync(dir, "diff --cached --numstat");
+        var numstat = await RunGitAsync(dir, "diff --numstat").ConfigureAwait(false);
+        var cachedNumstat = await RunGitAsync(dir, "diff --cached --numstat").ConfigureAwait(false);
         var statsMap = new Dictionary<string, (int added, int removed)>(StringComparer.OrdinalIgnoreCase);
         foreach (var raw in new[] { numstat, cachedNumstat })
         {
@@ -106,7 +106,7 @@ public static class GitService
                 try
                 {
                     if (File.Exists(c.FullPath))
-                        c.LinesAdded = File.ReadAllLines(c.FullPath).Length;
+                        c.LinesAdded = File.ReadLines(c.FullPath).Count();
                 }
                 catch { /* ignore */ }
             }
@@ -119,16 +119,16 @@ public static class GitService
     public static async Task<string?> GetFileDiffAsync(string dir, string relativePath)
     {
         // Try staged first, then unstaged, then for untracked show the whole file
-        var diff = await RunGitAsync(dir, $"diff -- \"{relativePath}\"");
+        var diff = await RunGitAsync(dir, $"diff -- \"{relativePath}\"").ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(diff))
-            diff = await RunGitAsync(dir, $"diff --cached -- \"{relativePath}\"");
+            diff = await RunGitAsync(dir, $"diff --cached -- \"{relativePath}\"").ConfigureAwait(false);
         return string.IsNullOrWhiteSpace(diff) ? null : diff;
     }
 
     /// <summary>Gets the short stat summary (e.g. "3 files changed, 12 insertions(+), 5 deletions(-)").</summary>
     public static async Task<string?> GetDiffStatAsync(string dir)
     {
-        return await RunGitAsync(dir, "diff --stat --stat-width=60");
+        return await RunGitAsync(dir, "diff --stat --stat-width=60").ConfigureAwait(false);
     }
 
     /// <summary>Creates a git worktree as a sibling directory to the repo. Returns the worktree path.</summary>
@@ -146,17 +146,17 @@ public static class GitService
             return worktreePath; // Already exists
 
         // Try creating with a new branch first
-        var result = await RunGitAsync(repoDir, $"worktree add \"{worktreePath}\" -b \"{branchName}\"");
+        var result = await RunGitAsync(repoDir, $"worktree add \"{worktreePath}\" -b \"{branchName}\"").ConfigureAwait(false);
         if (result is not null && Directory.Exists(worktreePath))
             return worktreePath;
 
         // Branch may already exist — try attaching to it
-        result = await RunGitAsync(repoDir, $"worktree add \"{worktreePath}\" \"{branchName}\"");
+        result = await RunGitAsync(repoDir, $"worktree add \"{worktreePath}\" \"{branchName}\"").ConfigureAwait(false);
         if (result is not null && Directory.Exists(worktreePath))
             return worktreePath;
 
         // Last resort — create with detached HEAD
-        result = await RunGitAsync(repoDir, $"worktree add --detach \"{worktreePath}\"");
+        result = await RunGitAsync(repoDir, $"worktree add --detach \"{worktreePath}\"").ConfigureAwait(false);
         if (result is not null && Directory.Exists(worktreePath))
             return worktreePath;
 
@@ -169,15 +169,15 @@ public static class GitService
         if (!Directory.Exists(worktreePath)) return true;
 
         // Get the branch name before removing the worktree
-        var branch = await RunGitAsync(worktreePath, "rev-parse --abbrev-ref HEAD");
+        var branch = await RunGitAsync(worktreePath, "rev-parse --abbrev-ref HEAD").ConfigureAwait(false);
         branch = branch?.Trim();
 
-        var result = await RunGitAsync(dir, $"worktree remove \"{worktreePath}\" --force");
+        var result = await RunGitAsync(dir, $"worktree remove \"{worktreePath}\" --force").ConfigureAwait(false);
         if (result is null) return false;
 
         // Delete the orphaned branch if it was a lumi/ branch
         if (branch is { Length: > 0 } && branch.StartsWith("lumi/"))
-            await RunGitAsync(dir, $"branch -D \"{branch}\"");
+            await RunGitAsync(dir, $"branch -D \"{branch}\"").ConfigureAwait(false);
 
         return true;
     }
@@ -185,7 +185,7 @@ public static class GitService
     /// <summary>Lists existing worktrees.</summary>
     public static async Task<List<string>> ListWorktreesAsync(string dir)
     {
-        var output = await RunGitAsync(dir, "worktree list --porcelain");
+        var output = await RunGitAsync(dir, "worktree list --porcelain").ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(output)) return [];
 
         return output.Split('\n')
@@ -210,8 +210,13 @@ public static class GitService
             using var proc = Process.Start(psi);
             if (proc is null) return null;
 
-            var output = await proc.StandardOutput.ReadToEndAsync();
-            await proc.WaitForExitAsync();
+            var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+            var stderrTask = proc.StandardError.ReadToEndAsync();
+
+            await Task.WhenAll(stdoutTask, stderrTask).ConfigureAwait(false);
+            await proc.WaitForExitAsync().ConfigureAwait(false);
+
+            var output = stdoutTask.Result;
             return proc.ExitCode == 0 ? output : null;
         }
         catch

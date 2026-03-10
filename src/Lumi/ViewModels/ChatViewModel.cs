@@ -1425,9 +1425,6 @@ public partial class ChatViewModel : ObservableObject
             // Rebuild transcript items from loaded messages
             RebuildTranscript();
 
-            // Await git refresh — this is the critical path for correct branch display
-            await RefreshCodingProjectState();
-
             // Restore active skills from chat
             ActiveSkillIds.Clear();
             ActiveSkillChips.Clear();
@@ -1484,6 +1481,10 @@ public partial class ChatViewModel : ObservableObject
 
             // Restore SDK agent selection
             SelectedSdkAgentName = chat.SdkAgentName;
+
+            // Git status can be slow in large repos/worktrees. Do not keep the chat
+            // loading overlay up after the transcript is already interactive.
+            _ = RefreshCodingProjectState();
 
             // Refresh SDK agents if we have a session
             if (_activeSession is not null)
