@@ -61,14 +61,14 @@
           <StackPanel Spacing="4">
             <TextBlock Text="{loc:Str Field_Name}" FontSize="10" FontWeight="SemiBold" Opacity="0.5"
                        LetterSpacing="0.8" />
-            <TextBox Text="{Binding EditName}" Watermark="{loc:Str Watermark_McpServerName}" />
+            <TextBox Text="{Binding EditName}" PlaceholderText="{loc:Str Watermark_McpServerName}" />
           </StackPanel>
 
           <StackPanel Spacing="4">
             <TextBlock Text="{loc:Str Field_Description}" FontSize="10" FontWeight="SemiBold" Opacity="0.5"
                        LetterSpacing="0.8" />
             <TextBox Text="{Binding EditDescription}"
-                     Watermark="{loc:Str Watermark_McpServerDescription}" />
+                     PlaceholderText="{loc:Str Watermark_McpServerDescription}" />
           </StackPanel>
 
           <StackPanel Spacing="4">
@@ -85,7 +85,7 @@
             <StackPanel Spacing="4">
               <TextBlock Text="{loc:Str Field_Command}" FontSize="10" FontWeight="SemiBold" Opacity="0.5"
                          LetterSpacing="0.8" />
-              <TextBox Text="{Binding EditCommand}" Watermark="{loc:Str Watermark_McpCommand}" />
+              <TextBox Text="{Binding EditCommand}" PlaceholderText="{loc:Str Watermark_McpCommand}" />
             </StackPanel>
 
             <!-- npx servers: read-only package + editable server args -->
@@ -105,7 +105,7 @@
                     </StackPanel>
                   </Button>
                   <TextBox Text="{Binding EditNpxPackage}"
-                           Watermark="@modelcontextprotocol/server-filesystem" />
+                           PlaceholderText="@modelcontextprotocol/server-filesystem" />
                 </DockPanel>
               </StackPanel>
 
@@ -115,7 +115,7 @@
                 <TextBox Text="{Binding EditServerArgs}" AcceptsReturn="True" TextWrapping="Wrap"
                          MinHeight="72" MaxHeight="200"
                          VerticalContentAlignment="Top"
-                         Watermark="Paths, connection strings, or other config — one per line" />
+                         PlaceholderText="Paths, connection strings, or other config — one per line" />
                 <TextBlock Text="These arguments are passed to the MCP server after the package name. Check the Docs button above for what this server expects."
                            FontSize="11" Foreground="{DynamicResource Brush.TextTertiary}"
                            TextWrapping="Wrap" Margin="0,1,0,0" />
@@ -129,7 +129,7 @@
               <TextBox Text="{Binding EditArgs}" AcceptsReturn="True" TextWrapping="Wrap"
                        MinHeight="72" MaxHeight="200"
                        VerticalContentAlignment="Top"
-                       Watermark="{loc:Str Watermark_McpArgs}" />
+                       PlaceholderText="{loc:Str Watermark_McpArgs}" />
             </StackPanel>
 
             <StackPanel Spacing="4">
@@ -138,7 +138,7 @@
               <TextBox Text="{Binding EditEnvVars}" AcceptsReturn="True" TextWrapping="Wrap"
                        MinHeight="56" MaxHeight="200"
                        VerticalContentAlignment="Top"
-                       Watermark="API_KEY=your-key  (one per line)" />
+                       PlaceholderText="API_KEY=your-key  (one per line)" />
             </StackPanel>
           </StackPanel>
 
@@ -147,7 +147,7 @@
             <StackPanel Spacing="4">
               <TextBlock Text="{loc:Str Field_Url}" FontSize="10" FontWeight="SemiBold" Opacity="0.5"
                          LetterSpacing="0.8" />
-              <TextBox Text="{Binding EditUrl}" Watermark="{loc:Str Watermark_McpUrl}" />
+              <TextBox Text="{Binding EditUrl}" PlaceholderText="{loc:Str Watermark_McpUrl}" />
             </StackPanel>
             <StackPanel Spacing="4">
               <TextBlock Text="{loc:Str Field_Headers}" FontSize="10" FontWeight="SemiBold" Opacity="0.5"
@@ -155,7 +155,7 @@
               <TextBox Text="{Binding EditHeaders}" AcceptsReturn="True" TextWrapping="Wrap"
                        MinHeight="56" MaxHeight="200"
                        VerticalContentAlignment="Top"
-                       Watermark="Authorization=Bearer token" />
+                       PlaceholderText="Authorization=Bearer token" />
             </StackPanel>
           </StackPanel>
 
@@ -185,7 +185,7 @@
         </StackPanel>
 
         <Border DockPanel.Dock="Top" Margin="36,14,36,0">
-          <TextBox Watermark="{loc:Str Mcp_SearchCatalog}" Text="{Binding BrowseSearchQuery}"
+          <TextBox PlaceholderText="{loc:Str Mcp_SearchCatalog}" Text="{Binding BrowseSearchQuery}"
                    Padding="8,7,10,7" FontSize="{DynamicResource Font.SizeBody}">
             <TextBox.InnerLeftContent>
               <PathIcon Data="{StaticResource Icon.Search}" Width="13" Height="13"

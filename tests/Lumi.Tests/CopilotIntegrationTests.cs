@@ -602,10 +602,8 @@ public class CopilotIntegrationTests : IAsyncLifetime
     {
         SkipIfDisabled();
 
-        var handlerCalled = false;
         UserInputHandler handler = async (request, _) =>
         {
-            handlerCalled = true;
             return new UserInputResponse { Answer = "Blue", WasFreeform = true };
         };
 
@@ -870,8 +868,7 @@ public class CopilotIntegrationTests : IAsyncLifetime
     {
         SkipIfDisabled();
 
-        var called = false;
-        var tool = AIFunctionFactory.Create(() => { called = true; return "done"; },
+        var tool = AIFunctionFactory.Create(() => "done",
             "my_tool", "A tool.");
 
         var session = await _service.CreateLightweightSessionAsync(

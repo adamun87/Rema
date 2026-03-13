@@ -86,7 +86,7 @@
 
         <sc:StrataSettingGroup Header="{loc:Str SettingsGroup_Profile}">
           <sc:StrataSetting Header="{loc:Str Setting_YourName}" Description="{loc:Str SettingDesc_YourName}">
-            <TextBox Text="{Binding UserName}" Watermark="{loc:Str Watermark_EnterName}" Width="220" />
+            <TextBox Text="{Binding UserName}" PlaceholderText="{loc:Str Watermark_EnterName}" Width="220" />
           </sc:StrataSetting>
           <sc:StrataSetting Header="{loc:Str Setting_Sex}" Description="{loc:Str SettingDesc_Sex}">
             <ComboBox x:Name="SettingsSexCombo" Width="220"

@@ -172,7 +172,7 @@
 
           <!-- ── Form ── -->
           <StackPanel Spacing="10">
-            <TextBox Watermark="{loc:Str Onboarding_NameWatermark}"
+            <TextBox PlaceholderText="{loc:Str Onboarding_NameWatermark}"
                      Text="{Binding OnboardingName}" HorizontalAlignment="Stretch" />
 
             <!-- Sex + Language side by side -->
@@ -286,7 +286,7 @@
                 </Button>
               </Border>
               <Border DockPanel.Dock="Top" Margin="16,6,16,0">
-                <TextBox Watermark="{loc:Str Sidebar_Search}" x:Name="ChatSearchBox"
+                <TextBox PlaceholderText="{loc:Str Sidebar_Search}" x:Name="ChatSearchBox"
                          Text="{Binding ChatSearchQuery, Mode=TwoWay}"
                          Padding="6,5,8,5" FontSize="{DynamicResource Font.SizeCaption}">
                   <TextBox.InnerLeftContent>
@@ -411,7 +411,7 @@
                            VerticalAlignment="Center" Margin="6,0,0,0" />
               </DockPanel>
               <Border DockPanel.Dock="Top" Margin="16,6,16,0">
-                <TextBox Watermark="{loc:Str Sidebar_Search}" Text="{Binding SearchQuery}"
+                <TextBox PlaceholderText="{loc:Str Sidebar_Search}" Text="{Binding SearchQuery}"
                          Padding="6,5,8,5" FontSize="{DynamicResource Font.SizeCaption}">
                   <TextBox.InnerLeftContent>
                     <PathIcon Data="{StaticResource Icon.Search}" Width="12" Height="12"
@@ -489,7 +489,7 @@
                            VerticalAlignment="Center" Margin="6,0,0,0" />
               </DockPanel>
               <Border DockPanel.Dock="Top" Margin="16,6,16,0">
-                <TextBox Watermark="{loc:Str Sidebar_Search}" Text="{Binding SearchQuery}"
+                <TextBox PlaceholderText="{loc:Str Sidebar_Search}" Text="{Binding SearchQuery}"
                          Padding="6,5,8,5" FontSize="{DynamicResource Font.SizeCaption}">
                   <TextBox.InnerLeftContent>
                     <PathIcon Data="{StaticResource Icon.Search}" Width="12" Height="12"
@@ -544,7 +544,7 @@
                            VerticalAlignment="Center" Margin="6,0,0,0" />
               </DockPanel>
               <Border DockPanel.Dock="Top" Margin="16,6,16,0">
-                <TextBox Watermark="{loc:Str Sidebar_Search}" Text="{Binding SearchQuery}"
+                <TextBox PlaceholderText="{loc:Str Sidebar_Search}" Text="{Binding SearchQuery}"
                          Padding="6,5,8,5" FontSize="{DynamicResource Font.SizeCaption}">
                   <TextBox.InnerLeftContent>
                     <PathIcon Data="{StaticResource Icon.Search}" Width="12" Height="12"
@@ -603,7 +603,7 @@
                            VerticalAlignment="Center" Margin="6,0,0,0" />
               </DockPanel>
               <Border DockPanel.Dock="Top" Margin="16,6,16,0">
-                <TextBox Watermark="{loc:Str Sidebar_Search}" Text="{Binding SearchQuery}"
+                <TextBox PlaceholderText="{loc:Str Sidebar_Search}" Text="{Binding SearchQuery}"
                          Padding="6,5,8,5" FontSize="{DynamicResource Font.SizeCaption}">
                   <TextBox.InnerLeftContent>
                     <PathIcon Data="{StaticResource Icon.Search}" Width="12" Height="12"
@@ -666,7 +666,7 @@
                            VerticalAlignment="Center" Margin="6,0,0,0" />
               </DockPanel>
               <Border DockPanel.Dock="Top" Margin="16,6,16,0">
-                <TextBox Watermark="{loc:Str Sidebar_Search}" Text="{Binding SearchQuery}"
+                <TextBox PlaceholderText="{loc:Str Sidebar_Search}" Text="{Binding SearchQuery}"
                          Padding="6,5,8,5" FontSize="{DynamicResource Font.SizeCaption}">
                   <TextBox.InnerLeftContent>
                     <PathIcon Data="{StaticResource Icon.Search}" Width="12" Height="12"
@@ -727,7 +727,7 @@
                            VerticalAlignment="Center" Margin="6,0,0,0" />
               </DockPanel>
               <Border DockPanel.Dock="Top" Margin="16,6,16,0">
-                <TextBox Watermark="{loc:Str Sidebar_SearchSettings}" Text="{Binding SearchQuery}"
+                <TextBox PlaceholderText="{loc:Str Sidebar_SearchSettings}" Text="{Binding SearchQuery}"
                          Padding="6,5,8,5" FontSize="{DynamicResource Font.SizeCaption}">
                   <TextBox.InnerLeftContent>
                     <PathIcon Data="{StaticResource Icon.Search}" Width="12" Height="12"
@@ -999,7 +999,7 @@
           <TextBlock Text="{loc:Str Dialog_RenameChat}" FontSize="{DynamicResource Font.SizeBody}" FontWeight="SemiBold" />
           <TextBox x:Name="RenameTextBox"
                    Text="{Binding RenamingTitle, Mode=TwoWay}"
-                   Watermark="{loc:Str Dialog_ChatTitle}" FontSize="{DynamicResource Font.SizeBody}" />
+                   PlaceholderText="{loc:Str Dialog_ChatTitle}" FontSize="{DynamicResource Font.SizeBody}" />
           <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
             <Button Classes="subtle" Content="{loc:Str Common_Cancel}" Padding="14,6" MinHeight="0"
                     Command="{Binding CancelRenameChatCommand}" />

@@ -99,21 +99,21 @@
               <StackPanel Spacing="4">
                 <TextBlock Text="{loc:Str Field_Name}" FontSize="10" FontWeight="SemiBold" Opacity="0.5"
                            LetterSpacing="0.8" />
-                <TextBox Text="{Binding EditName}" Watermark="{loc:Str Watermark_AgentName}" />
+                <TextBox Text="{Binding EditName}" PlaceholderText="{loc:Str Watermark_AgentName}" />
               </StackPanel>
 
               <Grid ColumnDefinitions="72,16,*">
                 <StackPanel Spacing="4">
                   <TextBlock Text="{loc:Str Field_Icon}" FontSize="10" FontWeight="SemiBold" Opacity="0.5"
                              LetterSpacing="0.8" />
-                  <TextBox Text="{Binding EditIconGlyph}" Watermark="✦"
+                  <TextBox Text="{Binding EditIconGlyph}" PlaceholderText="✦"
                            HorizontalContentAlignment="Center" />
                 </StackPanel>
                 <StackPanel Grid.Column="2" Spacing="4">
                   <TextBlock Text="{loc:Str Field_Description}" FontSize="10" FontWeight="SemiBold" Opacity="0.5"
                              LetterSpacing="0.8" />
                   <TextBox Text="{Binding EditDescription}"
-                           Watermark="{loc:Str Watermark_AgentDescription}" />
+                           PlaceholderText="{loc:Str Watermark_AgentDescription}" />
                 </StackPanel>
               </Grid>
 
@@ -123,7 +123,7 @@
                 <TextBox Text="{Binding EditSystemPrompt}" AcceptsReturn="True" TextWrapping="Wrap"
                          MinHeight="200" MaxHeight="420"
                          VerticalContentAlignment="Top"
-                         Watermark="{loc:Str Watermark_AgentSystemPrompt}" />
+                         PlaceholderText="{loc:Str Watermark_AgentSystemPrompt}" />
               </StackPanel>
             </StackPanel>
 

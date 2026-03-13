@@ -61,21 +61,21 @@
           <StackPanel Spacing="4">
             <TextBlock Text="{loc:Str Field_Name}" FontSize="10" FontWeight="SemiBold" Opacity="0.5"
                        LetterSpacing="0.8" />
-            <TextBox Text="{Binding EditName}" Watermark="{loc:Str Watermark_SkillName}" />
+            <TextBox Text="{Binding EditName}" PlaceholderText="{loc:Str Watermark_SkillName}" />
           </StackPanel>
 
           <Grid ColumnDefinitions="72,20,*">
             <StackPanel Spacing="4">
               <TextBlock Text="{loc:Str Field_Icon}" FontSize="10" FontWeight="SemiBold" Opacity="0.5"
                          LetterSpacing="0.8" />
-              <TextBox Text="{Binding EditIconGlyph}" Watermark="⚡"
+              <TextBox Text="{Binding EditIconGlyph}" PlaceholderText="⚡"
                        HorizontalContentAlignment="Center" />
             </StackPanel>
             <StackPanel Grid.Column="2" Spacing="4">
               <TextBlock Text="{loc:Str Field_Description}" FontSize="10" FontWeight="SemiBold" Opacity="0.5"
                          LetterSpacing="0.8" />
               <TextBox Text="{Binding EditDescription}"
-                       Watermark="{loc:Str Watermark_SkillDescription}" />
+                       PlaceholderText="{loc:Str Watermark_SkillDescription}" />
             </StackPanel>
           </Grid>
 
@@ -85,7 +85,7 @@
             <TextBox Text="{Binding EditContent}" AcceptsReturn="True" TextWrapping="Wrap"
                      MinHeight="260" MaxHeight="480"
                      VerticalContentAlignment="Top"
-                     Watermark="{loc:Str Watermark_SkillInstructions}" />
+                     PlaceholderText="{loc:Str Watermark_SkillInstructions}" />
           </StackPanel>
 
 

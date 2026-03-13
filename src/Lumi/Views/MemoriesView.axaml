@@ -62,12 +62,12 @@
             <StackPanel Spacing="4">
               <TextBlock Text="{loc:Str Field_Key}" FontSize="10" FontWeight="SemiBold" Opacity="0.5"
                          LetterSpacing="0.8" />
-              <TextBox Text="{Binding EditKey}" Watermark="{loc:Str Watermark_MemoryKey}" />
+              <TextBox Text="{Binding EditKey}" PlaceholderText="{loc:Str Watermark_MemoryKey}" />
             </StackPanel>
             <StackPanel Grid.Column="2" Spacing="4">
               <TextBlock Text="{loc:Str Field_Category}" FontSize="10" FontWeight="SemiBold" Opacity="0.5"
                          LetterSpacing="0.8" />
-              <TextBox Text="{Binding EditCategory}" Watermark="{loc:Str Watermark_MemoryCategory}" />
+              <TextBox Text="{Binding EditCategory}" PlaceholderText="{loc:Str Watermark_MemoryCategory}" />
             </StackPanel>
           </Grid>
 
@@ -77,7 +77,7 @@
             <TextBox Text="{Binding EditContent}" AcceptsReturn="True" TextWrapping="Wrap"
                      MinHeight="120" MaxHeight="360"
                      VerticalContentAlignment="Top"
-                     Watermark="{loc:Str Watermark_MemoryContent}" />
+                     PlaceholderText="{loc:Str Watermark_MemoryContent}" />
           </StackPanel>
         </StackPanel>
       </ScrollViewer>

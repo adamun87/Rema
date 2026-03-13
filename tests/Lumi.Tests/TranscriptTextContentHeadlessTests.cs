@@ -79,7 +79,7 @@ public sealed class TranscriptTextContentHeadlessTests
 
             Assert.NotNull(template);
 
-            var control = template!.Build(reasoningItem);
+            var control = Assert.IsAssignableFrom<Control>(template!.Build(reasoningItem));
             var window = new Window
             {
                 Width = 640,
