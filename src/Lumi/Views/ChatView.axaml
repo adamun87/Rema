@@ -191,8 +191,7 @@
                             IsStreaming="{Binding IsStreaming}">
         <sc:StrataChatMessage.Content>
           <StackPanel Spacing="6">
-            <lc:TranscriptTextContent Text="{Binding Content}"
-                                      PreferPlainText="{Binding IsStreaming}" />
+            <lc:TranscriptTextContent Text="{Binding Content}" />
 
             <!-- Skills section -->
             <ContentControl Content="{Binding DisplaySkills}"
