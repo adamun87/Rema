@@ -350,6 +350,17 @@ public partial class ChatViewModel : ObservableObject
         var runtime = GetOrCreateRuntimeState(chat.Id);
         var toolParentById = new Dictionary<string, string?>(StringComparer.Ordinal);
         var terminalRootByToolCallId = new Dictionary<string, string>(StringComparer.Ordinal);
+        var externalToolCallIdByRequestId = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        static string FormatPermissionResult(PermissionCompletedDataResultKind kind) => kind switch
+        {
+            PermissionCompletedDataResultKind.Approved => "approved",
+            PermissionCompletedDataResultKind.DeniedByRules => "denied by rules",
+            PermissionCompletedDataResultKind.DeniedNoApprovalRuleAndCouldNotRequestFromUser => "denied because approval could not be requested",
+            PermissionCompletedDataResultKind.DeniedInteractivelyByUser => "denied by user",
+            PermissionCompletedDataResultKind.DeniedByContentExclusionPolicy => "denied by policy",
+            _ => kind.ToString()
+        };
 
 
         _sessionSubs[chat.Id] = session.On(evt =>
@@ -523,21 +534,43 @@ public partial class ChatViewModel : ObservableObject
 
                     var displayName = ToolDisplayHelper.FormatToolStatusName(toolStart.Data.ToolName, toolStart.Data.Arguments?.ToString());
                     runtime.StatusText = string.Format(Loc.Status_Running, displayName);
-                    var toolMsg = new ChatMessage
+                    var toolMsg = chat.Messages.LastOrDefault(m => m.ToolCallId == startToolCallId);
+                    if (toolMsg is null)
                     {
-                        Role = "tool",
-                        ToolCallId = startToolCallId,
-                        ToolName = toolStart.Data.ToolName,
-                        ToolStatus = "InProgress",
-                        Content = toolStart.Data.Arguments?.ToString() ?? "",
-                        Author = displayName
-                    };
-                    chat.Messages.Add(toolMsg);
+                        toolMsg = new ChatMessage
+                        {
+                            Role = "tool",
+                            ToolCallId = startToolCallId,
+                            ToolName = toolStart.Data.ToolName,
+                            ToolStatus = "InProgress",
+                            Content = toolStart.Data.Arguments?.ToString() ?? "",
+                            Author = displayName
+                        };
+                        chat.Messages.Add(toolMsg);
+                    }
+                    else
+                    {
+                        toolMsg.ToolName = toolStart.Data.ToolName;
+                        toolMsg.ToolStatus = "InProgress";
+                        toolMsg.Content = toolStart.Data.Arguments?.ToString() ?? "";
+                        toolMsg.Author = displayName;
+                    }
+
                     if (_activeSession == session)
                     {
-                        Messages.Add(new ChatMessageViewModel(toolMsg));
+                        var vm = Messages.LastOrDefault(m => m.Message.ToolCallId == startToolCallId);
+                        if (vm is null)
+                        {
+                            Messages.Add(new ChatMessageViewModel(toolMsg));
+                            ScrollToEndRequested?.Invoke();
+                        }
+                        else
+                        {
+                            vm.NotifyContentChanged();
+                            vm.NotifyToolStatusChanged();
+                        }
+
                         StatusText = runtime.StatusText;
-                        ScrollToEndRequested?.Invoke();
                     }
                     });
                     break;
@@ -659,6 +692,118 @@ public partial class ChatViewModel : ObservableObject
                             }
                         }
                     }
+                    });
+                    break;
+
+                case PermissionRequestedEvent:
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                    runtime.StatusText = "Awaiting permission approval";
+                    if (_activeSession == session)
+                        StatusText = runtime.StatusText;
+                    });
+                    break;
+
+                case PermissionCompletedEvent permissionComplete:
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                    if (permissionComplete.Data.Result.Kind == PermissionCompletedDataResultKind.Approved)
+                        return;
+
+                    runtime.StatusText = "";
+                    var permissionMsg = new ChatMessage
+                    {
+                        Role = "system",
+                        Author = "Permission",
+                        Content = $"Permission request was {FormatPermissionResult(permissionComplete.Data.Result.Kind)}."
+                    };
+                    chat.Messages.Add(permissionMsg);
+
+                    if (_activeSession == session)
+                    {
+                        StatusText = runtime.StatusText;
+                        Messages.Add(new ChatMessageViewModel(permissionMsg));
+                        _transcriptBuilder.ProcessMessageToTranscript(Messages[^1]);
+                        ScrollToEndRequested?.Invoke();
+                    }
+                    });
+                    break;
+
+                case ExternalToolRequestedEvent externalToolRequest:
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                    externalToolCallIdByRequestId[externalToolRequest.Data.RequestId] = externalToolRequest.Data.ToolCallId;
+
+                    var arguments = externalToolRequest.Data.Arguments?.ToString();
+                    var displayName = ToolDisplayHelper.FormatToolStatusName(externalToolRequest.Data.ToolName, arguments);
+                    runtime.StatusText = string.Format(Loc.Status_Running, displayName);
+
+                    var toolMsg = chat.Messages.LastOrDefault(m => m.ToolCallId == externalToolRequest.Data.ToolCallId);
+                    if (toolMsg is null)
+                    {
+                        toolMsg = new ChatMessage
+                        {
+                            Role = "tool",
+                            ToolCallId = externalToolRequest.Data.ToolCallId,
+                            ToolName = externalToolRequest.Data.ToolName,
+                            ToolStatus = "InProgress",
+                            Content = arguments ?? "",
+                            Author = displayName
+                        };
+                        chat.Messages.Add(toolMsg);
+                    }
+                    else
+                    {
+                        toolMsg.ToolName = externalToolRequest.Data.ToolName;
+                        toolMsg.ToolStatus = "InProgress";
+                        toolMsg.Content = arguments ?? "";
+                        toolMsg.Author = displayName;
+                    }
+
+                    if (_activeSession == session)
+                    {
+                        var vm = Messages.LastOrDefault(m => m.Message.ToolCallId == externalToolRequest.Data.ToolCallId);
+                        if (vm is null)
+                        {
+                            Messages.Add(new ChatMessageViewModel(toolMsg));
+                            ScrollToEndRequested?.Invoke();
+                        }
+                        else
+                        {
+                            vm.NotifyContentChanged();
+                            vm.NotifyToolStatusChanged();
+                        }
+
+                        StatusText = runtime.StatusText;
+                    }
+                    });
+                    break;
+
+                case ExternalToolCompletedEvent externalToolComplete:
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                    if (!externalToolCallIdByRequestId.TryGetValue(externalToolComplete.Data.RequestId, out var externalToolCallId))
+                        return;
+
+                    externalToolCallIdByRequestId.Remove(externalToolComplete.Data.RequestId);
+
+                    foreach (var msg in chat.Messages.Where(m => m.ToolCallId == externalToolCallId))
+                        msg.ToolStatus = "Completed";
+
+                    if (_activeSession == session)
+                    {
+                        foreach (var vm in Messages.Where(m => m.Message.ToolCallId == externalToolCallId))
+                            vm.NotifyToolStatusChanged();
+                    }
+                    });
+                    break;
+
+                case CommandQueuedEvent commandQueued:
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                    runtime.StatusText = $"Queued command: {commandQueued.Data.Command}";
+                    if (_activeSession == session)
+                        StatusText = runtime.StatusText;
                     });
                     break;
 
@@ -1107,6 +1252,28 @@ public partial class ChatViewModel : ObservableObject
                             PlanHideRequested?.Invoke();
                             break;
                     }
+                    });
+                    break;
+
+                case ExitPlanModeRequestedEvent exitPlanMode:
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                    if (_activeSession != session)
+                        return;
+
+                    HasPlan = !string.IsNullOrWhiteSpace(exitPlanMode.Data.PlanContent);
+                    PlanContent = exitPlanMode.Data.PlanContent;
+                    runtime.StatusText = string.IsNullOrWhiteSpace(exitPlanMode.Data.Summary)
+                        ? "Plan ready to execute"
+                        : exitPlanMode.Data.Summary;
+
+                    if (HasPlan)
+                    {
+                        StagePlanCard(runtime.StatusText);
+                        PlanShowRequested?.Invoke();
+                    }
+
+                    StatusText = runtime.StatusText;
                     });
                     break;
             }
