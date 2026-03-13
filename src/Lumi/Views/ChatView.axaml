@@ -392,7 +392,8 @@
                       IsActive="{Binding IsActive}">
         <sc:StrataThink.Content>
           <lc:TranscriptTextContent Text="{Binding Content}"
-                                    PreferPlainText="{Binding IsActive}" />
+                                    PreferPlainText="{Binding IsActive}"
+                                    RenderMarkdownWhileStreaming="True" />
         </sc:StrataThink.Content>
       </sc:StrataThink>
     </DataTemplate>
@@ -489,7 +490,8 @@
                             IsVisible="{Binding HasReasoningText}">
               <sc:StrataThink.Content>
                 <lc:TranscriptTextContent Text="{Binding ReasoningText}"
-                                          PreferPlainText="{Binding IsActive}" />
+                                          PreferPlainText="{Binding IsActive}"
+                                          RenderMarkdownWhileStreaming="True" />
               </sc:StrataThink.Content>
             </sc:StrataThink>
 

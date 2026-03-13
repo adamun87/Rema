@@ -51,6 +51,9 @@ public sealed class TranscriptTextContent : ContentControl
     public static readonly StyledProperty<bool> PreferPlainTextProperty =
         AvaloniaProperty.Register<TranscriptTextContent, bool>(nameof(PreferPlainText));
 
+    public static readonly StyledProperty<bool> RenderMarkdownWhileStreamingProperty =
+        AvaloniaProperty.Register<TranscriptTextContent, bool>(nameof(RenderMarkdownWhileStreaming));
+
     private static long _diagnosticInstanceCount;
     private static long _diagnosticMarkdownBranchCount;
     private static long _diagnosticPlainTextCount;
@@ -63,6 +66,7 @@ public sealed class TranscriptTextContent : ContentControl
     {
         TextProperty.Changed.AddClassHandler<TranscriptTextContent>((control, _) => control.UpdateContent());
         PreferPlainTextProperty.Changed.AddClassHandler<TranscriptTextContent>((control, _) => control.UpdateContent());
+        RenderMarkdownWhileStreamingProperty.Changed.AddClassHandler<TranscriptTextContent>((control, _) => control.UpdateContent());
     }
 
     public TranscriptTextContent()
@@ -97,6 +101,12 @@ public sealed class TranscriptTextContent : ContentControl
         set => SetValue(PreferPlainTextProperty, value);
     }
 
+    public bool RenderMarkdownWhileStreaming
+    {
+        get => GetValue(RenderMarkdownWhileStreamingProperty);
+        set => SetValue(RenderMarkdownWhileStreamingProperty, value);
+    }
+
     public static TranscriptTextContentDiagnosticsSnapshot CaptureDiagnostics() => new(
         System.Threading.Interlocked.Read(ref _diagnosticInstanceCount),
         System.Threading.Interlocked.Read(ref _diagnosticMarkdownBranchCount),
@@ -108,7 +118,7 @@ public sealed class TranscriptTextContent : ContentControl
         var text = Text ?? string.Empty;
         var direction = StrataTextDirectionDetector.Detect(text);
 
-        if (!PreferPlainText && ShouldRenderMarkdown(text))
+        if (ShouldRenderMarkdown(text) && (!PreferPlainText || RenderMarkdownWhileStreaming))
         {
             System.Threading.Interlocked.Increment(ref _diagnosticMarkdownBranchCount);
             _markdown.Markdown = text;
