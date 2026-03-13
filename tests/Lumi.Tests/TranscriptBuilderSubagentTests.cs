@@ -59,6 +59,7 @@ public sealed class TranscriptBuilderSubagentTests
         var subagent = Assert.IsType<SubagentToolCallItem>(Assert.Single(turn.Items));
         Assert.Equal("Inspect repo", subagent.Title);
         Assert.Equal("General purpose", subagent.DisplayName);
+        Assert.True(subagent.IsExpanded);
 
         root.Message.ToolName = "agent:Coding Lumi";
         root.Message.Author = "Coding Lumi";
@@ -73,6 +74,7 @@ public sealed class TranscriptBuilderSubagentTests
         root.NotifyToolStatusChanged();
 
         Assert.True(subagent.IsCompleted);
+        Assert.False(subagent.IsExpanded);
     }
 
     private static TranscriptBuilder CreateBuilder()

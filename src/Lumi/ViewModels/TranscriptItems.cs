@@ -412,6 +412,9 @@ public partial class SubagentToolCallItem : TranscriptItem
         OnPropertyChanged(nameof(IsInProgress));
         OnPropertyChanged(nameof(IsCompleted));
         OnPropertyChanged(nameof(IsFailed));
+
+        if (value != StrataAiToolCallStatus.InProgress)
+            IsExpanded = false;
     }
 }
 
