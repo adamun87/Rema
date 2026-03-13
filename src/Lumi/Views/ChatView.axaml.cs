@@ -247,6 +247,9 @@ public partial class ChatView : UserControl
         if (Math.Abs(delta) < 0.5)
             return;
 
+        if (TurnHasStreamingContent(turn))
+            return;
+
         var control = FindRealizedTurnControl(turn.StableId);
         var point = control?.TranslatePoint(default, _transcriptScrollViewer);
         if (control is null || point is null)
@@ -511,6 +514,20 @@ public partial class ChatView : UserControl
             return false;
 
         return Math.Abs(Math.Abs(e.OffsetDelta.Y) - extentDeltaY) <= LayoutShiftDeltaTolerance;
+    }
+
+    private static bool TurnHasStreamingContent(TranscriptTurn turn)
+    {
+        foreach (var item in turn.Items)
+        {
+            if (item is AssistantMessageItem { IsStreaming: true }
+                or ReasoningItem { IsActive: true })
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // ── File picker (requires View-level StorageProvider) ──

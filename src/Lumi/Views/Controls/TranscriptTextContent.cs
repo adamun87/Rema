@@ -48,6 +48,9 @@ public sealed class TranscriptTextContent : ContentControl
     public static readonly StyledProperty<string?> TextProperty =
         AvaloniaProperty.Register<TranscriptTextContent, string?>(nameof(Text));
 
+    public static readonly StyledProperty<bool> PreferPlainTextProperty =
+        AvaloniaProperty.Register<TranscriptTextContent, bool>(nameof(PreferPlainText));
+
     private static long _diagnosticInstanceCount;
     private static long _diagnosticMarkdownBranchCount;
     private static long _diagnosticPlainTextCount;
@@ -59,6 +62,7 @@ public sealed class TranscriptTextContent : ContentControl
     static TranscriptTextContent()
     {
         TextProperty.Changed.AddClassHandler<TranscriptTextContent>((control, _) => control.UpdateContent());
+        PreferPlainTextProperty.Changed.AddClassHandler<TranscriptTextContent>((control, _) => control.UpdateContent());
     }
 
     public TranscriptTextContent()
@@ -87,6 +91,12 @@ public sealed class TranscriptTextContent : ContentControl
         set => SetValue(TextProperty, value);
     }
 
+    public bool PreferPlainText
+    {
+        get => GetValue(PreferPlainTextProperty);
+        set => SetValue(PreferPlainTextProperty, value);
+    }
+
     public static TranscriptTextContentDiagnosticsSnapshot CaptureDiagnostics() => new(
         System.Threading.Interlocked.Read(ref _diagnosticInstanceCount),
         System.Threading.Interlocked.Read(ref _diagnosticMarkdownBranchCount),
@@ -98,7 +108,7 @@ public sealed class TranscriptTextContent : ContentControl
         var text = Text ?? string.Empty;
         var direction = StrataTextDirectionDetector.Detect(text);
 
-        if (ShouldRenderMarkdown(text))
+        if (!PreferPlainText && ShouldRenderMarkdown(text))
         {
             System.Threading.Interlocked.Increment(ref _diagnosticMarkdownBranchCount);
             _markdown.Markdown = text;

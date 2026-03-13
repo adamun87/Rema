@@ -191,7 +191,8 @@
                             IsStreaming="{Binding IsStreaming}">
         <sc:StrataChatMessage.Content>
           <StackPanel Spacing="6">
-            <lc:TranscriptTextContent Text="{Binding Content}" />
+            <lc:TranscriptTextContent Text="{Binding Content}"
+                                      PreferPlainText="{Binding IsStreaming}" />
 
             <!-- Skills section -->
             <ContentControl Content="{Binding DisplaySkills}"
@@ -384,7 +385,8 @@
                       IsExpanded="{Binding IsExpanded}"
                       IsActive="{Binding IsActive}">
         <sc:StrataThink.Content>
-          <lc:TranscriptTextContent Text="{Binding Content}" />
+          <lc:TranscriptTextContent Text="{Binding Content}"
+                                    PreferPlainText="{Binding IsActive}" />
         </sc:StrataThink.Content>
       </sc:StrataThink>
     </DataTemplate>
