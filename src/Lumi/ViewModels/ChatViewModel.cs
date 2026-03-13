@@ -36,6 +36,7 @@ public partial class ChatViewModel : ObservableObject
     private readonly object _chatLoadSync = new();
     private CancellationTokenSource? _chatLoadCts;
     private long _chatLoadRequestId;
+    private bool _isBulkLoadingMessages;
     /// <summary>Maps chat ID → CancellationTokenSource for per-chat cancellation.</summary>
     private readonly Dictionary<Guid, CancellationTokenSource> _ctsSources = new();
     private readonly List<SearchSource> _pendingSearchSources = [];
@@ -86,7 +87,7 @@ public partial class ChatViewModel : ObservableObject
     /// <summary>Gets all per-chat BrowserService instances (for theme propagation etc.).</summary>
     public IReadOnlyDictionary<Guid, BrowserService> ChatBrowserServices => _chatBrowserServices;
 
-    /// <summary>True while LoadChat is bulk-adding messages. The View skips CollectionChanged.Add during this.</summary>
+    /// <summary>True while a chat is being loaded and the loading overlay is shown.</summary>
     [ObservableProperty] private bool _isLoadingChat;
 
     [ObservableProperty]
@@ -211,7 +212,7 @@ public partial class ChatViewModel : ObservableObject
         // Wire messages → transcript items
         Messages.CollectionChanged += (_, args) =>
         {
-            if (IsLoadingChat || _transcriptBuilder.IsRebuildingTranscript) return;
+            if (_isBulkLoadingMessages || _transcriptBuilder.IsRebuildingTranscript) return;
 
             if (args.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Add && args.NewItems is not null)
             {
@@ -645,28 +646,37 @@ public partial class ChatViewModel : ObservableObject
             TotalOutputTokens = runtime.TotalOutputTokens;
             HasUsedBrowser = runtime.HasUsedBrowser;
 
-            Messages.Clear();
-            foreach (var msg in chat.Messages)
+            _isBulkLoadingMessages = true;
+            try
             {
-                // Skip empty assistant messages (SDK artifact)
-                if (msg.Role == "assistant" && string.IsNullOrWhiteSpace(msg.Content))
-                    continue;
-                Messages.Add(new ChatMessageViewModel(msg));
+                Messages.Clear();
+                foreach (var msg in chat.Messages)
+                {
+                    // Skip empty assistant messages (SDK artifact)
+                    if (msg.Role == "assistant" && string.IsNullOrWhiteSpace(msg.Content))
+                        continue;
+                    Messages.Add(new ChatMessageViewModel(msg));
+                }
+
+                // If there's an in-progress streaming message not yet committed, show it
+                if (_inProgressMessages.TryGetValue(chat.Id, out var inProgress))
+                    Messages.Add(new ChatMessageViewModel(inProgress));
+
+                CurrentChat = chat;
+
+                // If this chat has an active browser, show its panel (after CurrentChat is set
+                // so ActiveChatId is already updated when the MainWindow handler runs)
+                if (runtime.HasUsedBrowser && _chatBrowserServices.ContainsKey(chat.Id))
+                    BrowserShowRequested?.Invoke(chat.Id);
+
+                // Rebuild transcript items from the fully loaded message list before
+                // re-enabling live incremental transcript processing.
+                RebuildTranscript();
             }
-
-            // If there's an in-progress streaming message not yet committed, show it
-            if (_inProgressMessages.TryGetValue(chat.Id, out var inProgress))
-                Messages.Add(new ChatMessageViewModel(inProgress));
-
-            CurrentChat = chat;
-
-            // If this chat has an active browser, show its panel (after CurrentChat is set
-            // so ActiveChatId is already updated when the MainWindow handler runs)
-            if (runtime.HasUsedBrowser && _chatBrowserServices.ContainsKey(chat.Id))
-                BrowserShowRequested?.Invoke(chat.Id);
-
-            // Rebuild transcript items from loaded messages
-            RebuildTranscript();
+            finally
+            {
+                _isBulkLoadingMessages = false;
+            }
 
             // Restore active skills from chat
             ActiveSkillIds.Clear();
