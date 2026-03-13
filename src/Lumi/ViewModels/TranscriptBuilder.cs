@@ -654,8 +654,7 @@ public class TranscriptBuilder
             PendingFetchedSkillRefs.Clear();
         }
 
-        var turn = EnsureCurrentTurn(TurnStableIdFor($"message:{msgVm.Message.Id}"));
-        turn.Items.Add(assistantItem);
+        var turn = AppendItemToCurrentTurn(assistantItem, TurnStableIdFor($"message:{msgVm.Message.Id}"));
 
         if (msgVm.IsStreaming)
         {
@@ -1162,18 +1161,23 @@ public class TranscriptBuilder
     }
 
     private void AppendToCurrentTurn(TranscriptItem item, string turnStableId)
-    {
-        EnsureCurrentTurn(turnStableId).Items.Add(item);
-    }
+        => AppendItemToCurrentTurn(item, turnStableId);
 
-    private TranscriptTurn EnsureCurrentTurn(string turnStableId)
+    private TranscriptTurn AppendItemToCurrentTurn(TranscriptItem item, string turnStableId)
     {
         if (_currentTurn is not null)
+        {
+            _currentTurn.Items.Add(item);
             return _currentTurn;
+        }
 
-        _currentTurn = new TranscriptTurn(turnStableId);
-        InsertTurnBeforeTypingIndicator(_currentTurn);
-        return _currentTurn;
+        // Insert the turn only after it has content so the paging controller
+        // never observes a transient empty turn and skips mounting it.
+        var turn = new TranscriptTurn(turnStableId);
+        turn.Items.Add(item);
+        _currentTurn = turn;
+        InsertTurnBeforeTypingIndicator(turn);
+        return turn;
     }
 
     private void FinalizeCurrentTurn()
