@@ -58,7 +58,7 @@ App.axaml.cs
 - **Views** (`src/Lumi/Views/`): Avalonia XAML + code-behind. `ChatView.axaml.cs` is the heaviest — builds transcript programmatically using Strata controls
 - **External dependency**: StrataTheme UI library referenced via `StrataPath` in `Lumi.csproj` — provides `StrataChatShell`, `StrataChatMessage`, `StrataMarkdown`, `StrataThink`, `StrataAiToolCall`, etc.
 
-> **WARNING**: There are TWO copies of StrataTheme. The csproj first checks `../../../Strata/src/StrataTheme/` (a sibling repo — **primary**, used by build) then falls back to `../../Strata/src/StrataTheme/` (git submodule at `Strata/` — **stale fallback**). **Always edit Strata files in the primary external repo**, not in the `Strata/` submodule inside this repo. Edits to the wrong copy silently have no effect.
+> **WARNING**: There are TWO copies of StrataTheme. The csproj first checks `../../../Strata/src/StrataTheme/` (a sibling repo — **primary**, used by build) then falls back to `../../Strata/src/StrataTheme/` (git submodule at `Strata/` — **stale fallback**). **Always edit Strata files in the primary external repo**, not in the `Strata/` submodule inside this repo. Edits to the wrong copy silently have no effect. The `Strata\` submodule may also be uninitialized in a fresh worktree; if a build fails because Strata files are missing, run `git submodule update --init --recursive Strata` from the repo root and retry.
 
 ### Key Patterns
 
