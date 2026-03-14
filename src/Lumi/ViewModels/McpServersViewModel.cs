@@ -46,6 +46,10 @@ public partial class McpServersViewModel : ObservableObject
     [ObservableProperty] private string _editHeaders = ""; // KEY=VALUE per line
     [ObservableProperty] private bool _editIsEnabled = true;
     [ObservableProperty] private string _searchQuery = "";
+
+    [RelayCommand]
+    private void ClearSearch() => SearchQuery = "";
+
     [ObservableProperty] private string _browseSearchQuery = "";
 
     public ObservableCollection<McpServer> Servers { get; } = [];

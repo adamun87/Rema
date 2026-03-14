@@ -19,6 +19,9 @@ public partial class MemoriesViewModel : ObservableObject
     [ObservableProperty] private string _editCategory = "General";
     [ObservableProperty] private string _searchQuery = "";
 
+    [RelayCommand]
+    private void ClearSearch() => SearchQuery = "";
+
     public ObservableCollection<Memory> Memories { get; } = [];
 
     public MemoriesViewModel(DataStore dataStore)

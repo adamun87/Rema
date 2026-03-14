@@ -22,6 +22,9 @@ public partial class SkillsViewModel : ObservableObject
     [ObservableProperty] private string _editIconGlyph = "⚡";
     [ObservableProperty] private string _searchQuery = "";
 
+    [RelayCommand]
+    private void ClearSearch() => SearchQuery = "";
+
     public ObservableCollection<Skill> Skills { get; } = [];
 
     public SkillsViewModel(DataStore dataStore)

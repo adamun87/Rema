@@ -20,6 +20,10 @@ public partial class SettingsViewModel : ObservableObject
 
     // ── Search ──
     [ObservableProperty] private string _searchQuery = "";
+
+    [RelayCommand]
+    private void ClearSearch() => SearchQuery = "";
+
     [ObservableProperty] private string _searchResultSummary = "";
 
     public bool IsSearching => !string.IsNullOrWhiteSpace(SearchQuery);

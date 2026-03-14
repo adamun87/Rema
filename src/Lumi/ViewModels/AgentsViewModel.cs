@@ -22,6 +22,9 @@ public partial class AgentsViewModel : ObservableObject
     [ObservableProperty] private string _editIconGlyph = "✦";
     [ObservableProperty] private string _searchQuery = "";
 
+    [RelayCommand]
+    private void ClearSearch() => SearchQuery = "";
+
     public ObservableCollection<LumiAgent> Agents { get; } = [];
 
     /// <summary>All skills available for assignment to agents.</summary>

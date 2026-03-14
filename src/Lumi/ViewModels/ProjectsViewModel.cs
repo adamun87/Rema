@@ -21,6 +21,9 @@ public partial class ProjectsViewModel : ObservableObject
     [ObservableProperty] private bool _isCodingProject;
     [ObservableProperty] private string _searchQuery = "";
 
+    [RelayCommand]
+    private void ClearSearch() => SearchQuery = "";
+
     public ObservableCollection<Project> Projects { get; } = [];
     public ObservableCollection<Chat> ProjectChats { get; } = [];
 

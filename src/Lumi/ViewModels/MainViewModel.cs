@@ -39,6 +39,10 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private int _onboardingLanguageIndex; // index into Loc.AvailableLanguages
     [ObservableProperty] private Guid? _selectedProjectFilter;
     [ObservableProperty] private string _chatSearchQuery = "";
+
+    [RelayCommand]
+    private void ClearChatSearch() => ChatSearchQuery = "";
+
     [ObservableProperty] private Guid? _activeChatId;
 
     // Sub-ViewModels
