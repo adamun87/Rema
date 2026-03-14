@@ -778,6 +778,13 @@ public partial class ChatViewModel : ObservableObject
                 _ = PopulateFromSessionAsync();
                 _ = RefreshPlanAsync(chat);
             }
+            else if (!string.IsNullOrWhiteSpace(chat.PlanContent))
+            {
+                // Restore plan from persisted data (no active session, e.g. after restart)
+                HasPlan = true;
+                PlanContent = chat.PlanContent;
+                _transcriptBuilder.AppendPlanCardToLastTurn("Plan", () => PlanShowRequested?.Invoke());
+            }
             else
             {
                 HasPlan = false;
@@ -812,7 +819,7 @@ public partial class ChatViewModel : ObservableObject
             HasPlan = exists;
             PlanContent = content;
             if (exists)
-                StagePlanCard("Plan");
+                _transcriptBuilder.AppendPlanCardToLastTurn("Plan", () => PlanShowRequested?.Invoke());
         }
         catch { /* best effort */ }
     }

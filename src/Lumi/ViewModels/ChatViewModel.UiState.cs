@@ -41,6 +41,15 @@ public partial class ChatViewModel
     [ObservableProperty] private string? _planContent;
     [ObservableProperty] private bool _isPlanOpen;
 
+    partial void OnPlanContentChanged(string? value)
+    {
+        if (CurrentChat is not null)
+        {
+            CurrentChat.PlanContent = value;
+            QueueSaveChat(CurrentChat, saveIndex: false);
+        }
+    }
+
     // ── SDK-discovered agents ──
     [ObservableProperty] private string? _selectedSdkAgentName;
     public ObservableCollection<StrataComposerChip> SdkAgentChips { get; } = [];

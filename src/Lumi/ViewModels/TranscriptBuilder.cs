@@ -703,6 +703,30 @@ public class TranscriptBuilder
         _pendingPlanCard = new PlanCardItem(statusText, openAction);
     }
 
+    /// <summary>Appends a plan card directly to the last assistant turn (used when restoring a plan after transcript rebuild).</summary>
+    public void AppendPlanCardToLastTurn(string statusText, Action openAction)
+    {
+        var turns = GetTurnTarget();
+        if (turns is null || turns.Count == 0) return;
+
+        var stableId = TranscriptIds.Create("plan-card");
+        var card = new PlanCardItem(statusText, openAction, stableId);
+
+        // Find the last assistant turn and append
+        for (var i = turns.Count - 1; i >= 0; i--)
+        {
+            var turn = turns[i];
+            if (turn.Items.Any(item => item is AssistantMessageItem or ToolGroupItem))
+            {
+                turn.Items.Add(card);
+                return;
+            }
+        }
+
+        // Fallback: append to the very last turn
+        turns[^1].Items.Add(card);
+    }
+
     private void FlushPendingPlanCard()
     {
         if (_pendingPlanCard is null)

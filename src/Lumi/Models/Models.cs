@@ -73,6 +73,9 @@ public class Chat : INotifyPropertyChanged
     /// <summary>Cumulative output tokens consumed across all turns of this chat.</summary>
     public long TotalOutputTokens { get; set; }
 
+    /// <summary>Persisted plan content (markdown) so it survives chat switches and app restarts.</summary>
+    public string? PlanContent { get; set; }
+
     /// <summary>Runtime-only flag indicating this chat is actively generating a response.</summary>
     [JsonIgnore]
     public bool IsRunning
