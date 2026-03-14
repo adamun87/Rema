@@ -353,9 +353,11 @@ public partial class MainWindow : Window
         if (_windowContentRoot is null)
             return;
 
-        _windowContentRoot.Padding = WindowState == WindowState.Maximized
-            ? new Thickness(6)
-            : new Thickness(0);
+        var maximizedPadding = WindowState == WindowState.Maximized ? new Thickness(6) : new Thickness(0);
+        _windowContentRoot.Padding = maximizedPadding;
+
+        if (_acrylicFallback is not null)
+            _acrylicFallback.Margin = new Thickness(-maximizedPadding.Left, -maximizedPadding.Top, -maximizedPadding.Right, -maximizedPadding.Bottom);
     }
 
     protected override void OnDataContextChanged(EventArgs e)
