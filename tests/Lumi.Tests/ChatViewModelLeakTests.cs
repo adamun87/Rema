@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Reflection;
 using System.Threading;
+using GitHub.Copilot.SDK;
 using Lumi.Models;
 using Lumi.Services;
 using Lumi.ViewModels;
@@ -120,6 +122,133 @@ public sealed class ChatViewModelLeakTests
         Assert.Empty(pendingQuestions);
     }
 
+    [Fact]
+    public void ResetAfterCopilotReconnect_ClearsTransientRuntimeState()
+    {
+        var dataStore = CreateDataStore();
+        var vm = new ChatViewModel(dataStore, new CopilotService());
+        var chat = new Chat { Title = "recoverable-chat" };
+
+        dataStore.Data.Chats.Add(chat);
+        vm.CurrentChat = chat;
+        vm.IsBusy = true;
+        vm.IsStreaming = true;
+        vm.StatusText = "busy";
+
+        var runtime = new ChatRuntimeState
+        {
+            Chat = chat,
+            IsBusy = true,
+            IsStreaming = true,
+            StatusText = "busy"
+        };
+
+        GetField<Dictionary<Guid, ChatRuntimeState>>(vm, "_runtimeStates")[chat.Id] = runtime;
+        GetField<Dictionary<Guid, CancellationTokenSource>>(vm, "_ctsSources")[chat.Id] = new CancellationTokenSource();
+        var subscription = new CountingDisposable();
+        GetField<Dictionary<Guid, IDisposable>>(vm, "_sessionSubs")[chat.Id] = subscription;
+        GetField<Dictionary<Guid, ChatMessage>>(vm, "_inProgressMessages")[chat.Id] =
+            new ChatMessage { Role = "assistant", Content = "partial" };
+
+        InvokePrivate(vm, "ResetAfterCopilotReconnect");
+
+        Assert.Equal(1, subscription.DisposeCount);
+        Assert.False(GetField<Dictionary<Guid, CancellationTokenSource>>(vm, "_ctsSources").ContainsKey(chat.Id));
+        Assert.False(GetField<Dictionary<Guid, IDisposable>>(vm, "_sessionSubs").ContainsKey(chat.Id));
+        Assert.False(GetField<Dictionary<Guid, ChatMessage>>(vm, "_inProgressMessages").ContainsKey(chat.Id));
+        Assert.False(runtime.IsBusy);
+        Assert.False(runtime.IsStreaming);
+        Assert.Equal("", runtime.StatusText);
+        Assert.False(vm.IsBusy);
+        Assert.False(vm.IsStreaming);
+        Assert.Equal("", vm.StatusText);
+    }
+
+    [Fact]
+    public void IsCopilotTransportError_DetectsJsonRpcDisconnect()
+    {
+        var ex = new Exception(
+            "Communication error with Copilot CLI",
+            new IOException("The JSON-RPC connection with the remote party was lost before the request could complete."));
+
+        var result = InvokePrivateStatic<bool>(typeof(ChatViewModel), "IsCopilotTransportError", ex);
+
+        Assert.True(result);
+    }
+
+    [Fact]
+    public void IsCopilotTransportError_IgnoresUnrelatedExceptions()
+    {
+        var ex = new InvalidOperationException("Session not found");
+
+        var result = InvokePrivateStatic<bool>(typeof(ChatViewModel), "IsCopilotTransportError", ex);
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public void ShouldAutoResendTransportSend_WhenServerIsMissingLatestUserTurn()
+    {
+        IReadOnlyList<SessionEvent> events =
+        [
+            CreateUserMessageEvent("first")
+        ];
+
+        var result = InvokePrivateStatic<bool>(typeof(ChatViewModel), "ShouldAutoResendTransportSend", events, 2);
+
+        Assert.True(result);
+    }
+
+    [Fact]
+    public void ShouldAutoResendTransportSend_WhenServerAlreadyRecordedLatestUserTurn()
+    {
+        IReadOnlyList<SessionEvent> events =
+        [
+            CreateUserMessageEvent("first"),
+            CreateUserMessageEvent("second")
+        ];
+
+        var result = InvokePrivateStatic<bool>(typeof(ChatViewModel), "ShouldAutoResendTransportSend", events, 2);
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public void GetRecoveredAssistantMessages_ReturnsOnlyMissingTopLevelMessages()
+    {
+        IReadOnlyList<SessionEvent> events =
+        [
+            CreateAssistantMessageEvent("msg-1", "First reply"),
+            CreateAssistantMessageEvent("tool-1", "Tool transcript", parentToolCallId: "call-1"),
+            CreateAssistantMessageEvent("msg-2", "Second reply")
+        ];
+
+        var result = InvokePrivateStatic<List<AssistantMessageEvent>>(
+            typeof(ChatViewModel),
+            "GetRecoveredAssistantMessages",
+            events,
+            1);
+
+        Assert.Single(result);
+        Assert.Equal("Second reply", result[0].Data.Content);
+    }
+
+    [Fact]
+    public void AllowCreateSessionForSend_WhenChatWasCreatedThisTurn_ReturnsTrue()
+    {
+        var result = InvokePrivateStatic<bool>(typeof(ChatViewModel), "AllowCreateSessionForSend", true);
+
+        Assert.True(result);
+    }
+
+    [Fact]
+    public void AllowCreateSessionForSend_WhenChatAlreadyExisted_ReturnsFalse()
+    {
+        var result = InvokePrivateStatic<bool>(typeof(ChatViewModel), "AllowCreateSessionForSend", false);
+
+        Assert.False(result);
+    }
+
     private static DataStore CreateDataStore()
         => new(new AppData
         {
@@ -142,6 +271,34 @@ public sealed class ChatViewModelLeakTests
             .GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic)
             ?.Invoke(instance, args);
     }
+
+    private static T InvokePrivateStatic<T>(Type type, string name, params object[] args)
+        => (T)(type.GetMethod(name, BindingFlags.Static | BindingFlags.NonPublic)
+            ?.Invoke(null, args)
+            ?? throw new InvalidOperationException($"Static method {name} was not found."));
+
+    private static UserMessageEvent CreateUserMessageEvent(string content)
+        => new()
+        {
+            Data = new UserMessageData
+            {
+                Content = content
+            }
+        };
+
+    private static AssistantMessageEvent CreateAssistantMessageEvent(
+        string messageId,
+        string content,
+        string? parentToolCallId = null)
+        => new()
+        {
+            Data = new AssistantMessageData
+            {
+                MessageId = messageId,
+                Content = content,
+                ParentToolCallId = parentToolCallId
+            }
+        };
 
     private sealed class CountingDisposable : IDisposable
     {

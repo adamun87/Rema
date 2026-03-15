@@ -1439,39 +1439,47 @@ public partial class ChatViewModel
     /// but persisted session IDs can still be resumed on the new client.</summary>
     private void OnCopilotReconnected()
     {
-        Dispatcher.UIThread.Post(() =>
+        if (Dispatcher.UIThread.CheckAccess())
         {
-            // Dispose all event subscriptions
-            foreach (var sub in _sessionSubs.Values)
-                sub.Dispose();
-            _sessionSubs.Clear();
+            ResetAfterCopilotReconnect();
+            return;
+        }
 
-            // Clear session cache (objects reference the dead client)
-            _sessionCache.Clear();
-            _activeSession = null;
+        Dispatcher.UIThread.Post(ResetAfterCopilotReconnect);
+    }
 
-            // Cancel any in-flight requests
-            foreach (var cts in _ctsSources.Values)
-            {
-                cts.Cancel();
-                cts.Dispose();
-            }
-            _ctsSources.Clear();
+    private void ResetAfterCopilotReconnect()
+    {
+        // Dispose all event subscriptions
+        foreach (var sub in _sessionSubs.Values)
+            sub.Dispose();
+        _sessionSubs.Clear();
 
-            // Reset busy state on all runtimes
-            foreach (var runtime in _runtimeStates.Values)
-            {
-                runtime.IsBusy = false;
-                runtime.IsStreaming = false;
-                runtime.StatusText = "";
-            }
+        // Clear session cache (objects reference the dead client)
+        _sessionCache.Clear();
+        _activeSession = null;
 
-            _inProgressMessages.Clear();
+        // Cancel any in-flight requests
+        foreach (var cts in _ctsSources.Values)
+        {
+            cts.Cancel();
+            cts.Dispose();
+        }
+        _ctsSources.Clear();
 
-            IsBusy = false;
-            IsStreaming = false;
-            StatusText = "";
-        });
+        // Reset busy state on all runtimes
+        foreach (var runtime in _runtimeStates.Values)
+        {
+            runtime.IsBusy = false;
+            runtime.IsStreaming = false;
+            runtime.StatusText = "";
+        }
+
+        _inProgressMessages.Clear();
+
+        IsBusy = false;
+        IsStreaming = false;
+        StatusText = "";
     }
 
     private ChatRuntimeState GetOrCreateRuntimeState(Guid chatId)

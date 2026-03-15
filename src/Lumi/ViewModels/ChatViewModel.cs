@@ -933,6 +933,7 @@ public partial class ChatViewModel : ObservableObject
         ClearSuggestions();
 
         var attachments = TakePendingAttachments();
+        var createdChat = false;
 
         // Create chat if needed
         if (CurrentChat is null)
@@ -985,6 +986,7 @@ public partial class ChatViewModel : ObservableObject
             _pendingProjectId = null;
             _dataStore.Data.Chats.Add(chat);
             CurrentChat = chat;
+            createdChat = true;
             if (_dataStore.Data.Settings.AutoGenerateTitles)
                 _ = GenerateTitleForChatAsync(chat, prompt);
             _ = RefreshCodingProjectState();
@@ -1041,7 +1043,18 @@ public partial class ChatViewModel : ObservableObject
 
             if (needsSessionSetup)
             {
-                await EnsureSessionAsync(CurrentChat, cts.Token);
+                var ok = await EnsureSessionAsync(
+                    CurrentChat,
+                    cts.Token,
+                    allowCreateFallback: AllowCreateSessionForSend(createdChat));
+                if (!ok)
+                {
+                    HandleSendError(
+                        new InvalidOperationException(Loc.Status_OriginalSessionUnavailable),
+                        wasCancelledByUser: false,
+                        overrideMessage: Loc.Status_OriginalSessionUnavailable);
+                    return;
+                }
 
                 // If a custom agent is selected, route the session through it via the SDK Agent API
                 if (ActiveAgent is not null && _activeSession is not null)
@@ -1102,13 +1115,42 @@ public partial class ChatViewModel : ObservableObject
             {
                 StatusText = Loc.Status_Reconnecting;
                 InvalidateLocalSessionCache(CurrentChat);
-                await EnsureSessionAsync(CurrentChat, cts.Token);
+                var ok = await EnsureSessionAsync(CurrentChat, cts.Token, allowCreateFallback: false);
+                if (!ok)
+                {
+                    HandleSendError(
+                        new InvalidOperationException(Loc.Status_OriginalSessionUnavailable),
+                        wasCancelledByUser: false,
+                        overrideMessage: Loc.Status_OriginalSessionUnavailable);
+                    return;
+                }
                 await _activeSession!.SendAsync(sendOptions, cts.Token);
             }
             catch (Exception retryEx)
             {
-                HandleSendError(retryEx, cts);
+                if (CurrentChat is not null && IsCopilotTransportError(retryEx))
+                {
+                    var recovery = await TryRecoverTransportSendAsync(CurrentChat, sendOptions);
+                    if (recovery.Recovered)
+                        return;
+
+                    HandleSendError(retryEx, cts.IsCancellationRequested, recovery.FailureMessage);
+                    return;
+                }
+
+                HandleSendError(
+                    retryEx,
+                    cts.IsCancellationRequested,
+                    IsCopilotTransportError(retryEx) ? Loc.Status_ConnectionRecoveryFailed : null);
             }
+        }
+        catch (Exception ex) when (CurrentChat is not null && sendOptions is not null && IsCopilotTransportError(ex))
+        {
+            var recovery = await TryRecoverTransportSendAsync(CurrentChat, sendOptions);
+            if (recovery.Recovered)
+                    return;
+
+            HandleSendError(ex, cts?.IsCancellationRequested == true, recovery.FailureMessage);
         }
         catch (OperationCanceledException) when (cts is not null && !cts.IsCancellationRequested)
         {
@@ -1133,7 +1175,7 @@ public partial class ChatViewModel : ObservableObject
         }
         catch (Exception ex) when (cts is not null)
         {
-            HandleSendError(ex, cts);
+            HandleSendError(ex, cts.IsCancellationRequested);
         }
     }
 
@@ -1141,7 +1183,7 @@ public partial class ChatViewModel : ObservableObject
     {
         try
         {
-            await _copilotService.ConnectAsync(ct);
+            await _copilotService.ForceReconnectAsync(ct);
             return true;
         }
         catch
@@ -1149,6 +1191,205 @@ public partial class ChatViewModel : ObservableObject
             return false;
         }
     }
+
+    private static bool AllowCreateSessionForSend(bool chatWasCreatedThisTurn)
+        => chatWasCreatedThisTurn;
+
+    private async Task<(CancellationTokenSource? TurnCts, string? FailureMessage)> TryRecoverTransportConnectionAsync(Chat chat)
+    {
+        try
+        {
+            using var reconnectCts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            var runtime = GetOrCreateRuntimeState(chat.Id);
+            runtime.IsBusy = true;
+            runtime.IsStreaming = true;
+            runtime.StatusText = Loc.Status_Reconnecting;
+            if (CurrentChat?.Id == chat.Id)
+            {
+                IsBusy = true;
+                IsStreaming = true;
+                StatusText = runtime.StatusText;
+            }
+
+            if (!await TryReconnectCopilotAsync(reconnectCts.Token))
+                return (null, Loc.Status_ConnectionRecoveryFailed);
+
+            if (!await EnsureSessionAsync(chat, reconnectCts.Token, allowCreateFallback: false))
+                return (null, Loc.Status_OriginalSessionUnavailable);
+
+            var recoveredTurnCts = new CancellationTokenSource();
+            _ctsSources[chat.Id] = recoveredTurnCts;
+            return (recoveredTurnCts, null);
+        }
+        catch
+        {
+            return (null, Loc.Status_ConnectionRecoveryFailed);
+        }
+    }
+
+    private async Task<(bool Recovered, string? FailureMessage)> TryRecoverTransportSendAsync(Chat chat, MessageOptions sendOptions)
+    {
+        var localUserCount = chat.Messages.Count(m => m.Role == "user");
+        var localAssistantCount = CountCompletedAssistantMessages(chat);
+        var (recoveredTurnCts, failureMessage) = await TryRecoverTransportConnectionAsync(chat);
+        if (recoveredTurnCts is null || _activeSession is null)
+            return (false, failureMessage ?? Loc.Status_ConnectionRecoveryFailed);
+
+        var recoveredEvents = await TryGetSessionEventsAsync(_activeSession, recoveredTurnCts.Token);
+        if (recoveredEvents is null)
+        {
+            var waitedForRecoveredTurn = await WaitForRecoveredTurnAsync(chat, localAssistantCount, recoveredTurnCts.Token);
+            return (waitedForRecoveredTurn, waitedForRecoveredTurn ? null : Loc.Status_ConnectionRecoveryFailed);
+        }
+
+        if (ShouldAutoResendTransportSend(recoveredEvents, localUserCount))
+        {
+            var runtime = GetOrCreateRuntimeState(chat.Id);
+            runtime.IsBusy = true;
+            runtime.IsStreaming = true;
+            runtime.StatusText = Loc.Status_ConnectionRecoveredRetry;
+            if (CurrentChat?.Id == chat.Id)
+            {
+                IsBusy = true;
+                IsStreaming = true;
+                StatusText = runtime.StatusText;
+            }
+
+            await _activeSession.SendAsync(sendOptions.Clone(), recoveredTurnCts.Token);
+            return (true, null);
+        }
+
+        if (SyncRecoveredAssistantMessages(chat, GetRecoveredAssistantMessages(recoveredEvents, CountCompletedAssistantMessages(chat))))
+            return (true, null);
+
+        var recoveredByWaiting = await WaitForRecoveredTurnAsync(chat, localAssistantCount, recoveredTurnCts.Token);
+        return (recoveredByWaiting, recoveredByWaiting ? null : Loc.Status_ConnectionRecoveryFailed);
+    }
+
+    private static int CountCompletedAssistantMessages(Chat chat)
+        => chat.Messages.Count(static m => m.Role == "assistant" && !string.IsNullOrWhiteSpace(m.Content));
+
+    private async Task<IReadOnlyList<SessionEvent>?> TryGetSessionEventsAsync(CopilotSession session, CancellationToken ct)
+    {
+        try
+        {
+            return await _copilotService.GetSessionEventsAsync(session, ct);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static bool ShouldAutoResendTransportSend(IReadOnlyList<SessionEvent> events, int localUserCount)
+        => events.OfType<UserMessageEvent>().Count() < localUserCount;
+
+    private static List<AssistantMessageEvent> GetRecoveredAssistantMessages(
+        IReadOnlyList<SessionEvent> events,
+        int localAssistantCount)
+    {
+        return events
+            .OfType<AssistantMessageEvent>()
+            .Where(static e =>
+                string.IsNullOrWhiteSpace(e.Data.ParentToolCallId)
+                && !string.IsNullOrWhiteSpace(e.Data.Content))
+            .Skip(localAssistantCount)
+            .ToList();
+    }
+
+    private bool SyncRecoveredAssistantMessages(Chat chat, IReadOnlyList<AssistantMessageEvent> recoveredAssistantMessages)
+    {
+        if (recoveredAssistantMessages.Count == 0)
+            return false;
+
+        var author = ActiveAgent?.Name ?? Loc.Author_Lumi;
+        foreach (var assistantEvent in recoveredAssistantMessages)
+        {
+            var recoveredMessage = new ChatMessage
+            {
+                Role = "assistant",
+                Author = author,
+                Content = assistantEvent.Data.Content,
+                IsStreaming = false,
+                Model = SelectedModel
+            };
+            chat.Messages.Add(recoveredMessage);
+
+            if (CurrentChat?.Id == chat.Id)
+                Messages.Add(new ChatMessageViewModel(recoveredMessage));
+        }
+
+        var runtime = GetOrCreateRuntimeState(chat.Id);
+        runtime.IsBusy = false;
+        runtime.IsStreaming = false;
+        runtime.StatusText = "";
+        if (CurrentChat?.Id == chat.Id)
+        {
+            IsBusy = false;
+            IsStreaming = false;
+            StatusText = runtime.StatusText;
+            ScrollToEndRequested?.Invoke();
+        }
+
+        QueueSaveChat(chat, saveIndex: true);
+        return true;
+    }
+
+    private async Task<bool> WaitForRecoveredTurnAsync(Chat chat, int assistantCountBeforeRecovery, CancellationToken ct)
+    {
+        if (_activeSession is null)
+            return false;
+
+        var sawRecoveredTurnActivity = false;
+        var turnActivity = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var sub = _activeSession.On(evt =>
+        {
+            switch (evt)
+            {
+                case AssistantTurnStartEvent:
+                case AssistantReasoningEvent:
+                case AssistantReasoningDeltaEvent:
+                case AssistantMessageDeltaEvent:
+                case AssistantMessageEvent:
+                case ToolExecutionStartEvent:
+                case ToolExecutionPartialResultEvent:
+                case ToolExecutionProgressEvent:
+                case ToolExecutionCompleteEvent:
+                case AssistantTurnEndEvent:
+                    sawRecoveredTurnActivity = true;
+                    turnActivity.TrySetResult(true);
+                    break;
+                case SessionIdleEvent:
+                    turnActivity.TrySetResult(true);
+                    break;
+                case SessionErrorEvent err:
+                    turnActivity.TrySetException(new InvalidOperationException(err.Data.Message));
+                    break;
+            }
+        });
+
+        try
+        {
+            using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            waitCts.CancelAfter(TimeSpan.FromSeconds(8));
+            await turnActivity.Task.WaitAsync(waitCts.Token);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+        }
+
+        var recoveredEvents = await TryGetSessionEventsAsync(_activeSession, ct);
+        if (recoveredEvents is not null
+            && SyncRecoveredAssistantMessages(chat, GetRecoveredAssistantMessages(recoveredEvents, CountCompletedAssistantMessages(chat))))
+        {
+            return true;
+        }
+
+        return sawRecoveredTurnActivity || CountCompletedAssistantMessages(chat) > assistantCountBeforeRecovery;
+    }
+
+    private bool WasCancelledByUser(Guid? chatId)
+        => chatId.HasValue && _ctsSources.GetValueOrDefault(chatId.Value)?.IsCancellationRequested == true;
 
     /// <summary>Returns a cached session only when it is still usable on the current CLI connection.</summary>
     private async Task<CopilotSession?> TryGetReusableCachedSessionAsync(Chat chat, CancellationToken ct)
@@ -1176,6 +1417,11 @@ public partial class ChatViewModel : ObservableObject
             InvalidateLocalSessionCache(chat);
             return null;
         }
+        catch (Exception ex) when (IsCopilotTransportError(ex))
+        {
+            InvalidateLocalSessionCache(chat);
+            return null;
+        }
         catch
         {
             // Non-session-specific plan RPC failures should not discard a healthy cached session.
@@ -1188,6 +1434,34 @@ public partial class ChatViewModel : ObservableObject
     {
         var msg = ex.InnerException?.Message ?? ex.Message;
         return msg.Contains("Session not found", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsCopilotTransportError(Exception ex)
+    {
+        var message = FlattenExceptionMessages(ex);
+        return message.Contains("JSON-RPC", StringComparison.OrdinalIgnoreCase)
+               || message.Contains("remote party was lost", StringComparison.OrdinalIgnoreCase)
+               || message.Contains("connection lost", StringComparison.OrdinalIgnoreCase)
+               || message.Contains("broken pipe", StringComparison.OrdinalIgnoreCase)
+               || message.Contains("pipe is being closed", StringComparison.OrdinalIgnoreCase)
+               || message.Contains("stream closed", StringComparison.OrdinalIgnoreCase)
+               || message.Contains("connection reset", StringComparison.OrdinalIgnoreCase)
+               || message.Contains("connection aborted", StringComparison.OrdinalIgnoreCase)
+               || message.Contains("transport connection", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string FlattenExceptionMessages(Exception ex)
+    {
+        var builder = new StringBuilder();
+        for (var current = ex; current is not null; current = current.InnerException)
+        {
+            if (builder.Length > 0)
+                builder.Append(" → ");
+
+            builder.Append(current.Message);
+        }
+
+        return builder.ToString();
     }
 
     /// <summary>Evicts a stale session from the local cache so EnsureSessionAsync will
@@ -1204,14 +1478,12 @@ public partial class ChatViewModel : ObservableObject
     }
 
     /// <summary>Handles a send error by surfacing it as a status + error message in the transcript.</summary>
-    private void HandleSendError(Exception ex, CancellationTokenSource cts)
+    private void HandleSendError(Exception ex, bool wasCancelledByUser, string? overrideMessage = null)
     {
-        if (ex is OperationCanceledException && cts.IsCancellationRequested)
+        if (ex is OperationCanceledException && wasCancelledByUser)
             return; // Cancelled by StopGeneration — expected
 
-        var message = ex.InnerException is not null
-            ? $"{ex.Message} → {ex.InnerException.Message}"
-            : ex.Message;
+        var message = overrideMessage ?? FlattenExceptionMessages(ex);
         var errorText = string.Format(Loc.Status_Error, message);
         StatusText = errorText;
         IsBusy = false;
@@ -1671,6 +1943,7 @@ public partial class ChatViewModel : ObservableObject
             }
         }
 
+        MessageOptions? resendOptions = null;
         try
         {
             // Cancel any previous in-flight request for this chat
@@ -1699,11 +1972,11 @@ public partial class ChatViewModel : ObservableObject
                 needsSessionSetup = true;
             }
 
-            if (needsSessionSetup)
-            {
-                var ok = wasEdited
-                    ? await EnsureSessionAsync(CurrentChat, cts.Token, allowCreateFallback: true)
-                    : await EnsureSessionAsync(CurrentChat, cts.Token, allowCreateFallback: false);
+        if (needsSessionSetup)
+        {
+            var ok = wasEdited
+                ? await EnsureSessionAsync(CurrentChat, cts.Token, allowCreateFallback: true)
+                : await EnsureSessionAsync(CurrentChat, cts.Token, allowCreateFallback: false);
 
                 if (!ok)
                 {
@@ -1735,7 +2008,8 @@ public partial class ChatViewModel : ObservableObject
                 ? BuildEditedReplayPrompt(retainedContext, prompt)
                 : prompt;
 
-            await _activeSession!.SendAsync(new MessageOptions { Prompt = resendPrompt }, cts.Token);
+            resendOptions = new MessageOptions { Prompt = resendPrompt };
+            await _activeSession!.SendAsync(resendOptions, cts.Token);
         }
         catch (Exception ex) when (IsSessionNotFoundError(ex) && CurrentChat is not null)
         {
@@ -1746,16 +2020,43 @@ public partial class ChatViewModel : ObservableObject
                 if (cts is null) return;
                 StatusText = Loc.Status_Reconnecting;
                 InvalidateLocalSessionCache(CurrentChat);
-                await EnsureSessionAsync(CurrentChat, cts.Token);
+                var ok = await EnsureSessionAsync(CurrentChat, cts.Token, allowCreateFallback: wasEdited);
+                if (!ok)
+                {
+                    HandleSendError(
+                        new InvalidOperationException(Loc.Status_OriginalSessionUnavailable),
+                        wasCancelledByUser: false,
+                        overrideMessage: Loc.Status_OriginalSessionUnavailable);
+                    return;
+                }
                 var resendPrompt2 = wasEdited
                     ? BuildEditedReplayPrompt(retainedContext, prompt)
                     : prompt;
-                await _activeSession!.SendAsync(new MessageOptions { Prompt = resendPrompt2 }, cts.Token);
+                resendOptions = new MessageOptions { Prompt = resendPrompt2 };
+                await _activeSession!.SendAsync(resendOptions, cts.Token);
             }
             catch (Exception retryEx)
             {
-                HandleSendError(retryEx, _ctsSources.GetValueOrDefault(CurrentChat.Id)!);
+                if (CurrentChat is not null && resendOptions is not null && IsCopilotTransportError(retryEx))
+                {
+                    var recovery = await TryRecoverTransportSendAsync(CurrentChat, resendOptions);
+                    if (recovery.Recovered)
+                        return;
+
+                    HandleSendError(retryEx, WasCancelledByUser(CurrentChat?.Id), recovery.FailureMessage);
+                    return;
+                }
+
+                HandleSendError(retryEx, WasCancelledByUser(CurrentChat?.Id));
             }
+        }
+        catch (Exception ex) when (CurrentChat is not null && resendOptions is not null && IsCopilotTransportError(ex))
+        {
+            var recovery = await TryRecoverTransportSendAsync(CurrentChat, resendOptions);
+            if (recovery.Recovered)
+                return;
+
+            HandleSendError(ex, WasCancelledByUser(CurrentChat?.Id), recovery.FailureMessage);
         }
         catch (OperationCanceledException)
         {
@@ -1763,7 +2064,7 @@ public partial class ChatViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            HandleSendError(ex, _ctsSources.GetValueOrDefault(CurrentChat.Id)!);
+            HandleSendError(ex, WasCancelledByUser(CurrentChat?.Id));
         }
     }
 

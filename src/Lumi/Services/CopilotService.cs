@@ -28,6 +28,7 @@ public class CopilotService : IAsyncDisposable
     private List<ModelInfo>? _models;
     private string? _fastestModelId;
     private long _connectionGeneration;
+    private readonly SemaphoreSlim _connectGate = new(1, 1);
 
     /// <summary>Fires after the CopilotClient has been replaced (reconnection).
     /// Consumers should discard any cached CopilotSession objects.</summary>
@@ -40,26 +41,47 @@ public class CopilotService : IAsyncDisposable
     public long ConnectionGeneration => Interlocked.Read(ref _connectionGeneration);
 
     public async Task ConnectAsync(CancellationToken ct = default)
+        => await ConnectCoreAsync(forceReconnect: false, ct);
+
+    public async Task ForceReconnectAsync(CancellationToken ct = default)
+        => await ConnectCoreAsync(forceReconnect: true, ct);
+
+    private async Task ConnectCoreAsync(bool forceReconnect, CancellationToken ct)
     {
-        var oldClient = _client;
-        var cliPath = FindCliPath();
-        var clientOptions = new CopilotClientOptions
+        CopilotClient? oldClient = null;
+
+        await _connectGate.WaitAsync(ct);
+        try
         {
-            CliPath = cliPath ?? "copilot",
-            LogLevel = "error",
-            AutoRestart = true,
-        };
+            if (!forceReconnect && _client?.State == ConnectionState.Connected)
+                return;
 
-        ConfigureAuthentication(clientOptions);
+            oldClient = _client;
+            var cliPath = FindCliPath();
+            var clientOptions = new CopilotClientOptions
+            {
+                CliPath = cliPath ?? "copilot",
+                LogLevel = "error",
+                AutoRestart = true,
+            };
 
-        _client = new CopilotClient(clientOptions);
+            ConfigureAuthentication(clientOptions);
 
-        await _client.StartAsync(ct);
-        _models = null;
-        Interlocked.Increment(ref _connectionGeneration);
+            var newClient = new CopilotClient(clientOptions);
+            await newClient.StartAsync(ct);
+
+            _client = newClient;
+            _models = null;
+            _fastestModelId = null;
+            Interlocked.Increment(ref _connectionGeneration);
+        }
+        finally
+        {
+            _connectGate.Release();
+        }
 
         // Dispose the old client (stops the old CLI process) after the new one is ready.
-        if (oldClient is not null)
+        if (oldClient is not null && !ReferenceEquals(oldClient, _client))
         {
             Reconnected?.Invoke();
             try { await oldClient.DisposeAsync(); }
