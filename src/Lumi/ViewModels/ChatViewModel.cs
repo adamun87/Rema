@@ -267,6 +267,12 @@ public partial class ChatViewModel : ObservableObject
         TranscriptTurns = _transcriptBuilder.Rebuild(Messages);
         _transcriptWindow.BindTranscript(TranscriptTurns, "rebuild");
         _transcriptWindow.ResetToLatest(TranscriptWindowController.DefaultInitialViewportHeight, "rebuild");
+
+        // Rebuild() calls ResetState() which clears the typing indicator.
+        // Re-show it if this chat is still busy (e.g. switching to a streaming chat).
+        if (IsBusy)
+            _transcriptBuilder.ShowTypingIndicator(StatusText);
+
         TranscriptRebuilt?.Invoke();
     }
 
