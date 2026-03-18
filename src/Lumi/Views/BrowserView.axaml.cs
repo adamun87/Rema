@@ -244,8 +244,12 @@ public partial class BrowserView : UserControl
 
         var scaling = topLevel.RenderScaling;
 
-        // Get position of this control relative to the top-level window
-        var point = this.TranslatePoint(new Point(0, 0), topLevel);
+        // Translate the physical left edge instead of logical x=0 so RTL layouts
+        // keep the native WebView aligned with the browser island.
+        var localLeftX = FlowDirection == Avalonia.Media.FlowDirection.RightToLeft
+            ? Bounds.Width
+            : 0.0;
+        var point = this.TranslatePoint(new Point(localLeftX, 0), topLevel);
         if (point is null) return;
 
         // Measure URL bar height dynamically from the actual control
@@ -260,7 +264,8 @@ public partial class BrowserView : UserControl
         // (Radius.Overlay=14 minus BorderThickness=1 = 13 logical pixels)
         var cornerRadiusPx = (int)Math.Round(13.0 * scaling);
 
-        // Convert logical coordinates to physical pixels for the WebView2 overlay.
+        // TranslatePoint already gives the physical left edge in the top-level
+        // coordinate space once localLeftX accounts for RTL mirroring.
         var x = (int)Math.Round(point.Value.X * scaling);
         var y = (int)Math.Round((point.Value.Y + urlBarHeight) * scaling);
         var w = Math.Max(1, (int)Math.Round(Bounds.Width * scaling));
