@@ -52,15 +52,6 @@ public partial class ChatViewModel
         var subagentReasoningStreams = new Dictionary<string, StreamingTextAccumulator>(StringComparer.Ordinal);
         string? mostRecentSubagentToolCallId = null;
 
-        static string FormatPermissionResult(PermissionCompletedDataResultKind kind) => kind switch
-        {
-            PermissionCompletedDataResultKind.Approved => "approved",
-            PermissionCompletedDataResultKind.DeniedByRules => "denied by rules",
-            PermissionCompletedDataResultKind.DeniedNoApprovalRuleAndCouldNotRequestFromUser => "denied because approval could not be requested",
-            PermissionCompletedDataResultKind.DeniedInteractivelyByUser => "denied by user",
-            PermissionCompletedDataResultKind.DeniedByContentExclusionPolicy => "denied by policy",
-            _ => kind.ToString()
-        };
 
         bool IsSubagentOutputActive()
             => Volatile.Read(ref activeSubagentSelectionDepth) > 0
@@ -775,39 +766,6 @@ public partial class ChatViewModel
                     });
                     break;
 
-                case PermissionRequestedEvent:
-                    Dispatcher.UIThread.Post(() =>
-                    {
-                    runtime.StatusText = "Awaiting permission approval";
-                    if (_activeSession == session)
-                        StatusText = runtime.StatusText;
-                    });
-                    break;
-
-                case PermissionCompletedEvent permissionComplete:
-                    Dispatcher.UIThread.Post(() =>
-                    {
-                    if (permissionComplete.Data.Result.Kind == PermissionCompletedDataResultKind.Approved)
-                        return;
-
-                    runtime.StatusText = "";
-                    var permissionMsg = new ChatMessage
-                    {
-                        Role = "system",
-                        Author = "Permission",
-                        Content = $"Permission request was {FormatPermissionResult(permissionComplete.Data.Result.Kind)}."
-                    };
-                    chat.Messages.Add(permissionMsg);
-
-                    if (_activeSession == session)
-                    {
-                        StatusText = runtime.StatusText;
-                        Messages.Add(new ChatMessageViewModel(permissionMsg));
-                        _transcriptBuilder.ProcessMessageToTranscript(Messages[^1]);
-                        ScrollToEndRequested?.Invoke();
-                    }
-                    });
-                    break;
 
                 case ExternalToolRequestedEvent externalToolRequest:
                     AdjustPendingToolCount(chat.Id, 1);
