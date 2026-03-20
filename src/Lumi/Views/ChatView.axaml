@@ -465,15 +465,15 @@
                     Background="{DynamicResource Brush.Surface1}"
                     CornerRadius="6" Padding="10,8">
               <StackPanel Spacing="6">
-                <StackPanel Orientation="Horizontal" Spacing="6">
+                <Grid ColumnDefinitions="Auto,6,*">
                   <TextBlock Text="$" FontFamily="Cascadia Code, Consolas, monospace"
                              FontSize="12" FontWeight="Bold"
                              Foreground="{DynamicResource Brush.TerminalPreviewPrompt}"
                              VerticalAlignment="Top" />
-                  <TextBlock Text="{Binding TerminalCommand}" FontFamily="Cascadia Code, Consolas, monospace"
+                  <TextBlock Grid.Column="2" Text="{Binding TerminalCommand}" FontFamily="Cascadia Code, Consolas, monospace"
                              FontSize="12" TextWrapping="Wrap"
                              Foreground="{DynamicResource Brush.TerminalPreviewCommand}" />
-                </StackPanel>
+                </Grid>
                 <ScrollViewer MaxHeight="260" HorizontalScrollBarVisibility="Disabled"
                               IsVisible="{Binding TerminalOutput, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
                   <TextBlock Text="{Binding TerminalOutput}" FontFamily="Cascadia Code, Consolas, monospace"
