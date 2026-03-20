@@ -1,5 +1,6 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:chrome="using:Avalonia.Controls.Chrome"
              x:Class="Lumi.App"
              RequestedThemeVariant="Dark">
 
@@ -7,6 +8,29 @@
     <SimpleTheme />
     <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Simple.xaml" />
     <StyleInclude Source="avares://StrataTheme/StrataTheme.axaml" />
+
+    <!-- Hide the fullscreen button from drawn window decorations (added by Simple theme) -->
+    <Style Selector="Button#PART_FullScreenButton">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+
+    <!-- Make drawn decorations fully transparent so acrylic/mica blur shows through -->
+    <Style Selector="WindowDrawnDecorations">
+      <Setter Property="DefaultShadowThickness" Value="0" />
+      <Setter Property="DefaultFrameThickness" Value="0" />
+    </Style>
+    <Style Selector="WindowDrawnDecorations /template/ Border#PART_WindowBorder">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="BoxShadow" Value="0 0 0 0 Transparent" />
+    </Style>
+    <Style Selector="WindowDrawnDecorations /template/ Panel#PART_TitleBar">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="WindowDrawnDecorations /template/ Panel#PART_UnderlayWrapper">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
   </Application.Styles>
 
 </Application>

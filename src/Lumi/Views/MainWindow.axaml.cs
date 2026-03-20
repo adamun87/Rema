@@ -72,7 +72,6 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         ExtendClientAreaToDecorationsHint = true;
-        ExtendClientAreaChromeHints = Avalonia.Platform.ExtendClientAreaChromeHints.PreferSystemChrome;
         ExtendClientAreaTitleBarHeightHint = 38;
 
         // Force transparent background after theme styles are applied
@@ -352,14 +351,8 @@ public partial class MainWindow : Window
 
     private void ApplyWindowContentPaddingForState()
     {
-        if (_windowContentRoot is null)
-            return;
-
-        var maximizedPadding = WindowState == WindowState.Maximized ? new Thickness(6) : new Thickness(0);
-        _windowContentRoot.Padding = maximizedPadding;
-
-        if (_acrylicFallback is not null)
-            _acrylicFallback.Margin = new Thickness(-maximizedPadding.Left, -maximizedPadding.Top, -maximizedPadding.Right, -maximizedPadding.Bottom);
+        // Avalonia 12 handles extended client area padding automatically —
+        // no manual padding workaround needed.
     }
 
     protected override void OnDataContextChanged(EventArgs e)
