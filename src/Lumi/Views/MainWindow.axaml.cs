@@ -243,16 +243,21 @@ public partial class MainWindow : Window
         }
 
         var scaling = screen.Scaling;
+        if (scaling <= 0)
+            scaling = 1.0;
+
         var workArea = screen.WorkingArea;
-        var maxW = workArea.Width / scaling;
-        var maxH = workArea.Height / scaling;
+        var maxW = Math.Max(1.0, workArea.Width / scaling);
+        var maxH = Math.Max(1.0, workArea.Height / scaling);
 
         var w = settings.WindowWidth ?? defaultWidth;
         var h = settings.WindowHeight ?? defaultHeight;
 
-        // Clamp to screen working area with a small margin
-        w = Math.Clamp(w, MinWidth, maxW);
-        h = Math.Clamp(h, MinHeight, maxH);
+        // Clamp to screen working area; on small displays max can be below MinWidth/MinHeight.
+        var minW = Math.Min(MinWidth, maxW);
+        var minH = Math.Min(MinHeight, maxH);
+        w = Math.Clamp(w, minW, maxW);
+        h = Math.Clamp(h, minH, maxH);
 
         Width = w;
         Height = h;
