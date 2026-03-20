@@ -590,6 +590,7 @@ public partial class ChatViewModel
                     break;
 
                 case ToolExecutionStartEvent toolStart:
+                    AdjustPendingToolCount(chat.Id, 1);
                     Dispatcher.UIThread.Post(() =>
                     {
                     var startToolCallId = toolStart.Data.ToolCallId;
@@ -695,6 +696,9 @@ public partial class ChatViewModel
                     break;
 
                 case ToolExecutionCompleteEvent toolEnd:
+                    var shouldReconcileAfterTool = AdjustPendingToolCount(chat.Id, -1);
+                    if (shouldReconcileAfterTool)
+                        SchedulePostToolReconciliation(chat.Id);
                     Dispatcher.UIThread.Post(() =>
                     {
                     toolParentById[toolEnd.Data.ToolCallId] = toolEnd.Data.ParentToolCallId;
@@ -806,6 +810,7 @@ public partial class ChatViewModel
                     break;
 
                 case ExternalToolRequestedEvent externalToolRequest:
+                    AdjustPendingToolCount(chat.Id, 1);
                     Dispatcher.UIThread.Post(() =>
                     {
                     externalToolCallIdByRequestId[externalToolRequest.Data.RequestId] = externalToolRequest.Data.ToolCallId;
@@ -856,6 +861,9 @@ public partial class ChatViewModel
                     break;
 
                 case ExternalToolCompletedEvent externalToolComplete:
+                    var shouldReconcileAfterExternalTool = AdjustPendingToolCount(chat.Id, -1);
+                    if (shouldReconcileAfterExternalTool)
+                        SchedulePostToolReconciliation(chat.Id);
                     Dispatcher.UIThread.Post(() =>
                     {
                     if (!externalToolCallIdByRequestId.TryGetValue(externalToolComplete.Data.RequestId, out var externalToolCallId))
@@ -909,6 +917,7 @@ public partial class ChatViewModel
                     break;
 
                 case SessionIdleEvent:
+                    ClearPendingTurnTracking(chat.Id);
                     Dispatcher.UIThread.Post(() =>
                     {
                     if (_dataStore.Data.Settings.NotificationsEnabled)
@@ -954,6 +963,7 @@ public partial class ChatViewModel
                     break;
 
                 case SessionErrorEvent err:
+                    ClearPendingTurnTracking(chat.Id);
                     assistantStream.CancelPending();
                     reasoningStream.CancelPending();
                     ResetSubagentOutputState();
@@ -1063,6 +1073,7 @@ public partial class ChatViewModel
                     break;
 
                 case AbortEvent abort:
+                    ClearPendingTurnTracking(chat.Id);
                     assistantStream.CancelPending();
                     reasoningStream.CancelPending();
                     ResetSubagentOutputState();
@@ -1119,6 +1130,7 @@ public partial class ChatViewModel
                     break;
 
                 case SessionShutdownEvent shutdown:
+                    ClearPendingTurnTracking(chat.Id);
                     assistantStream.CancelPending();
                     reasoningStream.CancelPending();
                     ResetSubagentOutputState();
@@ -1143,7 +1155,7 @@ public partial class ChatViewModel
                     }
                     assistantStream.Clear();
                     reasoningStream.Clear();
-                    QueueSaveChat(chat, saveIndex: false, releaseIfInactive: CurrentChat?.Id != chat.Id);
+                    QueueSaveChat(chat, saveIndex: true, releaseIfInactive: CurrentChat?.Id != chat.Id);
                     });
                     break;
 
@@ -1470,6 +1482,13 @@ public partial class ChatViewModel
         // Reset busy state on all runtimes
         foreach (var runtime in _runtimeStates.Values)
         {
+            runtime.PendingSessionUserMessageCount = 0;
+            runtime.PendingAssistantMessageCount = 0;
+            runtime.ActiveToolCount = 0;
+            runtime.PendingTurnSequence++;
+            runtime.PostToolReconciliationCts?.Cancel();
+            runtime.PostToolReconciliationCts?.Dispose();
+            runtime.PostToolReconciliationCts = null;
             runtime.IsBusy = false;
             runtime.IsStreaming = false;
             runtime.StatusText = "";

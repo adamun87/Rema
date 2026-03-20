@@ -68,6 +68,7 @@ public partial class ChatViewModel
     private void ReleaseSessionResources(Guid chatId, bool cancelActiveRequest, bool deleteServerSession)
     {
         ReleaseChatCancellation(chatId, cancelActiveRequest);
+        ClearPendingTurnTracking(chatId);
         DisposeSessionSubscription(chatId);
 
         if (_sessionCache.TryGetValue(chatId, out var session))

@@ -132,6 +132,7 @@
   "Status_OriginalSessionUnavailable": "This chat can't reconnect to its original Copilot session. Start a new chat to continue.",
   "Status_Resuming": "Resuming session\u2026",
   "Status_Reconnecting": "Reconnecting\u2026",
+  "Status_CopilotStoppedResponding": "GitHub Copilot stopped responding. Lumi couldn't recover this turn automatically.",
   "Status_ConnectingMcp": "Connecting MCP servers\u2026",
   "Status_CreatingWorktree": "Creating worktree\u2026",
 

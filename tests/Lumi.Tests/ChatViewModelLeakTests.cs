@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Threading;
 using GitHub.Copilot.SDK;
@@ -194,9 +195,9 @@ public sealed class ChatViewModelLeakTests
             CreateUserMessageEvent("first")
         ];
 
-        var result = InvokePrivateStatic<bool>(typeof(ChatViewModel), "ShouldAutoResendTransportSend", events, 2);
+        var analysis = PendingTurnRecoveryAnalyzer.Analyze(events, expectedSessionUserMessageCount: 2);
 
-        Assert.True(result);
+        Assert.False(analysis.UserMessageObserved);
     }
 
     [Fact]
@@ -208,9 +209,9 @@ public sealed class ChatViewModelLeakTests
             CreateUserMessageEvent("second")
         ];
 
-        var result = InvokePrivateStatic<bool>(typeof(ChatViewModel), "ShouldAutoResendTransportSend", events, 2);
+        var analysis = PendingTurnRecoveryAnalyzer.Analyze(events, expectedSessionUserMessageCount: 2);
 
-        Assert.False(result);
+        Assert.True(analysis.UserMessageObserved);
     }
 
     [Fact]
@@ -218,19 +219,17 @@ public sealed class ChatViewModelLeakTests
     {
         IReadOnlyList<SessionEvent> events =
         [
+            CreateUserMessageEvent("continue"),
             CreateAssistantMessageEvent("msg-1", "First reply"),
             CreateAssistantMessageEvent("tool-1", "Tool transcript", parentToolCallId: "call-1"),
             CreateAssistantMessageEvent("msg-2", "Second reply")
         ];
 
-        var result = InvokePrivateStatic<List<AssistantMessageEvent>>(
-            typeof(ChatViewModel),
-            "GetRecoveredAssistantMessages",
-            events,
-            1);
+        var analysis = PendingTurnRecoveryAnalyzer.Analyze(events, expectedSessionUserMessageCount: 1);
+        var result = analysis.AssistantMessages.Skip(1).ToList();
 
         Assert.Single(result);
-        Assert.Equal("Second reply", result[0].Data.Content);
+        Assert.Equal("Second reply", result[0].Content);
     }
 
     [Fact]

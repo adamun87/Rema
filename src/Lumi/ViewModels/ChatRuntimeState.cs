@@ -1,3 +1,4 @@
+using System.Threading;
 using Lumi.Models;
 
 namespace Lumi.ViewModels;
@@ -31,5 +32,15 @@ internal sealed class ChatRuntimeState
     public long TotalOutputTokens { get; set; }
 
     public bool HasUsedBrowser { get; set; }
+
+    public int ActiveToolCount { get; set; }
+
+    public int PendingSessionUserMessageCount { get; set; }
+
+    public int PendingAssistantMessageCount { get; set; }
+
+    public long PendingTurnSequence { get; set; }
+
+    public CancellationTokenSource? PostToolReconciliationCts { get; set; }
 
 }

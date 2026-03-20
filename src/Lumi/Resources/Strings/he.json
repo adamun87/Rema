@@ -132,6 +132,7 @@
   "Status_OriginalSessionUnavailable": "הצ׳אט הזה לא יכול להתחבר מחדש לסשן Copilot המקורי שלו. צריך להתחיל צ׳אט חדש כדי להמשיך.",
   "Status_Resuming": "מחדש הפעלה\u2026",
   "Status_Reconnecting": "מתחבר מחדש\u2026",
+  "Status_CopilotStoppedResponding": "GitHub Copilot הפסיק להגיב ו-Lumi לא הצליח לשחזר את התור הזה אוטומטית.",
   "Status_ConnectingMcp": "מתחבר לשרתי MCP\u2026",
   "Status_CreatingWorktree": "יוצר worktree\u2026",
 
