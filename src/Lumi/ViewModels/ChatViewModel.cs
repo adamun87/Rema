@@ -498,8 +498,12 @@ public partial class ChatViewModel : ObservableObject
                 _transcriptBuilder.AddQuestionToTranscript(questionId, request.Question, optionsStr, freeText);
                 QuestionAsked?.Invoke(questionId, request.Question, optionsStr, freeText);
                 ScrollToEndRequested?.Invoke();
+            });
 
-                // Store questionId on the tool message so it can be recovered during rebuild
+            // Store questionId on the tool message so rebuild can recreate the question card.
+            // This must run regardless of which chat is currently displayed.
+            Dispatcher.UIThread.Post(() =>
+            {
                 var owningChat = _dataStore.Data.Chats.Find(c => c.Id == inputHandlerChatId);
                 if (owningChat is not null)
                 {
