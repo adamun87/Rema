@@ -1335,8 +1335,13 @@ public partial class ChatViewModel
                     {
                         // Track usage data in runtime state for display/debug metrics.
                         var d = usage.Data;
-                        runtime.TotalInputTokens += (long)(d.InputTokens ?? 0);
+                        var turnInput = (long)(d.InputTokens ?? 0);
+                        runtime.TotalInputTokens += turnInput;
                         runtime.TotalOutputTokens += (long)(d.OutputTokens ?? 0);
+                        // Each API call sends the full conversation context, so the latest
+                        // InputTokens is the best proxy for current context window usage.
+                        if (turnInput > 0)
+                            runtime.ContextCurrentTokens = turnInput;
                         // Persist token counts to the Chat model so they survive restarts.
                         chat.TotalInputTokens = runtime.TotalInputTokens;
                         chat.TotalOutputTokens = runtime.TotalOutputTokens;
@@ -1344,8 +1349,18 @@ public partial class ChatViewModel
                         {
                             TotalInputTokens = runtime.TotalInputTokens;
                             TotalOutputTokens = runtime.TotalOutputTokens;
+                            ContextCurrentTokens = runtime.ContextCurrentTokens;
                             OnPropertyChanged(nameof(CurrentChat));
                         }
+                    });
+                    break;
+
+                case SessionUsageInfoEvent sessionUsage:
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        runtime.ContextTokenLimit = (long)sessionUsage.Data.TokenLimit;
+                        if (_activeSession == session)
+                            ContextTokenLimit = runtime.ContextTokenLimit;
                     });
                     break;
 

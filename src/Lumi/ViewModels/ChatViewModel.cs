@@ -105,25 +105,43 @@ public partial class ChatViewModel : ObservableObject
     [ObservableProperty] private LumiAgent? _activeAgent;
     [ObservableProperty] private long _totalInputTokens;
     [ObservableProperty] private long _totalOutputTokens;
+    [ObservableProperty] private long _contextCurrentTokens;
+    [ObservableProperty] private long _contextTokenLimit;
 
     public bool HasTokenUsage => TotalInputTokens > 0 || TotalOutputTokens > 0;
     public bool ShowInfoStrip => IsCodingProject || HasTokenUsage;
-    public string TokenUsageSummary => FormatTokenCount(TotalInputTokens + TotalOutputTokens);
+    public string TokenUsageSummary => ContextTokenLimit > 0
+        ? $"{ContextUsagePercent}%"
+        : FormatTokenCount(TotalInputTokens + TotalOutputTokens);
+    public string TokenUsageSuffixText => ContextTokenLimit > 0 ? "context" : "tokens";
     public string TokenInputDisplay => $"{TotalInputTokens:N0}";
     public string TokenOutputDisplay => $"{TotalOutputTokens:N0}";
     public string TokenTotalDisplay => $"{TotalInputTokens + TotalOutputTokens:N0}";
+    public bool HasContextUsage => ContextTokenLimit > 0;
+    public int ContextUsagePercent => ContextTokenLimit > 0
+        ? (int)Math.Round(100.0 * ContextCurrentTokens / ContextTokenLimit)
+        : 0;
+    public string ContextUsageDisplay => ContextTokenLimit > 0
+        ? $"{FormatTokenCount(ContextCurrentTokens)} / {FormatTokenCount(ContextTokenLimit)}"
+        : "";
 
     partial void OnTotalInputTokensChanged(long value) { NotifyTokenPropertiesChanged(); }
     partial void OnTotalOutputTokensChanged(long value) { NotifyTokenPropertiesChanged(); }
+    partial void OnContextCurrentTokensChanged(long value) { NotifyTokenPropertiesChanged(); }
+    partial void OnContextTokenLimitChanged(long value) { NotifyTokenPropertiesChanged(); }
 
     private void NotifyTokenPropertiesChanged()
     {
         OnPropertyChanged(nameof(HasTokenUsage));
         OnPropertyChanged(nameof(ShowInfoStrip));
         OnPropertyChanged(nameof(TokenUsageSummary));
+        OnPropertyChanged(nameof(TokenUsageSuffixText));
         OnPropertyChanged(nameof(TokenInputDisplay));
         OnPropertyChanged(nameof(TokenOutputDisplay));
         OnPropertyChanged(nameof(TokenTotalDisplay));
+        OnPropertyChanged(nameof(HasContextUsage));
+        OnPropertyChanged(nameof(ContextUsagePercent));
+        OnPropertyChanged(nameof(ContextUsageDisplay));
     }
 
     private static string FormatTokenCount(long tokens) => tokens switch
@@ -691,6 +709,8 @@ public partial class ChatViewModel : ObservableObject
             StatusText = runtime.StatusText;
             TotalInputTokens = runtime.TotalInputTokens;
             TotalOutputTokens = runtime.TotalOutputTokens;
+            ContextCurrentTokens = runtime.ContextCurrentTokens;
+            ContextTokenLimit = runtime.ContextTokenLimit;
             HasUsedBrowser = runtime.HasUsedBrowser;
 
             _isBulkLoadingMessages = true;
@@ -889,6 +909,8 @@ public partial class ChatViewModel : ObservableObject
         IsStreaming = false;
         TotalInputTokens = 0;
         TotalOutputTokens = 0;
+        ContextCurrentTokens = 0;
+        ContextTokenLimit = 0;
         _pendingSearchSources.Clear();
         ActiveSkillIds.Clear();
         ActiveSkillChips.Clear();

@@ -942,7 +942,7 @@
               </Transitions>
             </Border.Transitions>
             <ToolTip.Tip>
-              <StackPanel Spacing="6" MinWidth="160">
+              <StackPanel Spacing="6" MinWidth="180">
                 <TextBlock Text="Token Usage" FontWeight="SemiBold" FontSize="12"
                            Foreground="{DynamicResource Brush.TextPrimary}" />
                 <Border Height="1" Background="{DynamicResource Brush.BorderSubtle}" />
@@ -963,6 +963,27 @@
                   <TextBlock Grid.Column="1" Text="{Binding TokenTotalDisplay}" FontSize="11" FontWeight="SemiBold"
                              Foreground="{DynamicResource Brush.AccentDefault}" HorizontalAlignment="Right" Margin="16,0,0,0" />
                 </Grid>
+                <!-- Context window usage (only when available) -->
+                <Border Height="1" Background="{DynamicResource Brush.BorderSubtle}"
+                        IsVisible="{Binding HasContextUsage}" />
+                <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasContextUsage}">
+                  <TextBlock Grid.Column="0" Text="Context window" FontSize="11"
+                             Foreground="{DynamicResource Brush.TextSecondary}" />
+                  <TextBlock Grid.Column="1" Text="{Binding ContextUsageDisplay}" FontSize="11"
+                             Foreground="{DynamicResource Brush.TextPrimary}" HorizontalAlignment="Right" Margin="16,0,0,0" />
+                </Grid>
+                <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasContextUsage}" Margin="0,-2,0,0">
+                  <TextBlock Grid.Column="0" Text="Usage" FontSize="11" FontWeight="SemiBold"
+                             Foreground="{DynamicResource Brush.TextPrimary}" />
+                  <TextBlock Grid.Column="1" FontSize="11" FontWeight="SemiBold"
+                             Foreground="{DynamicResource Brush.AccentDefault}" HorizontalAlignment="Right" Margin="16,0,0,0">
+                    <TextBlock.Text>
+                      <MultiBinding StringFormat="{}{0}%">
+                        <Binding Path="ContextUsagePercent" />
+                      </MultiBinding>
+                    </TextBlock.Text>
+                  </TextBlock>
+                </Grid>
               </StackPanel>
             </ToolTip.Tip>
             <StackPanel Orientation="Horizontal" Spacing="4">
@@ -973,7 +994,7 @@
                          FontSize="10.5"
                          Foreground="{DynamicResource Brush.TextTertiary}"
                          VerticalAlignment="Center" />
-              <TextBlock Text="tokens"
+              <TextBlock Text="{Binding TokenUsageSuffixText}"
                          FontSize="10.5"
                          Foreground="{DynamicResource Brush.TextTertiary}"
                          Opacity="0.7"

@@ -31,6 +31,12 @@ internal sealed class ChatRuntimeState
 
     public long TotalOutputTokens { get; set; }
 
+    /// <summary>Latest turn's input tokens — best proxy for current context window usage.</summary>
+    public long ContextCurrentTokens { get; set; }
+
+    /// <summary>Context window token limit from SessionUsageInfoEvent.</summary>
+    public long ContextTokenLimit { get; set; }
+
     public bool HasUsedBrowser { get; set; }
 
     public int ActiveToolCount { get; set; }
