@@ -17,3 +17,16 @@ internal sealed class DisposableGroup(params IDisposable[] disposables) : IDispo
             disposable.Dispose();
     }
 }
+
+internal sealed class ActionDisposable(Action action) : IDisposable
+{
+    private int _disposed;
+
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
+
+        action();
+    }
+}

@@ -710,6 +710,7 @@ public partial class ChatViewModel : ObservableObject
                     Messages.Add(new ChatMessageViewModel(inProgress));
 
                 CurrentChat = chat;
+                chat.HasUnreadMessages = false; // Clear unread when switching to this chat
                 if (previousChat is not null)
                 {
                     var previousRuntime = GetOrCreateRuntimeState(previousChat.Id);

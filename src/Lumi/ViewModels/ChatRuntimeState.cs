@@ -43,4 +43,10 @@ internal sealed class ChatRuntimeState
 
     public CancellationTokenSource? PostToolReconciliationCts { get; set; }
 
+    /// <summary>True while a background task auto-resume is pending (debounce timer active).</summary>
+    public bool HasPendingAutoResume { get; set; }
+
+    /// <summary>True when the last completed turn was auto-triggered by background task completion.</summary>
+    public bool LastTurnWasAutoResume { get; set; }
+
 }

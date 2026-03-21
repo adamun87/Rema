@@ -72,6 +72,7 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool _showReasoning;
     [ObservableProperty] private bool _expandReasoningWhileStreaming;
     [ObservableProperty] private bool _autoGenerateTitles;
+    [ObservableProperty] private bool _autoResumeBackgroundTasks;
 
     // ── AI & Models ──
     [ObservableProperty] private string _preferredModel;
@@ -150,6 +151,7 @@ public partial class SettingsViewModel : ObservableObject
         _showReasoning = s.ShowReasoning;
         _expandReasoningWhileStreaming = s.ExpandReasoningWhileStreaming;
         _autoGenerateTitles = s.AutoGenerateTitles;
+        _autoResumeBackgroundTasks = s.AutoResumeBackgroundTasks;
 
         // AI
         _preferredModel = s.PreferredModel;
@@ -205,6 +207,7 @@ public partial class SettingsViewModel : ObservableObject
     partial void OnShowReasoningChanged(bool value) { _dataStore.Data.Settings.ShowReasoning = value; Save(); SettingsChanged?.Invoke(); NotifyModified(); }
     partial void OnExpandReasoningWhileStreamingChanged(bool value) { _dataStore.Data.Settings.ExpandReasoningWhileStreaming = value; Save(); NotifyModified(); }
     partial void OnAutoGenerateTitlesChanged(bool value) { _dataStore.Data.Settings.AutoGenerateTitles = value; Save(); NotifyModified(); }
+    partial void OnAutoResumeBackgroundTasksChanged(bool value) { _dataStore.Data.Settings.AutoResumeBackgroundTasks = value; Save(); NotifyModified(); }
 
     partial void OnPreferredModelChanged(string value) { _dataStore.Data.Settings.PreferredModel = value; Save(); SettingsChanged?.Invoke(); NotifyModified(); }
     partial void OnReasoningEffortIndexChanged(int value)
@@ -330,6 +333,7 @@ public partial class SettingsViewModel : ObservableObject
     public bool IsShowReasoningModified => ShowReasoning != _defaults.ShowReasoning;
     public bool IsExpandReasoningWhileStreamingModified => ExpandReasoningWhileStreaming != _defaults.ExpandReasoningWhileStreaming;
     public bool IsAutoGenerateTitlesModified => AutoGenerateTitles != _defaults.AutoGenerateTitles;
+    public bool IsAutoResumeBackgroundTasksModified => AutoResumeBackgroundTasks != _defaults.AutoResumeBackgroundTasks;
     public bool IsPreferredModelModified => PreferredModel != _defaults.PreferredModel;
     public bool IsReasoningEffortModified => ReasoningEffort != _defaults.ReasoningEffort;
     public bool IsEnableMemoryAutoSaveModified => EnableMemoryAutoSave != _defaults.EnableMemoryAutoSave;
@@ -352,6 +356,7 @@ public partial class SettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(IsShowReasoningModified));
         OnPropertyChanged(nameof(IsExpandReasoningWhileStreamingModified));
         OnPropertyChanged(nameof(IsAutoGenerateTitlesModified));
+        OnPropertyChanged(nameof(IsAutoResumeBackgroundTasksModified));
         OnPropertyChanged(nameof(IsPreferredModelModified));
         OnPropertyChanged(nameof(IsReasoningEffortModified));
         OnPropertyChanged(nameof(IsEnableMemoryAutoSaveModified));
@@ -374,6 +379,7 @@ public partial class SettingsViewModel : ObservableObject
     [RelayCommand] private void RevertShowReasoning() => ShowReasoning = _defaults.ShowReasoning;
     [RelayCommand] private void RevertExpandReasoningWhileStreaming() => ExpandReasoningWhileStreaming = _defaults.ExpandReasoningWhileStreaming;
     [RelayCommand] private void RevertAutoGenerateTitles() => AutoGenerateTitles = _defaults.AutoGenerateTitles;
+    [RelayCommand] private void RevertAutoResumeBackgroundTasks() => AutoResumeBackgroundTasks = _defaults.AutoResumeBackgroundTasks;
     [RelayCommand] private void RevertPreferredModel() => PreferredModel = _defaults.PreferredModel;
     [RelayCommand] private void RevertReasoningEffort() => ReasoningEffort = _defaults.ReasoningEffort;
     [RelayCommand] private void RevertEnableMemoryAutoSave() => EnableMemoryAutoSave = _defaults.EnableMemoryAutoSave;
@@ -478,6 +484,7 @@ public partial class SettingsViewModel : ObservableObject
         ShowToolCalls = defaults.ShowToolCalls;
         ShowReasoning = defaults.ShowReasoning;
         AutoGenerateTitles = defaults.AutoGenerateTitles;
+        AutoResumeBackgroundTasks = defaults.AutoResumeBackgroundTasks;
         PreferredModel = defaults.PreferredModel;
         ReasoningEffort = defaults.ReasoningEffort;
         EnableMemoryAutoSave = defaults.EnableMemoryAutoSave;

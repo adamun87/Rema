@@ -488,8 +488,7 @@
     </DataTemplate>
 
     <!-- ── Subagent card (standalone turn-level item) ── -->
-    <DataTemplate DataType="vm:SubagentToolCallItem">
-        <sc:StrataThink Label="{Binding Title}"
+    <DataTemplate DataType="vm:SubagentToolCallItem">        <sc:StrataThink Label="{Binding Title}"
                         Meta="{Binding Meta}"
                         IsExpanded="{Binding IsExpanded}"
                         IsActive="{Binding IsActive}"
@@ -499,6 +498,13 @@
             <!-- Agent byline — visible only when expanded -->
             <StackPanel Orientation="Horizontal" Spacing="4"
                         Margin="0,0,0,2">
+              <Border IsVisible="{Binding IsBackgroundMode}"
+                      Background="{DynamicResource Brush.AccentSubtle}"
+                      CornerRadius="999" Padding="6,1">
+                <TextBlock Text="{Binding ModeLabel}" FontSize="10"
+                           Foreground="{DynamicResource Brush.AccentDefault}"
+                           FontWeight="SemiBold" />
+              </Border>
               <TextBlock Text="{Binding DisplayName}"
                          FontSize="11"
                          Foreground="{DynamicResource Brush.TextTertiary}"

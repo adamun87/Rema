@@ -358,6 +358,8 @@
   "SettingDesc_ExpandReasoningWhileStreaming": "Automatically expand reasoning blocks while the AI is thinking, then collapse when done",
   "Setting_AutoGenerateTitles": "Auto-Generate Titles",
   "SettingDesc_AutoGenerateTitles": "Let the AI automatically name new conversations",
+  "Setting_AutoResumeBackgroundTasks": "Auto-Resume Background Tasks",
+  "SettingDesc_AutoResumeBackgroundTasks": "Automatically trigger a follow-up response when background agents complete",
   "Setting_PreferredModel": "Preferred Model",
   "SettingDesc_PreferredModel": "Default model used for new conversations",
   "Setting_ReasoningEffort": "Reasoning Effort",
@@ -408,6 +410,7 @@
   "Tray_Exit": "Exit",
 
   "Notification_ResponseReady": "Response ready",
+  "BackgroundTask_Completed": "Background task completed",
 
   "DragDrop_Hint": "Drop files to attach",
   "DragDrop_Subhint": "Files will be added to your message",

@@ -42,6 +42,7 @@ public class SearchSource
 public class Chat : INotifyPropertyChanged
 {
     private bool _isRunning;
+    private bool _hasUnreadMessages;
 
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Title { get; set; } = "New Chat";
@@ -82,6 +83,14 @@ public class Chat : INotifyPropertyChanged
     {
         get => _isRunning;
         set { if (_isRunning == value) return; _isRunning = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsRunning))); }
+    }
+
+    /// <summary>Runtime-only flag indicating this chat has unread messages from an auto-triggered background task response.</summary>
+    [JsonIgnore]
+    public bool HasUnreadMessages
+    {
+        get => _hasUnreadMessages;
+        set { if (_hasUnreadMessages == value) return; _hasUnreadMessages = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasUnreadMessages))); }
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -196,6 +205,7 @@ public class UserSettings
     public bool ShowReasoning { get; set; } = true;
     public bool ExpandReasoningWhileStreaming { get; set; } = true;
     public bool AutoGenerateTitles { get; set; } = true;
+    public bool AutoResumeBackgroundTasks { get; set; } = true;
 
     // ── AI & Models ──
     public string PreferredModel { get; set; } = "";

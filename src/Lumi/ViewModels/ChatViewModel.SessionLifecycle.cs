@@ -52,6 +52,13 @@ public partial class ChatViewModel
         var subagentReasoningStreams = new Dictionary<string, StreamingTextAccumulator>(StringComparer.Ordinal);
         string? mostRecentSubagentToolCallId = null;
 
+        // ── Background task auto-resume state ──
+        var pendingBackgroundTaskIds = new HashSet<string>(StringComparer.Ordinal);
+        var completedBackgroundTaskIds = new HashSet<string>(StringComparer.Ordinal);
+        var bgResumeGate = new object();
+        var sessionIsIdle = false;
+        CancellationTokenSource? bgResumeDebounceCts = null;
+
 
         bool IsSubagentOutputActive()
             => Volatile.Read(ref activeSubagentSelectionDepth) > 0
@@ -367,6 +374,13 @@ public partial class ChatViewModel
             switch (evt)
             {
                 case AssistantTurnStartEvent:
+                    lock (bgResumeGate)
+                    {
+                        sessionIsIdle = false;
+                        // Cancel pending auto-resume debounce — a new turn started.
+                        // completedBackgroundTaskIds are preserved for re-trigger after this turn.
+                        bgResumeDebounceCts?.Cancel();
+                    }
                     Dispatcher.UIThread.Post(() =>
                     {
                         runtime.IsBusy = true;
@@ -440,7 +454,7 @@ public partial class ChatViewModel
                         // to appear at once instead of streaming.
                         FlushAssistantDelta();
 
-                        var finalContent = msg.Data.Content;
+                        var finalContent = msg.Data.Content?.TrimStart('\n', '\r');
                         if (string.IsNullOrWhiteSpace(finalContent))
                         {
                             if (_activeSession == session && streamingVm is not null)
@@ -582,6 +596,18 @@ public partial class ChatViewModel
 
                 case ToolExecutionStartEvent toolStart:
                     AdjustPendingToolCount(chat.Id, 1);
+                    // Track background tasks for auto-resume
+                    {
+                        var toolNameForBg = toolStart.Data.ToolName;
+                        var argsJson = toolStart.Data.Arguments?.ToString();
+                        var mode = ToolDisplayHelper.ExtractJsonField(argsJson, "mode");
+                        if ((toolNameForBg == "task" && string.Equals(mode, "background", StringComparison.OrdinalIgnoreCase))
+                            || (toolNameForBg == "powershell" && string.Equals(mode, "async", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            lock (bgResumeGate)
+                                pendingBackgroundTaskIds.Add(toolStart.Data.ToolCallId);
+                        }
+                    }
                     Dispatcher.UIThread.Post(() =>
                     {
                     var startToolCallId = toolStart.Data.ToolCallId;
@@ -690,6 +716,17 @@ public partial class ChatViewModel
                     var shouldReconcileAfterTool = AdjustPendingToolCount(chat.Id, -1);
                     if (shouldReconcileAfterTool)
                         SchedulePostToolReconciliation(chat.Id);
+                    // Check if a tracked background task just completed while session is idle
+                    lock (bgResumeGate)
+                    {
+                        var isBgTaskCompletion = pendingBackgroundTaskIds.Remove(toolEnd.Data.ToolCallId);
+                        if (isBgTaskCompletion)
+                        {
+                            completedBackgroundTaskIds.Add(toolEnd.Data.ToolCallId);
+                            if (sessionIsIdle)
+                                ScheduleBackgroundTaskAutoResume(session, chat, runtime, agentName, ref bgResumeDebounceCts, completedBackgroundTaskIds);
+                        }
+                    }
                     Dispatcher.UIThread.Post(() =>
                     {
                     toolParentById[toolEnd.Data.ToolCallId] = toolEnd.Data.ParentToolCallId;
@@ -853,6 +890,8 @@ public partial class ChatViewModel
                     assistantStream.CancelPending();
                     reasoningStream.CancelPending();
                     ResetSubagentOutputState();
+                    lock (bgResumeGate)
+                        sessionIsIdle = true;
                     Dispatcher.UIThread.Post(() =>
                     {
                     // Persist the model used for this turn on the chat
@@ -876,9 +915,46 @@ public partial class ChatViewModel
 
                 case SessionIdleEvent:
                     ClearPendingTurnTracking(chat.Id);
+                    var bgTasksHandledThisTurn = false;
+                    // If background tasks completed during the turn, trigger auto-resume
+                    // — but only if the LLM didn't already handle it within the same turn.
+                    lock (bgResumeGate)
+                    {
+                        if (completedBackgroundTaskIds.Count > 0)
+                        {
+                            var lastMsg = chat.Messages.Count > 0 ? chat.Messages[^1] : null;
+                            var alreadyHandled = lastMsg?.Role == "assistant"
+                                                 && !string.IsNullOrWhiteSpace(lastMsg.Content);
+                            completedBackgroundTaskIds.Clear();
+                            if (alreadyHandled)
+                            {
+                                // LLM handled the background task within the agentic loop —
+                                // still mark as unread and notify if user is on a different chat.
+                                bgTasksHandledThisTurn = true;
+                            }
+                            else
+                            {
+                                ScheduleBackgroundTaskAutoResume(session, chat, runtime, agentName, ref bgResumeDebounceCts, completedBackgroundTaskIds);
+                            }
+                        }
+                    }
+                    // Capture for closure
+                    var bgHandled = bgTasksHandledThisTurn;
                     Dispatcher.UIThread.Post(() =>
                     {
-                    if (_dataStore.Data.Settings.NotificationsEnabled)
+                    // Handle background task notifications (both auto-resume and LLM-self-handled).
+                    // Returns true if this was an auto-resume turn — skip generic notification.
+                    var wasBgResume = HandleBackgroundResumeCompleted(chat, session, agentName);
+                    var wasBgTask = wasBgResume || bgHandled;
+
+                    // Set unread + notify for background task turns when user is on another chat
+                    if (wasBgTask)
+                    {
+                        if (CurrentChat?.Id != chat.Id)
+                            chat.HasUnreadMessages = true;
+                    }
+
+                    if (!wasBgTask && _dataStore.Data.Settings.NotificationsEnabled)
                     {
                         var chatTitle = chat.Title;
                         var body = string.IsNullOrWhiteSpace(chatTitle)
@@ -1388,7 +1464,19 @@ public partial class ChatViewModel
                     break;
             }
         });
-        _sessionSubs[chat.Id] = new DisposableGroup(sessionSubscription, assistantStream, reasoningStream);
+        _sessionSubs[chat.Id] = new DisposableGroup(
+            sessionSubscription,
+            assistantStream,
+            reasoningStream,
+            new ActionDisposable(() =>
+            {
+                lock (bgResumeGate)
+                {
+                    bgResumeDebounceCts?.Cancel();
+                    bgResumeDebounceCts?.Dispose();
+                    bgResumeDebounceCts = null;
+                }
+            }));
     }
 
     /// <summary>Cleans up session resources for a chat (e.g., on delete).</summary>

@@ -378,6 +378,11 @@
                                              Opacity="0.7"
                                              TextTrimming="CharacterEllipsis"
                                              IsVisible="False" />
+                                  <Border x:Name="UnreadIndicator" DockPanel.Dock="Left"
+                                          Width="6" Height="6" CornerRadius="3"
+                                          Background="{DynamicResource Brush.AccentDefault}"
+                                          VerticalAlignment="Center" Margin="0,0,7,0"
+                                          IsVisible="{Binding HasUnreadMessages}" />
                                   <Border x:Name="BusyIndicator" DockPanel.Dock="Left"
                                           Width="6" Height="6" CornerRadius="3"
                                           Background="{DynamicResource Brush.AccentDefault}"
