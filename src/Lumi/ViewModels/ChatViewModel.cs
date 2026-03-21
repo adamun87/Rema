@@ -102,6 +102,9 @@ public partial class ChatViewModel : ObservableObject
     [ObservableProperty] private bool _isStreaming;
     [ObservableProperty] private string _statusText = "";
     [ObservableProperty] private string? _selectedModel;
+
+    /// <summary>True when the current chat has no saved model and is bound to the global default.</summary>
+    private bool _chatUsesDefaultModel = true;
     [ObservableProperty] private LumiAgent? _activeAgent;
     [ObservableProperty] private long _totalInputTokens;
     [ObservableProperty] private long _totalOutputTokens;
@@ -269,7 +272,11 @@ public partial class ChatViewModel : ObservableObject
         SelectedModel = modelId;
     }
 
-    public void RestoreDefaultModelSelection() => SetSelectedModelValue(_dataStore.Data.Settings.PreferredModel);
+    public void RestoreDefaultModelSelection()
+    {
+        _chatUsesDefaultModel = true;
+        SetSelectedModelValue(_dataStore.Data.Settings.PreferredModel);
+    }
 
     partial void OnIsBusyChanged(bool value)
     {
@@ -822,10 +829,12 @@ public partial class ChatViewModel : ObservableObject
             // Restore per-chat model selection (falls back to global preferred model)
             if (!string.IsNullOrWhiteSpace(chat.LastModelUsed))
             {
+                _chatUsesDefaultModel = false;
                 SetSelectedModelValue(chat.LastModelUsed);
             }
             else
             {
+                _chatUsesDefaultModel = true;
                 RestoreDefaultModelSelection();
             }
 

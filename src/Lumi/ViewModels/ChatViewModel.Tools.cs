@@ -390,6 +390,15 @@ public partial class ChatViewModel
 
         if (string.IsNullOrWhiteSpace(value)) return;
 
+        // New chats are bound to the global default; existing chats save per-chat only.
+        if (_chatUsesDefaultModel)
+            _dataStore.Data.Settings.PreferredModel = value;
+
+        if (CurrentChat is { } chat)
+            chat.LastModelUsed = value;
+
+        _ = SaveIndexAsync();
+
         // Mid-session model switch via SDK API (avoids session invalidation)
         if (_activeSession is not null)
             _ = SwitchModelMidSessionAsync(value);

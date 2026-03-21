@@ -856,10 +856,6 @@ public partial class ChatViewModel
                     ResetSubagentOutputState();
                     Dispatcher.UIThread.Post(() =>
                     {
-                    // Persist the model used for this turn on the chat
-                    if (!string.IsNullOrWhiteSpace(SelectedModel))
-                        chat.LastModelUsed = SelectedModel;
-
                     runtime.IsBusy = false;
                     runtime.IsStreaming = false;
                     runtime.StatusText = "";
