@@ -57,7 +57,20 @@ public partial class ChatViewModel
         var completedBackgroundTaskIds = new HashSet<string>(StringComparer.Ordinal);
         var bgResumeGate = new object();
         var sessionIsIdle = false;
+        var backgroundResultsHandledThisTurn = false;
         CancellationTokenSource? bgResumeDebounceCts = null;
+        var backgroundLaunchArgsByToolCallId = new Dictionary<string, string?>(StringComparer.Ordinal);
+        var backgroundPowershellLaunchToolCallIds = new HashSet<string>(StringComparer.Ordinal);
+        var trackedBackgroundShellIds = new HashSet<string>(StringComparer.Ordinal);
+        var trackedBackgroundAgentIds = new HashSet<string>(StringComparer.Ordinal);
+        var readPowershellShellIdByToolCallId = new Dictionary<string, string>(StringComparer.Ordinal);
+        var readAgentIdByToolCallId = new Dictionary<string, string>(StringComparer.Ordinal);
+        var assistantMessageAddedSinceLastIdle = false;
+
+        static string? GetBackgroundToolOutput(ToolExecutionCompleteDataResult? result)
+            => result?.DetailedContent
+               ?? result?.Content
+               ?? ToolDisplayHelper.ExtractTerminalOutput(result);
 
 
         bool IsSubagentOutputActive()
@@ -377,6 +390,7 @@ public partial class ChatViewModel
                     lock (bgResumeGate)
                     {
                         sessionIsIdle = false;
+                        backgroundResultsHandledThisTurn = false;
                         // Cancel pending auto-resume debounce — a new turn started.
                         // completedBackgroundTaskIds are preserved for re-trigger after this turn.
                         bgResumeDebounceCts?.Cancel();
@@ -444,6 +458,9 @@ public partial class ChatViewModel
                     }
                     if (IsSubagentOutputActive())
                         break;
+                    var capturedFinalContent = msg.Data.Content?.TrimStart('\n', '\r');
+                    if (!string.IsNullOrWhiteSpace(capturedFinalContent))
+                        assistantMessageAddedSinceLastIdle = true;
                     assistantStream.CancelPending();
                     Dispatcher.UIThread.Post(() =>
                     {
@@ -454,7 +471,7 @@ public partial class ChatViewModel
                         // to appear at once instead of streaming.
                         FlushAssistantDelta();
 
-                        var finalContent = msg.Data.Content?.TrimStart('\n', '\r');
+                        var finalContent = capturedFinalContent;
                         if (string.IsNullOrWhiteSpace(finalContent))
                         {
                             if (_activeSession == session && streamingVm is not null)
@@ -601,12 +618,56 @@ public partial class ChatViewModel
                         var toolNameForBg = toolStart.Data.ToolName;
                         var argsJson = toolStart.Data.Arguments?.ToString();
                         var mode = ToolDisplayHelper.ExtractJsonField(argsJson, "mode");
-                        if ((toolNameForBg == "task" && string.Equals(mode, "background", StringComparison.OrdinalIgnoreCase))
-                            || (toolNameForBg == "powershell" && string.Equals(mode, "async", StringComparison.OrdinalIgnoreCase)))
+                        var detach = ToolDisplayHelper.ExtractJsonField(argsJson, "detach");
+                        if (toolNameForBg == "task" && string.Equals(mode, "background", StringComparison.OrdinalIgnoreCase))
                         {
                             lock (bgResumeGate)
+                            {
                                 pendingBackgroundTaskIds.Add(toolStart.Data.ToolCallId);
+                                backgroundLaunchArgsByToolCallId[toolStart.Data.ToolCallId] = argsJson;
+                            }
                             Interlocked.Increment(ref runtime.PendingBackgroundTaskCount);
+                        }
+                        else if (toolNameForBg == "powershell"
+                                 && string.Equals(mode, "async", StringComparison.OrdinalIgnoreCase)
+                                 && !string.Equals(detach, "true", StringComparison.OrdinalIgnoreCase))
+                        {
+                            lock (bgResumeGate)
+                            {
+                                pendingBackgroundTaskIds.Add(toolStart.Data.ToolCallId);
+                                backgroundLaunchArgsByToolCallId[toolStart.Data.ToolCallId] = argsJson;
+                                backgroundPowershellLaunchToolCallIds.Add(toolStart.Data.ToolCallId);
+                                var shellId = ExtractBackgroundShellId(argsJson, toolOutput: null);
+                                if (!string.IsNullOrWhiteSpace(shellId))
+                                    trackedBackgroundShellIds.Add(shellId);
+                            }
+                            Interlocked.Increment(ref runtime.PendingBackgroundTaskCount);
+                        }
+                        else if (toolNameForBg == "read_powershell")
+                        {
+                            var shellId = ToolDisplayHelper.ExtractJsonField(argsJson, "shellId");
+                            lock (bgResumeGate)
+                            {
+                                if (!string.IsNullOrWhiteSpace(shellId))
+                                    readPowershellShellIdByToolCallId[toolStart.Data.ToolCallId] = shellId;
+
+                                if (!string.IsNullOrWhiteSpace(shellId)
+                                    && trackedBackgroundShellIds.Contains(shellId))
+                                    backgroundResultsHandledThisTurn = true;
+                            }
+                        }
+                        else if (toolNameForBg == "read_agent")
+                        {
+                            var agentId = ToolDisplayHelper.ExtractJsonField(argsJson, "agent_id");
+                            lock (bgResumeGate)
+                            {
+                                if (!string.IsNullOrWhiteSpace(agentId))
+                                    readAgentIdByToolCallId[toolStart.Data.ToolCallId] = agentId;
+
+                                if (!string.IsNullOrWhiteSpace(agentId)
+                                    && trackedBackgroundAgentIds.Contains(agentId))
+                                    backgroundResultsHandledThisTurn = true;
+                            }
                         }
                     }
                     Dispatcher.UIThread.Post(() =>
@@ -717,6 +778,7 @@ public partial class ChatViewModel
                     var shouldReconcileAfterTool = AdjustPendingToolCount(chat.Id, -1);
                     if (shouldReconcileAfterTool)
                         SchedulePostToolReconciliation(chat.Id);
+                    var backgroundToolOutput = GetBackgroundToolOutput(toolEnd.Data.Result);
                     // Check if a tracked background task just completed while session is idle
                     lock (bgResumeGate)
                     {
@@ -724,8 +786,39 @@ public partial class ChatViewModel
                         if (isBgTaskCompletion)
                         {
                             completedBackgroundTaskIds.Add(toolEnd.Data.ToolCallId);
+                            if (backgroundPowershellLaunchToolCallIds.Remove(toolEnd.Data.ToolCallId))
+                            {
+                                if (backgroundLaunchArgsByToolCallId.TryGetValue(toolEnd.Data.ToolCallId, out var argsJson))
+                                {
+                                    var shellId = ExtractBackgroundShellId(argsJson, backgroundToolOutput);
+                                    if (!string.IsNullOrWhiteSpace(shellId))
+                                        trackedBackgroundShellIds.Add(shellId);
+                                }
+                            }
+                            else
+                            {
+                                var agentId = ExtractBackgroundAgentId(backgroundToolOutput);
+                                if (!string.IsNullOrWhiteSpace(agentId))
+                                    trackedBackgroundAgentIds.Add(agentId);
+                            }
+
+                            backgroundLaunchArgsByToolCallId.Remove(toolEnd.Data.ToolCallId);
                             if (sessionIsIdle)
                                 ScheduleBackgroundTaskAutoResume(session, chat, runtime, agentName, ref bgResumeDebounceCts, completedBackgroundTaskIds);
+                        }
+
+                        if (readPowershellShellIdByToolCallId.Remove(toolEnd.Data.ToolCallId, out var completedShellId)
+                            && IsBackgroundPowershellReadComplete(completedShellId, backgroundToolOutput)
+                            && trackedBackgroundShellIds.Remove(completedShellId))
+                        {
+                            Interlocked.Decrement(ref runtime.PendingBackgroundTaskCount);
+                        }
+
+                        if (readAgentIdByToolCallId.Remove(toolEnd.Data.ToolCallId, out var completedAgentId)
+                            && IsBackgroundAgentReadComplete(completedAgentId, backgroundToolOutput)
+                            && trackedBackgroundAgentIds.Remove(completedAgentId))
+                        {
+                            Interlocked.Decrement(ref runtime.PendingBackgroundTaskCount);
                         }
                     }
                     Dispatcher.UIThread.Post(() =>
@@ -917,36 +1010,38 @@ public partial class ChatViewModel
                 case SessionIdleEvent:
                     ClearPendingTurnTracking(chat.Id);
                     var bgTasksHandledThisTurn = false;
-                    // If background tasks completed during the turn, trigger auto-resume
-                    // — but only if the LLM didn't already handle it within the same turn.
+                    var hasPendingBackgroundWork = false;
+                    var wasAutoResumeTurn = runtime.LastTurnWasAutoResume;
+                    // Only schedule auto-resume for fresh launch completions.
+                    // Do NOT re-arm on backgroundResultsHandledThisTurn or LastTurnWasAutoResume —
+                    // the SDK sends shell/agent completion notifications that trigger follow-up
+                    // turns automatically, so re-arming causes an infinite auto-resume loop.
                     lock (bgResumeGate)
                     {
-                        if (completedBackgroundTaskIds.Count > 0)
+                        bgTasksHandledThisTurn = backgroundResultsHandledThisTurn;
+                        hasPendingBackgroundWork = Volatile.Read(ref runtime.PendingBackgroundTaskCount) > 0;
+                        var shouldScheduleBackgroundResume = hasPendingBackgroundWork
+                            && completedBackgroundTaskIds.Count > 0;
+                        if (shouldScheduleBackgroundResume)
                         {
-                            var bgCount = completedBackgroundTaskIds.Count;
-                            var lastMsg = chat.Messages.Count > 0 ? chat.Messages[^1] : null;
-                            var alreadyHandled = lastMsg?.Role == "assistant"
-                                                 && !string.IsNullOrWhiteSpace(lastMsg.Content);
-                            if (alreadyHandled)
-                            {
-                                completedBackgroundTaskIds.Clear();
-                                Interlocked.Add(ref runtime.PendingBackgroundTaskCount, -bgCount);
-                                bgTasksHandledThisTurn = true;
-                            }
-                            else
-                            {
-                                ScheduleBackgroundTaskAutoResume(session, chat, runtime, agentName, ref bgResumeDebounceCts, completedBackgroundTaskIds);
-                            }
+                            ScheduleBackgroundTaskAutoResume(session, chat, runtime, agentName, ref bgResumeDebounceCts, completedBackgroundTaskIds);
+                        }
+                        else if (!hasPendingBackgroundWork && completedBackgroundTaskIds.Count > 0)
+                        {
+                            completedBackgroundTaskIds.Clear();
                         }
                     }
-                    // Capture for closure
                     var bgHandled = bgTasksHandledThisTurn;
+                    var autoResumeTurn = wasAutoResumeTurn;
                     Dispatcher.UIThread.Post(() =>
                     {
+                    var hadAssistantMessage = assistantMessageAddedSinceLastIdle;
+                    assistantMessageAddedSinceLastIdle = false;
+
                     // Handle background task notifications (both auto-resume and LLM-self-handled).
                     // Returns true if this was an auto-resume turn — skip generic notification.
-                    var wasBgResume = HandleBackgroundResumeCompleted(chat, session, agentName);
-                    var wasBgTask = wasBgResume || bgHandled;
+                    var wasBgResume = HandleBackgroundResumeCompleted(chat, session, agentName, hadAssistantMessage);
+                    var wasBgTask = hadAssistantMessage && (wasBgResume || bgHandled);
 
                     // Set unread + notify for background task turns when user is on another chat
                     if (wasBgTask)
@@ -955,7 +1050,7 @@ public partial class ChatViewModel
                             chat.HasUnreadMessages = true;
                     }
 
-                    if (!wasBgTask && _dataStore.Data.Settings.NotificationsEnabled)
+                    if (!wasBgTask && !autoResumeTurn && _dataStore.Data.Settings.NotificationsEnabled)
                     {
                         var chatTitle = chat.Title;
                         var body = string.IsNullOrWhiteSpace(chatTitle)

@@ -55,6 +55,60 @@ public sealed class BackgroundResumeTests
         Assert.True(settings.AutoResumeBackgroundTasks);
     }
 
+    [Fact]
+    public void ExtractBackgroundShellId_PrefersArgsJsonShellId()
+    {
+        var shellId = ChatViewModel.ExtractBackgroundShellId(
+            "{\"mode\":\"async\",\"shellId\":\"task15\"}",
+            "Agent started in background with shellId: generated");
+
+        Assert.Equal("task15", shellId);
+    }
+
+    [Fact]
+    public void ExtractBackgroundShellId_FallsBackToToolOutput()
+    {
+        var shellId = ChatViewModel.ExtractBackgroundShellId(
+            argsJson: null,
+            toolOutput: "<command started in background with shellId: task42>");
+
+        Assert.Equal("task42", shellId);
+    }
+
+    [Fact]
+    public void ExtractBackgroundAgentId_ReadsAgentIdFromToolOutput()
+    {
+        var agentId = ChatViewModel.ExtractBackgroundAgentId(
+            "Agent started in background with agent_id: agent-7. You can use read_agent.");
+
+        Assert.Equal("agent-7", agentId);
+    }
+
+    [Fact]
+    public void IsBackgroundPowershellReadComplete_DetectsExitMarker()
+    {
+        Assert.True(ChatViewModel.IsBackgroundPowershellReadComplete(
+            "task10",
+            "1861087324\n<command with id: task10 exited with exit code 0>"));
+        Assert.False(ChatViewModel.IsBackgroundPowershellReadComplete(
+            "task10",
+            "1861087324"));
+    }
+
+    [Fact]
+    public void IsBackgroundAgentReadComplete_DetectsFinalStatuses()
+    {
+        Assert.True(ChatViewModel.IsBackgroundAgentReadComplete(
+            "agent-3",
+            "Agent completed. agent_id: agent-3, agent_type: task, status: completed, description: Test"));
+        Assert.True(ChatViewModel.IsBackgroundAgentReadComplete(
+            "agent-3",
+            "Agent completed. agent_id: agent-3, agent_type: task, status: failed, description: Test"));
+        Assert.False(ChatViewModel.IsBackgroundAgentReadComplete(
+            "agent-3",
+            "Agent running. agent_id: agent-3, agent_type: task, status: running"));
+    }
+
     // ── Transcript builder tests ──
 
     [Fact]

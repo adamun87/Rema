@@ -1,4 +1,5 @@
 using System;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Threading;
@@ -16,6 +17,8 @@ public partial class ChatViewModel
     /// Multiple tasks completing close together are batched into a single turn.
     /// </summary>
     private static readonly TimeSpan BackgroundResumeDebounceDelay = TimeSpan.FromSeconds(2);
+    private static readonly Regex BackgroundShellIdRegex = new(@"shellId:\s*([^\s>]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex BackgroundAgentIdRegex = new(@"agent_id:\s*([A-Za-z0-9._-]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     /// <summary>
     /// Schedules an auto-triggered LLM turn after a background task completes.
@@ -38,10 +41,8 @@ public partial class ChatViewModel
         var cts = new CancellationTokenSource();
         debounceCts = cts;
 
-        // Clear completed IDs and release the session-keep-alive count (caller holds bgResumeGate)
-        var count = completedIds.Count;
+        // Clear completed launch IDs so the next idle pass only reacts to fresh background activity.
         completedIds.Clear();
-        Interlocked.Add(ref runtime.PendingBackgroundTaskCount, -count);
 
         // Prevent session release while the debounce timer is active
         runtime.HasPendingAutoResume = true;
@@ -145,17 +146,68 @@ public partial class ChatViewModel
         // The unread flag is set in SessionIdleEvent since that's when the response is fully done.
     }
 
+    internal static string? ExtractBackgroundShellId(string? argsJson, string? toolOutput)
+    {
+        var explicitShellId = ToolDisplayHelper.ExtractJsonField(argsJson, "shellId");
+        if (!string.IsNullOrWhiteSpace(explicitShellId))
+            return explicitShellId.TrimEnd('.', ',', ';', ':');
+
+        if (string.IsNullOrWhiteSpace(toolOutput))
+            return null;
+
+        var match = BackgroundShellIdRegex.Match(toolOutput);
+        return match.Success ? match.Groups[1].Value.TrimEnd('.', ',', ';', ':') : null;
+    }
+
+    internal static string? ExtractBackgroundAgentId(string? toolOutput)
+    {
+        if (string.IsNullOrWhiteSpace(toolOutput))
+            return null;
+
+        var match = BackgroundAgentIdRegex.Match(toolOutput);
+        return match.Success ? match.Groups[1].Value.TrimEnd('.', ',', ';', ':') : null;
+    }
+
+    internal static bool IsBackgroundPowershellReadComplete(string shellId, string? toolOutput)
+    {
+        if (string.IsNullOrWhiteSpace(shellId) || string.IsNullOrWhiteSpace(toolOutput))
+            return false;
+
+        return toolOutput.IndexOf($"command with id: {shellId}", StringComparison.OrdinalIgnoreCase) >= 0
+               && toolOutput.IndexOf("exited with exit code", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    internal static bool IsBackgroundAgentReadComplete(string agentId, string? toolOutput)
+    {
+        if (string.IsNullOrWhiteSpace(agentId) || string.IsNullOrWhiteSpace(toolOutput))
+            return false;
+
+        if (toolOutput.IndexOf($"agent_id: {agentId}", StringComparison.OrdinalIgnoreCase) < 0)
+            return false;
+
+        return toolOutput.IndexOf("status: completed", StringComparison.OrdinalIgnoreCase) >= 0
+               || toolOutput.IndexOf("status: failed", StringComparison.OrdinalIgnoreCase) >= 0
+               || toolOutput.IndexOf("status: cancelled", StringComparison.OrdinalIgnoreCase) >= 0
+               || toolOutput.IndexOf("status: canceled", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
     /// <summary>
     /// Called from SessionIdleEvent when a turn was auto-triggered. Fires an OS toast
     /// with the response preview. Returns true if this was a background resume turn.
     /// </summary>
-    private bool HandleBackgroundResumeCompleted(Chat chat, CopilotSession session, string agentName)
+    private bool HandleBackgroundResumeCompleted(
+        Chat chat,
+        CopilotSession session,
+        string agentName,
+        bool assistantMessageAddedSinceLastIdle)
     {
         var runtime = GetOrCreateRuntimeState(chat.Id);
         if (!runtime.LastTurnWasAutoResume)
             return false;
 
         runtime.LastTurnWasAutoResume = false;
+        if (!assistantMessageAddedSinceLastIdle)
+            return false;
 
         // OS toast notification with response preview
         if (_dataStore.Data.Settings.NotificationsEnabled)
