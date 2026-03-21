@@ -205,7 +205,6 @@ public class UserSettings
     public bool ShowReasoning { get; set; } = true;
     public bool ExpandReasoningWhileStreaming { get; set; } = true;
     public bool AutoGenerateTitles { get; set; } = true;
-    public bool AutoResumeBackgroundTasks { get; set; } = true;
 
     // ── AI & Models ──
     public string PreferredModel { get; set; } = "";

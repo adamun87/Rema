@@ -1,4 +1,3 @@
-using System.Threading;
 using Lumi.Models;
 
 namespace Lumi.ViewModels;
@@ -49,13 +48,8 @@ internal sealed class ChatRuntimeState
 
     public CancellationTokenSource? PostToolReconciliationCts { get; set; }
 
-    /// <summary>True while a background task auto-resume is pending (debounce timer active).</summary>
-    public bool HasPendingAutoResume { get; set; }
-
-    /// <summary>True when the last completed turn was auto-triggered by background task completion.</summary>
-    public bool LastTurnWasAutoResume { get; set; }
-
-    /// <summary>Number of background tasks still running (tracked for auto-resume). Keeps session alive.</summary>
-    public int PendingBackgroundTaskCount;
+    /// <summary>True when the SDK reports pending background shells/agents.
+    /// Keeps the session alive without blocking the UI.</summary>
+    public bool HasPendingBackgroundWork { get; set; }
 
 }

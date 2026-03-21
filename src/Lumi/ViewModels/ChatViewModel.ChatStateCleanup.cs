@@ -9,7 +9,7 @@ public partial class ChatViewModel
 {
     private bool IsChatRuntimeActive(Guid chatId)
         => _runtimeStates.TryGetValue(chatId, out var runtime)
-           && (runtime.IsBusy || runtime.IsStreaming || runtime.HasPendingAutoResume || runtime.PendingBackgroundTaskCount > 0);
+           && (runtime.IsBusy || runtime.IsStreaming || runtime.HasPendingBackgroundWork);
 
     private void ReleaseChatCancellation(Guid chatId, bool cancel)
     {
