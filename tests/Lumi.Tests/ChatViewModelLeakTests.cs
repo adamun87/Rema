@@ -166,6 +166,66 @@ public sealed class ChatViewModelLeakTests
     }
 
     [Fact]
+    public void DetachSessionAfterRemoteShutdown_PreservesPersistedSessionId()
+    {
+        var dataStore = CreateDataStore();
+        var vm = new ChatViewModel(dataStore, new CopilotService());
+        var chat = new Chat
+        {
+            Title = "recoverable-chat",
+            CopilotSessionId = "session-123"
+        };
+
+        dataStore.Data.Chats.Add(chat);
+        vm.CurrentChat = chat;
+        vm.IsBusy = true;
+        vm.IsStreaming = true;
+        vm.StatusText = "busy";
+
+        var runtime = new ChatRuntimeState
+        {
+            Chat = chat,
+            IsBusy = true,
+            IsStreaming = true,
+            StatusText = "busy"
+        };
+        GetField<Dictionary<Guid, ChatRuntimeState>>(vm, "_runtimeStates")[chat.Id] = runtime;
+        var subscription = new CountingDisposable();
+        GetField<Dictionary<Guid, IDisposable>>(vm, "_sessionSubs")[chat.Id] = subscription;
+
+        InvokePrivate(vm, "DetachSessionAfterRemoteShutdown", chat, true);
+
+        Assert.Equal("session-123", chat.CopilotSessionId);
+        Assert.Equal(1, subscription.DisposeCount);
+        Assert.False(GetField<Dictionary<Guid, IDisposable>>(vm, "_sessionSubs").ContainsKey(chat.Id));
+        Assert.False(runtime.IsBusy);
+        Assert.False(runtime.IsStreaming);
+        Assert.Equal("", runtime.StatusText);
+        Assert.False(vm.IsBusy);
+        Assert.False(vm.IsStreaming);
+        Assert.Equal("", vm.StatusText);
+    }
+
+    [Fact]
+    public void InvalidateCurrentSession_ClearsPersistedSessionId()
+    {
+        var dataStore = CreateDataStore();
+        var vm = new ChatViewModel(dataStore, new CopilotService());
+        var chat = new Chat
+        {
+            Title = "fresh-session",
+            CopilotSessionId = "session-123"
+        };
+
+        dataStore.Data.Chats.Add(chat);
+        vm.CurrentChat = chat;
+
+        InvokePrivate(vm, "InvalidateCurrentSession");
+
+        Assert.Null(chat.CopilotSessionId);
+    }
+
+    [Fact]
     public void IsCopilotTransportError_DetectsJsonRpcDisconnect()
     {
         var ex = new Exception(

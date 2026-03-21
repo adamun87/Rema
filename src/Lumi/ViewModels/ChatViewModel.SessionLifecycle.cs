@@ -1171,26 +1171,12 @@ public partial class ChatViewModel
                     ResetSubagentOutputState();
                     Dispatcher.UIThread.Post(() =>
                     {
-                    // Session terminated server-side — invalidate cached session
-                    DisposeSessionSubscription(chat.Id);
-                    _sessionCache.Remove(chat.Id);
-                    chat.CopilotSessionId = null;
-                    var wasActive = _activeSession == session;
-                    if (wasActive)
-                        _activeSession = null;
-
-                    runtime.IsBusy = false;
-                    runtime.IsStreaming = false;
-                    runtime.StatusText = "";
-                    if (wasActive)
-                    {
-                        IsBusy = false;
-                        IsStreaming = false;
-                        StatusText = "";
-                    }
-                    assistantStream.Clear();
-                    reasoningStream.Clear();
-                    QueueSaveChat(chat, saveIndex: true, releaseIfInactive: CurrentChat?.Id != chat.Id, touchIndex: true);
+                        // Clear local session objects, but keep the persisted session ID so
+                        // a later resume attempt can retry after the CLI/server recovers.
+                        DetachSessionAfterRemoteShutdown(chat, wasActive: _activeSession == session);
+                        assistantStream.Clear();
+                        reasoningStream.Clear();
+                        QueueSaveChat(chat, saveIndex: true, releaseIfInactive: CurrentChat?.Id != chat.Id, touchIndex: true);
                     });
                     break;
 
@@ -1506,6 +1492,26 @@ public partial class ChatViewModel
         _runtimeStates.Remove(chatId);
         RemoveSuggestionTracking(chatId);
         DisposeBrowserService(chatId);
+    }
+
+    private void DetachSessionAfterRemoteShutdown(Chat chat, bool wasActive)
+    {
+        DisposeSessionSubscription(chat.Id);
+        _sessionCache.Remove(chat.Id);
+        if (wasActive)
+            _activeSession = null;
+
+        var runtime = GetOrCreateRuntimeState(chat.Id);
+        runtime.IsBusy = false;
+        runtime.IsStreaming = false;
+        runtime.StatusText = string.Empty;
+
+        if (CurrentChat?.Id == chat.Id)
+        {
+            IsBusy = false;
+            IsStreaming = false;
+            StatusText = string.Empty;
+        }
     }
 
     /// <summary>Called when the CopilotService reconnects (new CLI process).

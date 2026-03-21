@@ -378,26 +378,9 @@ public partial class ChatViewModel
         ClearPendingTurnTracking(chat.Id);
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            var wasActive = _activeSession?.SessionId == chat.CopilotSessionId;
-            DisposeSessionSubscription(chat.Id);
-            _sessionCache.Remove(chat.Id);
-            chat.CopilotSessionId = null;
-
-            if (wasActive)
-                _activeSession = null;
-
-            var runtime = GetOrCreateRuntimeState(chat.Id);
-            runtime.IsBusy = false;
-            runtime.IsStreaming = false;
-            runtime.StatusText = string.Empty;
-
-            if (CurrentChat?.Id == chat.Id)
-            {
-                IsBusy = false;
-                IsStreaming = false;
-                StatusText = string.Empty;
-            }
-
+            DetachSessionAfterRemoteShutdown(
+                chat,
+                wasActive: string.Equals(_activeSession?.SessionId, chat.CopilotSessionId, StringComparison.Ordinal));
             QueueSaveChat(chat, saveIndex: true, releaseIfInactive: CurrentChat?.Id != chat.Id, touchIndex: true);
         });
     }
