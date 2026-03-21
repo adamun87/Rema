@@ -261,6 +261,16 @@ public partial class ChatViewModel : ObservableObject
             OnPropertyChanged(nameof(IsTranscriptPinnedToBottom));
     }
 
+    private void SetSelectedModelValue(string? modelId)
+    {
+        if (!string.IsNullOrWhiteSpace(modelId) && !AvailableModels.Contains(modelId))
+            AvailableModels.Add(modelId);
+
+        SelectedModel = modelId;
+    }
+
+    public void RestoreDefaultModelSelection() => SetSelectedModelValue(_dataStore.Data.Settings.PreferredModel);
+
     partial void OnIsBusyChanged(bool value)
     {
         if (value)
@@ -812,13 +822,11 @@ public partial class ChatViewModel : ObservableObject
             // Restore per-chat model selection (falls back to global preferred model)
             if (!string.IsNullOrWhiteSpace(chat.LastModelUsed))
             {
-                if (!AvailableModels.Contains(chat.LastModelUsed))
-                    AvailableModels.Add(chat.LastModelUsed);
-                SelectedModel = chat.LastModelUsed;
+                SetSelectedModelValue(chat.LastModelUsed);
             }
             else
             {
-                SelectedModel = _dataStore.Data.Settings.PreferredModel;
+                RestoreDefaultModelSelection();
             }
 
             // Git status can be slow in large repos/worktrees. Do not keep the chat
@@ -928,6 +936,7 @@ public partial class ChatViewModel : ObservableObject
         _activeWorkspaceSkillNames.Clear();
         StatusText = "";
         ActiveAgent = null;
+        RestoreDefaultModelSelection();
 
         // Reset plan/SDK agent state
         HasPlan = false;

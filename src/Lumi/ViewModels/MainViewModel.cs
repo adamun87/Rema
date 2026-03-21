@@ -108,8 +108,9 @@ public partial class MainViewModel : ObservableObject
             else if (args.PropertyName == nameof(SettingsViewModel.IsCompactDensity))
                 IsCompactDensity = SettingsVM.IsCompactDensity;
             else if (args.PropertyName == nameof(SettingsViewModel.PreferredModel)
-                     && !string.IsNullOrWhiteSpace(SettingsVM.PreferredModel))
-                ChatVM.SelectedModel = SettingsVM.PreferredModel;
+                     && !string.IsNullOrWhiteSpace(SettingsVM.PreferredModel)
+                     && ChatVM.CurrentChat is null)
+                ChatVM.RestoreDefaultModelSelection();
             else if (args.PropertyName == nameof(SettingsViewModel.SendWithEnter))
                 ChatVM.SendWithEnter = SettingsVM.SendWithEnter;
             else if (args.PropertyName is nameof(SettingsViewModel.ShowTimestamps)

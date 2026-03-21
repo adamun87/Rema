@@ -389,8 +389,6 @@ public partial class ChatViewModel
         UpdateQualityLevels(value);
 
         if (string.IsNullOrWhiteSpace(value)) return;
-        _dataStore.Data.Settings.PreferredModel = value;
-        _ = SaveIndexAsync();
 
         // Mid-session model switch via SDK API (avoids session invalidation)
         if (_activeSession is not null)
