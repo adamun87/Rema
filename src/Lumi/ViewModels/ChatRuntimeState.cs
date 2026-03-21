@@ -55,4 +55,7 @@ internal sealed class ChatRuntimeState
     /// <summary>True when the last completed turn was auto-triggered by background task completion.</summary>
     public bool LastTurnWasAutoResume { get; set; }
 
+    /// <summary>Number of background tasks still running (tracked for auto-resume). Keeps session alive.</summary>
+    public int PendingBackgroundTaskCount;
+
 }

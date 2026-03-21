@@ -606,6 +606,7 @@ public partial class ChatViewModel
                         {
                             lock (bgResumeGate)
                                 pendingBackgroundTaskIds.Add(toolStart.Data.ToolCallId);
+                            Interlocked.Increment(ref runtime.PendingBackgroundTaskCount);
                         }
                     }
                     Dispatcher.UIThread.Post(() =>
@@ -722,6 +723,7 @@ public partial class ChatViewModel
                         var isBgTaskCompletion = pendingBackgroundTaskIds.Remove(toolEnd.Data.ToolCallId);
                         if (isBgTaskCompletion)
                         {
+                            Interlocked.Decrement(ref runtime.PendingBackgroundTaskCount);
                             completedBackgroundTaskIds.Add(toolEnd.Data.ToolCallId);
                             if (sessionIsIdle)
                                 ScheduleBackgroundTaskAutoResume(session, chat, runtime, agentName, ref bgResumeDebounceCts, completedBackgroundTaskIds);
