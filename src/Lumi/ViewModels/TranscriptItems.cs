@@ -25,12 +25,24 @@ internal static class TranscriptIds
 /// <summary>Base class for all items displayed in the chat transcript.</summary>
 public abstract partial class TranscriptItem : ObservableObject
 {
+    private bool _isItemVisible = true;
+
     protected TranscriptItem(string stableId)
     {
         StableId = stableId;
     }
 
     public string StableId { get; }
+
+    /// <summary>
+    /// Controls visibility of the host container in the turn layout.
+    /// When false, the item takes zero space (no gap from StackPanel spacing).
+    /// </summary>
+    public bool IsItemVisible
+    {
+        get => _isItemVisible;
+        set => SetProperty(ref _isItemVisible, value);
+    }
 }
 
 // ── User message ─────────────────────────────────────
@@ -103,6 +115,8 @@ public partial class AssistantMessageItem : TranscriptItem
     [ObservableProperty] private bool _hasSources;
     [ObservableProperty] private string _sourcesLabel = "";
 
+    partial void OnContentChanged(string value) => IsItemVisible = !string.IsNullOrWhiteSpace(value);
+
     partial void OnHasSkillsChanged(bool value) => OnPropertyChanged(nameof(DisplaySkills));
     partial void OnHasFileAttachmentsChanged(bool value) => OnPropertyChanged(nameof(DisplayFileAttachments));
     partial void OnHasSourcesChanged(bool value) => OnPropertyChanged(nameof(DisplaySourcesSection));
@@ -123,6 +137,10 @@ public partial class AssistantMessageItem : TranscriptItem
         _content = source.Content;
         _timestampText = showTimestamps ? source.TimestampText : "";
         _isStreaming = source.IsStreaming;
+
+        // Hide the bubble when content is only whitespace (e.g. the SDK sends "\n\n"
+        // before tool calls / reasoning). Shows automatically when real content arrives.
+        IsItemVisible = !string.IsNullOrWhiteSpace(_content);
 
         // Only subscribe while content is still changing (streaming).
         // Once streaming ends, content is final — unsubscribe to avoid leaks.

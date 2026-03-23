@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Threading;
 using Avalonia;
 using Avalonia.Controls;
@@ -169,11 +170,23 @@ public sealed class TranscriptTurnControl : UserControl
     private static Control CreateItemHost(TranscriptItem item)
     {
         Interlocked.Increment(ref _itemHostCreateCount);
-        return new ContentPresenter
+        var presenter = new ContentPresenter
         {
             Content = item,
-            HorizontalAlignment = HorizontalAlignment.Stretch
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            IsVisible = item.IsItemVisible
         };
+
+        PropertyChangedEventHandler handler = (_, e) =>
+        {
+            if (e.PropertyName == nameof(TranscriptItem.IsItemVisible))
+                presenter.IsVisible = item.IsItemVisible;
+        };
+
+        item.PropertyChanged += handler;
+        presenter.DetachedFromVisualTree += (_, _) => item.PropertyChanged -= handler;
+
+        return presenter;
     }
 
     private void SubscribeToTurnItems(TranscriptTurn? turn)
