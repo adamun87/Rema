@@ -121,8 +121,43 @@ public partial class ChatViewModel
         RemoveSuggestionTracking(chat.Id);
         DisposeBrowserService(chat.Id);
         _runtimeStates.Remove(chat.Id);
+        _dataStore.RemoveChatLoadLock(chat.Id);
 
         if (canEvictMessages && chat.Messages.Count > 0)
             chat.Messages.Clear();
+    }
+
+    /// <summary>
+    /// Sweeps all tracked runtime states and releases any that belong to chats
+    /// that are no longer active (not busy, not streaming, not the current chat).
+    /// Call this on chat switch to catch states that event-driven cleanup missed
+    /// (e.g. chats whose background work completed but cleanup was skipped).
+    /// </summary>
+    private void SweepInactiveChatStates()
+    {
+        var currentChatId = CurrentChat?.Id;
+        var staleIds = _runtimeStates
+            .Where(kvp => kvp.Key != currentChatId
+                          && !kvp.Value.IsBusy
+                          && !kvp.Value.IsStreaming
+                          && !kvp.Value.HasPendingBackgroundWork)
+            .Select(static kvp => kvp.Key)
+            .ToList();
+
+        foreach (var chatId in staleIds)
+        {
+            var chat = _dataStore.Data.Chats.FirstOrDefault(c => c.Id == chatId);
+            if (chat is not null)
+                ReleaseInactiveChatState(chat, canEvictMessages: true);
+            else
+            {
+                // Chat was deleted but runtime state lingered — clean up directly
+                ReleaseSessionResources(chatId, cancelActiveRequest: false, deleteServerSession: false);
+                RemoveSuggestionTracking(chatId);
+                DisposeBrowserService(chatId);
+                _runtimeStates.Remove(chatId);
+                _dataStore.RemoveChatLoadLock(chatId);
+            }
+        }
     }
 }

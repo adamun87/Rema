@@ -268,9 +268,21 @@ public class DataStore
         }
     }
 
+    /// <summary>Removes the load-serialisation lock for a chat, freeing the SemaphoreSlim.</summary>
+    public void RemoveChatLoadLock(Guid chatId)
+    {
+        lock (_chatLoadLocksSync)
+        {
+            if (_chatLoadLocks.Remove(chatId, out var semaphore))
+                semaphore.Dispose();
+        }
+    }
+
     /// <summary>Deletes the per-chat file for a given chat ID.</summary>
     public void DeleteChatFile(Guid chatId)
     {
+        RemoveChatLoadLock(chatId);
+
         var chatFile = Path.Combine(ChatsDir, $"{chatId}.json");
         if (File.Exists(chatFile))
             File.Delete(chatFile);

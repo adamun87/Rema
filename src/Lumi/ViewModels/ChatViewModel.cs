@@ -782,6 +782,10 @@ public partial class ChatViewModel : ObservableObject
                         QueueSaveChat(previousChat, saveIndex: false, releaseIfInactive: true);
                 }
 
+                // Release all non-active, non-busy runtime states that may have
+                // accumulated (e.g. from chats the user left while they were streaming).
+                SweepInactiveChatStates();
+
                 // If this chat has an active browser, show its panel (after CurrentChat is set
                 // so ActiveChatId is already updated when the MainWindow handler runs)
                 if (runtime.HasUsedBrowser && _chatBrowserServices.ContainsKey(chat.Id))
