@@ -179,10 +179,22 @@ public partial class ChatViewModel : ObservableObject
     /// <summary>MCP server names active for the current chat (empty = use all enabled).</summary>
     public List<string> ActiveMcpServerNames { get; } = [];
 
-    [ObservableProperty] private string _suggestionA = Loc.Chat_SuggestionA;
-    [ObservableProperty] private string _suggestionB = Loc.Chat_SuggestionB;
-    [ObservableProperty] private string _suggestionC = Loc.Chat_SuggestionC;
+    [ObservableProperty] private string _suggestionA = string.Empty;
+    [ObservableProperty] private string _suggestionB = string.Empty;
+    [ObservableProperty] private string _suggestionC = string.Empty;
     [ObservableProperty] private bool _isSuggestionsGenerating;
+
+    /// <summary>True when any generated suggestion chip is available (not generating, at least one non-empty).</summary>
+    public bool HasSuggestions =>
+        !IsSuggestionsGenerating &&
+        (!string.IsNullOrWhiteSpace(SuggestionA) ||
+         !string.IsNullOrWhiteSpace(SuggestionB) ||
+         !string.IsNullOrWhiteSpace(SuggestionC));
+
+    partial void OnSuggestionAChanged(string value) => OnPropertyChanged(nameof(HasSuggestions));
+    partial void OnSuggestionBChanged(string value) => OnPropertyChanged(nameof(HasSuggestions));
+    partial void OnSuggestionCChanged(string value) => OnPropertyChanged(nameof(HasSuggestions));
+    partial void OnIsSuggestionsGeneratingChanged(bool value) => OnPropertyChanged(nameof(HasSuggestions));
 
     // Events for the view to react to
     public event Action? ScrollToEndRequested;
@@ -1024,6 +1036,14 @@ public partial class ChatViewModel : ObservableObject
         CurrentChat.CopilotSessionId = null;
         _dataStore.MarkChatChanged(CurrentChat);
         _activeSession = null;
+    }
+
+    [RelayCommand]
+    private async Task SelectSuggestion(string suggestion)
+    {
+        if (string.IsNullOrWhiteSpace(suggestion)) return;
+        PromptText = suggestion;
+        await SendMessage();
     }
 
     [RelayCommand]

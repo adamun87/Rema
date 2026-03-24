@@ -103,6 +103,99 @@
       <Setter Property="MaxWidth" Value="680" />
       <Setter Property="Margin" Value="24,0,24,20" />
     </Style>
+
+    <!-- ── Transcript suggestion chips ── -->
+    <Style Selector="WrapPanel#SuggestionChipsRow">
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="RenderTransform" Value="translateY(8px)" />
+      <Setter Property="IsVisible" Value="False" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.25" Easing="CubicEaseOut" />
+          <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.3" Easing="CubicEaseOut" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="WrapPanel#SuggestionChipsRow.visible">
+      <Setter Property="IsVisible" Value="True" />
+      <Setter Property="Opacity" Value="1" />
+      <Setter Property="RenderTransform" Value="translateY(0)" />
+    </Style>
+
+    <Style Selector="Button.transcript-suggestion">
+      <Setter Property="Background" Value="{DynamicResource Brush.Surface2}" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderSubtle}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="16" />
+      <Setter Property="Padding" Value="14,7" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Height" Value="NaN" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="RenderTransformOrigin" Value="0.5,0.5" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <BrushTransition Property="Background" Duration="0:0:0.15" />
+          <BrushTransition Property="BorderBrush" Duration="0:0:0.15" />
+          <BrushTransition Property="Foreground" Duration="0:0:0.15" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Button.transcript-suggestion:pointerover">
+      <Setter Property="Background" Value="{DynamicResource Brush.ControlHover}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.AccentSubtle}" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+    </Style>
+    <Style Selector="Button.transcript-suggestion:pressed">
+      <Setter Property="RenderTransform" Value="scale(0.97)" />
+    </Style>
+    <Style Selector="Button.transcript-suggestion /template/ Border#PART_Aurora">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+
+    <!-- ── Suggestion loading pills (transcript) ── -->
+    <Style Selector="Border.suggestion-pill">
+      <Setter Property="Background" Value="{DynamicResource Brush.Surface2}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderSubtle}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="16" />
+      <Setter Property="Height" Value="34" />
+    </Style>
+    <Style Selector="Border.suggestion-pill.pill-a">
+      <Style.Animations>
+        <Animation Duration="0:0:0.95" IterationCount="INFINITE">
+          <KeyFrame Cue="0%"><Setter Property="Opacity" Value="0.3" /></KeyFrame>
+          <KeyFrame Cue="38%"><Setter Property="Opacity" Value="0.6" /></KeyFrame>
+          <KeyFrame Cue="100%"><Setter Property="Opacity" Value="0.3" /></KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+    <Style Selector="Border.suggestion-pill.pill-b">
+      <Style.Animations>
+        <Animation Duration="0:0:0.95" IterationCount="INFINITE">
+          <KeyFrame Cue="0%"><Setter Property="Opacity" Value="0.3" /></KeyFrame>
+          <KeyFrame Cue="18%"><Setter Property="Opacity" Value="0.3" /></KeyFrame>
+          <KeyFrame Cue="56%"><Setter Property="Opacity" Value="0.6" /></KeyFrame>
+          <KeyFrame Cue="100%"><Setter Property="Opacity" Value="0.3" /></KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+    <Style Selector="Border.suggestion-pill.pill-c">
+      <Style.Animations>
+        <Animation Duration="0:0:0.95" IterationCount="INFINITE">
+          <KeyFrame Cue="0%"><Setter Property="Opacity" Value="0.3" /></KeyFrame>
+          <KeyFrame Cue="36%"><Setter Property="Opacity" Value="0.3" /></KeyFrame>
+          <KeyFrame Cue="74%"><Setter Property="Opacity" Value="0.6" /></KeyFrame>
+          <KeyFrame Cue="100%"><Setter Property="Opacity" Value="0.3" /></KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+
+    <!-- ── Welcome suggestion chips (simple, minimal) ── -->
+    <Style Selector="WrapPanel#WelcomeSuggestions">
+      <Setter Property="HorizontalAlignment" Value="Center" />
+    </Style>
     <!-- Worktree toggle label transitions -->
     <Style Selector="TextBlock.wt-label">
       <Setter Property="Transitions">
@@ -681,6 +774,25 @@
           <TextBlock Classes="secondary" TextAlignment="Center" TextWrapping="Wrap"
                      Text="{loc:Str Chat_WelcomeSubtitle}" />
         </StackPanel>
+
+        <!-- Welcome suggestion chips -->
+        <WrapPanel x:Name="WelcomeSuggestions" Margin="0,16,0,0">
+          <Button Classes="transcript-suggestion" Margin="0,0,8,8"
+                  Command="{Binding SelectSuggestionCommand}"
+                  CommandParameter="{loc:Str Chat_SuggestionA}">
+            <TextBlock Text="{loc:Str Chat_SuggestionA}" />
+          </Button>
+          <Button Classes="transcript-suggestion" Margin="0,0,8,8"
+                  Command="{Binding SelectSuggestionCommand}"
+                  CommandParameter="{loc:Str Chat_SuggestionB}">
+            <TextBlock Text="{loc:Str Chat_SuggestionB}" />
+          </Button>
+          <Button Classes="transcript-suggestion" Margin="0,0,8,8"
+                  Command="{Binding SelectSuggestionCommand}"
+                  CommandParameter="{loc:Str Chat_SuggestionC}">
+            <TextBlock Text="{loc:Str Chat_SuggestionC}" />
+          </Button>
+        </WrapPanel>
       </StackPanel>
     </Panel>
 
@@ -790,6 +902,42 @@
     <StackPanel x:Name="ComposerContainer" VerticalAlignment="Bottom" ZIndex="5"
                 HorizontalAlignment="Stretch" Spacing="4"
                 Classes.welcome="{Binding IsWelcomeVisible}">
+
+      <!-- Suggestion loading pills (shown while generating) -->
+      <StackPanel x:Name="SuggestionLoadingRow"
+                  Orientation="Horizontal"
+                  Margin="4,0,4,0" Spacing="8"
+                  IsVisible="{Binding IsSuggestionsGenerating}"
+                  IsHitTestVisible="False">
+        <Border Classes="suggestion-pill pill-a" Width="120" />
+        <Border Classes="suggestion-pill pill-b" Width="148" />
+        <Border Classes="suggestion-pill pill-c" Width="104" />
+      </StackPanel>
+
+      <!-- Suggestion chips (shown after generation, above composer) -->
+      <WrapPanel x:Name="SuggestionChipsRow"
+                 Margin="4,0,4,0"
+                 Classes.visible="{Binding HasSuggestions}">
+        <Button Classes="transcript-suggestion" Margin="0,0,8,4"
+                Command="{Binding SelectSuggestionCommand}"
+                CommandParameter="{Binding SuggestionA}"
+                IsVisible="{Binding SuggestionA, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+          <TextBlock Text="{Binding SuggestionA}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" MaxWidth="320" />
+        </Button>
+        <Button Classes="transcript-suggestion" Margin="0,0,8,4"
+                Command="{Binding SelectSuggestionCommand}"
+                CommandParameter="{Binding SuggestionB}"
+                IsVisible="{Binding SuggestionB, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+          <TextBlock Text="{Binding SuggestionB}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" MaxWidth="320" />
+        </Button>
+        <Button Classes="transcript-suggestion" Margin="0,0,8,4"
+                Command="{Binding SelectSuggestionCommand}"
+                CommandParameter="{Binding SuggestionC}"
+                IsVisible="{Binding SuggestionC, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+          <TextBlock Text="{Binding SuggestionC}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" MaxWidth="320" />
+        </Button>
+      </WrapPanel>
+
       <sc:StrataAttachmentList ShowAddButton="False"
                                ItemsSource="{Binding PendingAttachmentItems}"
                                IsVisible="{Binding HasPendingAttachments}">
@@ -1047,10 +1195,6 @@
                              Models="{Binding AvailableModels}"
                              SelectedModel="{Binding SelectedModel, Mode=TwoWay}"
                              QualityLevels="{Binding QualityLevels}"
-                             SuggestionA="{Binding SuggestionA}"
-                             SuggestionB="{Binding SuggestionB}"
-                             SuggestionC="{Binding SuggestionC}"
-                             IsSuggestionsGenerating="{Binding IsSuggestionsGenerating}"
                              AgentName="{Binding SelectedAgentName, Mode=TwoWay}"
                              AgentGlyph="{Binding SelectedAgentGlyph}"
                              ProjectName="{Binding SelectedProjectName, Mode=TwoWay}"

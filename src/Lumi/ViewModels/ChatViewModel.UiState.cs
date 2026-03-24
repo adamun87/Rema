@@ -386,11 +386,8 @@ public partial class ChatViewModel
 
         if (value is null)
         {
-            // Returning to welcome — show static welcome suggestions
-            SuggestionA = Loc.Chat_SuggestionA;
-            SuggestionB = Loc.Chat_SuggestionB;
-            SuggestionC = Loc.Chat_SuggestionC;
-            IsSuggestionsGenerating = false;
+            // Returning to welcome — clear transcript suggestions
+            ClearSuggestions();
         }
     }
 
