@@ -238,6 +238,7 @@
                       <DataTemplate DataType="vm:FileAttachmentItem">
                         <sc:StrataFileAttachment FileName="{Binding FileName}"
                                                  FileSize="{Binding FileSize}"
+                                                 IconImage="{Binding IconImage}"
                                                  Status="Completed"
                                                  IsRemovable="False" />
                       </DataTemplate>
@@ -354,6 +355,7 @@
                       <DataTemplate DataType="vm:FileAttachmentItem">
                         <sc:StrataFileAttachment FileName="{Binding FileName}"
                                                  FileSize="{Binding FileSize}"
+                                                 IconImage="{Binding IconImage}"
                                                  Status="Completed"
                                                  IsRemovable="False" />
                       </DataTemplate>
@@ -938,20 +940,6 @@
         </Button>
       </WrapPanel>
 
-      <sc:StrataAttachmentList ShowAddButton="False"
-                               ItemsSource="{Binding PendingAttachmentItems}"
-                               IsVisible="{Binding HasPendingAttachments}">
-        <sc:StrataAttachmentList.ItemTemplate>
-          <DataTemplate DataType="vm:FileAttachmentItem">
-            <sc:StrataFileAttachment FileName="{Binding FileName}"
-                                     FileSize="{Binding FileSize}"
-                                     Status="Completed"
-                                     IsRemovable="{Binding IsRemovable}"
-                                     RemoveCommand="{Binding RemoveCommand}" />
-          </DataTemplate>
-        </sc:StrataAttachmentList.ItemTemplate>
-      </sc:StrataAttachmentList>
-
       <!-- Info strip (coding project + token usage) — above the composer -->
       <Border x:Name="CodingStrip" IsVisible="{Binding ShowInfoStrip}" Margin="4,0,4,0"
               RenderTransformOrigin="0.5,1">
@@ -1204,7 +1192,26 @@
                              AvailableSkills="{Binding AvailableSkillChips}"
                              AvailableMcps="{Binding AvailableMcpChips}"
                              AvailableProjects="{Binding AvailableProjectChips}"
-                             AvailableFiles="{Binding AvailableFileSuggestions}" />
+                             AvailableFiles="{Binding AvailableFileSuggestions}">
+        <sc:StrataChatComposer.AttachmentContent>
+          <sc:StrataAttachmentList ShowAddButton="False"
+                                   ItemsSource="{Binding PendingAttachmentItems}"
+                                   IsVisible="{Binding HasPendingAttachments}">
+            <sc:StrataAttachmentList.ItemTemplate>
+              <DataTemplate DataType="vm:FileAttachmentItem">
+                <sc:StrataFileAttachment FileName="{Binding FileName}"
+                                         FileSize="{Binding FileSize}"
+                                         IconImage="{Binding IconImage}"
+                                         Status="Completed"
+                                         IsCompact="True"
+                                         IsRemovable="{Binding IsRemovable}"
+                                         RemoveCommand="{Binding RemoveCommand}"
+                                         Margin="0,0,6,4" />
+              </DataTemplate>
+            </sc:StrataAttachmentList.ItemTemplate>
+          </sc:StrataAttachmentList>
+        </sc:StrataChatComposer.AttachmentContent>
+      </sc:StrataChatComposer>
     </StackPanel>
   </Panel>
 </UserControl>

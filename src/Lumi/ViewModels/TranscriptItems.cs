@@ -608,6 +608,7 @@ public partial class FileAttachmentItem : ObservableObject
     public string FileName { get; }
     public string? FileSize { get; }
     public bool IsRemovable { get; }
+    public Avalonia.Media.Imaging.Bitmap? IconImage { get; }
 
     public FileAttachmentItem(string filePath, bool isRemovable = false, Action<string>? removeAction = null)
     {
@@ -623,6 +624,8 @@ public partial class FileAttachmentItem : ObservableObject
                 FileSize = ToolDisplayHelper.FormatFileSize(info.Length);
         }
         catch { /* ignore */ }
+
+        IconImage = Services.FileIconHelper.GetFileIcon(filePath);
     }
 
     [RelayCommand]
