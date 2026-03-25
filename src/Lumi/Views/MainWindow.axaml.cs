@@ -46,7 +46,6 @@ public partial class MainWindow : Window
     private StackPanel? _projectFilterBar;
     private ScrollViewer? _projectFilterScroller;
     private readonly List<(Project Project, PropertyChangedEventHandler Handler)> _projectFilterHandlers = [];
-    private SearchOverlay? _searchOverlay;
     private ChatView? _chatView;
     private BrowserView? _browserView;
     private ContentControl? _browserHost;
@@ -228,7 +227,6 @@ public partial class MainWindow : Window
         if (_projectFilterScroller is not null)
             _projectFilterScroller.PointerWheelChanged += OnProjectFilterScrollerWheel;
 
-        _searchOverlay = this.FindControl<SearchOverlay>("SearchOverlay");
         _chatView = this.FindControl<ChatView>("PageChat");
         _browserHost = this.FindControl<ContentControl>("BrowserHost");
         _projectsHost = this.FindControl<ContentControl>("PageProjectsHost");

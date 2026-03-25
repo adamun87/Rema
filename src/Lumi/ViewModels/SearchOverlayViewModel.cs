@@ -13,15 +13,14 @@ namespace Lumi.ViewModels;
 public class SearchResultItem
 {
     public string Category { get; init; } = "";
-    public string CategoryIcon { get; init; } = ""; // SVG path data matching nav bar icons
+    public string CategoryIcon { get; init; } = "";
     public string Title { get; init; } = "";
     public string Subtitle { get; init; } = "";
-    public string IconGlyph { get; init; } = "";
     public int NavIndex { get; init; }
     public object? Item { get; init; }
-    public int Priority { get; init; } // Lower = better match
+    public int Priority { get; init; }
     public bool IsContentMatch { get; init; }
-    public int SettingsPageIndex { get; init; } = -1; // For settings results
+    public int SettingsPageIndex { get; init; } = -1;
 
     private Geometry? _categoryGeometry;
     public Geometry? CategoryGeometry => _categoryGeometry ??=
@@ -80,7 +79,6 @@ public partial class SearchOverlayViewModel : ObservableObject
         SearchQuery = "";
         SelectedIndex = 0;
         IsOpen = true;
-        PerformSearch();
     }
 
     [RelayCommand]
@@ -120,13 +118,13 @@ public partial class SearchOverlayViewModel : ObservableObject
         var allResults = new List<SearchResultItem>();
 
         // Search all categories
-        allResults.AddRange(SearchChats(query, currentNav));
-        allResults.AddRange(SearchProjects(query, currentNav));
-        allResults.AddRange(SearchSkills(query, currentNav));
-        allResults.AddRange(SearchAgents(query, currentNav));
-        allResults.AddRange(SearchMemories(query, currentNav));
-        allResults.AddRange(SearchMcpServers(query, currentNav));
-        allResults.AddRange(SearchSettings(query, currentNav));
+        allResults.AddRange(SearchChats(query));
+        allResults.AddRange(SearchProjects(query));
+        allResults.AddRange(SearchSkills(query));
+        allResults.AddRange(SearchAgents(query));
+        allResults.AddRange(SearchMemories(query));
+        allResults.AddRange(SearchMcpServers(query));
+        allResults.AddRange(SearchSettings(query));
 
         // Group results: current tab first, then others
         var groups = allResults
@@ -150,7 +148,7 @@ public partial class SearchOverlayViewModel : ObservableObject
         SelectedIndex = FlatResults.Count > 0 ? 0 : -1;
     }
 
-    private List<SearchResultItem> SearchChats(string query, int currentNav)
+    private List<SearchResultItem> SearchChats(string query)
     {
         var results = new List<SearchResultItem>();
         var chats = _dataStore.Data.Chats;
@@ -202,7 +200,7 @@ public partial class SearchOverlayViewModel : ObservableObject
         return string.IsNullOrEmpty(query) ? results.Take(3).ToList() : results;
     }
 
-    private List<SearchResultItem> SearchProjects(string query, int currentNav)
+    private List<SearchResultItem> SearchProjects(string query)
     {
         var results = new List<SearchResultItem>();
         foreach (var project in _dataStore.Data.Projects)
@@ -241,7 +239,7 @@ public partial class SearchOverlayViewModel : ObservableObject
         return string.IsNullOrEmpty(query) ? results.Take(3).ToList() : results;
     }
 
-    private List<SearchResultItem> SearchSkills(string query, int currentNav)
+    private List<SearchResultItem> SearchSkills(string query)
     {
         var results = new List<SearchResultItem>();
         foreach (var skill in _dataStore.Data.Skills)
@@ -273,7 +271,6 @@ public partial class SearchOverlayViewModel : ObservableObject
                     CategoryIcon = IconBolt,
                     Title = skill.Name,
                     Subtitle = skill.Description,
-                    IconGlyph = skill.IconGlyph,
                     NavIndex = 2,
                     Item = skill,
                     Priority = priority.Value,
@@ -284,7 +281,7 @@ public partial class SearchOverlayViewModel : ObservableObject
         return string.IsNullOrEmpty(query) ? results.Take(3).ToList() : results;
     }
 
-    private List<SearchResultItem> SearchAgents(string query, int currentNav)
+    private List<SearchResultItem> SearchAgents(string query)
     {
         var results = new List<SearchResultItem>();
         foreach (var agent in _dataStore.Data.Agents)
@@ -316,7 +313,6 @@ public partial class SearchOverlayViewModel : ObservableObject
                     CategoryIcon = IconSparkle,
                     Title = agent.Name,
                     Subtitle = agent.Description,
-                    IconGlyph = agent.IconGlyph,
                     NavIndex = 3,
                     Item = agent,
                     Priority = priority.Value,
@@ -327,7 +323,7 @@ public partial class SearchOverlayViewModel : ObservableObject
         return string.IsNullOrEmpty(query) ? results.Take(3).ToList() : results;
     }
 
-    private List<SearchResultItem> SearchMemories(string query, int currentNav)
+    private List<SearchResultItem> SearchMemories(string query)
     {
         var results = new List<SearchResultItem>();
         foreach (var memory in _dataStore.Data.Memories)
@@ -369,7 +365,7 @@ public partial class SearchOverlayViewModel : ObservableObject
         return string.IsNullOrEmpty(query) ? results.Take(3).ToList() : results;
     }
 
-    private List<SearchResultItem> SearchMcpServers(string query, int currentNav)
+    private List<SearchResultItem> SearchMcpServers(string query)
     {
         var results = new List<SearchResultItem>();
         foreach (var server in _dataStore.Data.McpServers)
@@ -446,7 +442,7 @@ public partial class SearchOverlayViewModel : ObservableObject
         ("Version", "About", 6),
     ];
 
-    private List<SearchResultItem> SearchSettings(string query, int currentNav)
+    private List<SearchResultItem> SearchSettings(string query)
     {
         if (string.IsNullOrEmpty(query)) return [];
 

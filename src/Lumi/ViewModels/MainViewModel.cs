@@ -38,11 +38,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private int _onboardingSexIndex; // 0=Male, 1=Female, 2=Prefer not to say
     [ObservableProperty] private int _onboardingLanguageIndex; // index into Loc.AvailableLanguages
     [ObservableProperty] private Guid? _selectedProjectFilter;
-    [ObservableProperty] private string _chatSearchQuery = "";
     [ObservableProperty] private bool _isSidebarCollapsed;
-
-    [RelayCommand]
-    private void ClearChatSearch() => ChatSearchQuery = "";
 
     [RelayCommand]
     private void ToggleSidebar() => IsSidebarCollapsed = !IsSidebarCollapsed;
@@ -301,16 +297,11 @@ public partial class MainViewModel : ObservableObject
 
     public void RefreshChatList()
     {
-        var query = ChatSearchQuery?.Trim();
         var chats = _dataStore.Data.Chats.AsEnumerable();
 
         // Filter by project
         if (SelectedProjectFilter.HasValue)
             chats = chats.Where(c => c.ProjectId == SelectedProjectFilter.Value);
-
-        // Filter by search
-        if (!string.IsNullOrEmpty(query))
-            chats = chats.Where(c => c.Title.Contains(query, StringComparison.OrdinalIgnoreCase));
 
         var ordered = chats.OrderByDescending(c => c.UpdatedAt).Take(50).ToList();
 
@@ -611,8 +602,6 @@ public partial class MainViewModel : ObservableObject
             SettingsVM.RestartAppCommand.Execute(null);
         }
     }
-
-    partial void OnChatSearchQueryChanged(string value) => RefreshChatList();
 
     partial void OnSelectedProjectFilterChanged(Guid? value)
     {

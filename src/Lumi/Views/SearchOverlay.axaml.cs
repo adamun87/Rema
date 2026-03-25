@@ -26,6 +26,7 @@ public partial class SearchOverlay : UserControl
     private ScrollViewer? _resultsScroller;
     private int _lastRenderedSelection = -1;
     private long _lastAnimateOpenTick;
+    private SearchOverlayViewModel? _subscribedVm;
 
     public SearchOverlay()
     {
@@ -83,28 +84,37 @@ public partial class SearchOverlay : UserControl
     {
         base.OnDataContextChanged(e);
 
+        // Unsubscribe from previous VM
+        if (_subscribedVm is not null)
+        {
+            _subscribedVm.PropertyChanged -= OnVmPropertyChanged;
+            _subscribedVm.ResultGroups.CollectionChanged -= OnResultGroupsChanged;
+            _subscribedVm = null;
+        }
+
         if (DataContext is SearchOverlayViewModel vm)
         {
-            vm.PropertyChanged += (_, args) =>
-            {
-                if (args.PropertyName == nameof(SearchOverlayViewModel.SelectedIndex))
-                    UpdateSelectionVisuals();
-                else if (args.PropertyName == nameof(SearchOverlayViewModel.IsOpen))
-                {
-                    if (!vm.IsOpen)
-                        _lastRenderedSelection = -1;
-                }
-            };
-
-            vm.ResultGroups.CollectionChanged += (_, _) =>
-            {
-                Dispatcher.UIThread.Post(() =>
-                {
-                    UpdateEmptyState();
-                    UpdateSelectionVisuals();
-                }, DispatcherPriority.Render);
-            };
+            vm.PropertyChanged += OnVmPropertyChanged;
+            vm.ResultGroups.CollectionChanged += OnResultGroupsChanged;
+            _subscribedVm = vm;
         }
+    }
+
+    private void OnVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName == nameof(SearchOverlayViewModel.SelectedIndex))
+            UpdateSelectionVisuals();
+        else if (args.PropertyName == nameof(SearchOverlayViewModel.IsOpen) && sender is SearchOverlayViewModel vm && !vm.IsOpen)
+            _lastRenderedSelection = -1;
+    }
+
+    private void OnResultGroupsChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            UpdateEmptyState();
+            UpdateSelectionVisuals();
+        }, DispatcherPriority.Render);
     }
 
     private void UpdateEmptyState()
@@ -118,6 +128,7 @@ public partial class SearchOverlay : UserControl
         if (DataContext is not SearchOverlayViewModel vm || _resultsList is null) return;
 
         var flatIndex = vm.SelectedIndex;
+        if (flatIndex == _lastRenderedSelection) return;
         _lastRenderedSelection = flatIndex;
 
         int currentFlatIndex = 0;
