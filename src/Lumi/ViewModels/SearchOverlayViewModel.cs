@@ -79,6 +79,8 @@ public partial class SearchOverlayViewModel : ObservableObject
         SearchQuery = "";
         SelectedIndex = 0;
         IsOpen = true;
+        // Always search — the setter won't fire OnSearchQueryChanged if query was already ""
+        PerformSearch();
     }
 
     [RelayCommand]
