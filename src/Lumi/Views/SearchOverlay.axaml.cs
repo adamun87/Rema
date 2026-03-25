@@ -58,7 +58,12 @@ public partial class SearchOverlay : UserControl
             if (now - _lastAnimateOpenTick < 400) return;
             _lastAnimateOpenTick = now;
 
-            // Reset stratum line to collapsed state before animating
+            // Hide card and scrim BEFORE layout to prevent the 1-frame flash
+            // (Avalonia renders at full opacity before composition animations start)
+            if (_searchCard is not null) _searchCard.Opacity = 0;
+            if (_scrim is not null) _scrim.Opacity = 0;
+
+            // Reset stratum line to collapsed state
             if (_stratumLine is not null)
             {
                 _stratumLine.Opacity = 0;
@@ -192,7 +197,11 @@ public partial class SearchOverlay : UserControl
 
     private void AnimateOpen()
     {
-        // ── Scrim fade-in ──
+        // Restore Avalonia opacity (was zeroed in OnPropertyChanged to prevent flash)
+        if (_scrim is not null) _scrim.Opacity = 1;
+        if (_searchCard is not null) _searchCard.Opacity = 1;
+
+        // ── Scrim fade-in via composition ──
         if (_scrim is not null)
         {
             var scrimVisual = ElementComposition.GetElementVisual(_scrim);
@@ -206,7 +215,7 @@ public partial class SearchOverlay : UserControl
             }
         }
 
-        // ── Card entrance (OverlayAnimationHelper-style spring) ──
+        // ── Card entrance ──
         if (_searchCard is null) return;
 
         var visual = ElementComposition.GetElementVisual(_searchCard);
