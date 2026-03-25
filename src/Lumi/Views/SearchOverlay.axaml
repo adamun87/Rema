@@ -88,9 +88,6 @@
     </Style>
     <Style Selector="Button.search-result-item.selected /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource Brush.AccentSubtle}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource Brush.AccentDefault}" />
-      <Setter Property="BorderThickness" Value="2,0,0,0" />
-      <Setter Property="CornerRadius" Value="{DynamicResource Radius.Base}" />
     </Style>
     <Style Selector="Button.search-result-item.selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource Brush.AccentSubtle}" />
@@ -240,27 +237,45 @@
                         <DataTemplate x:DataType="vm:SearchResultItem">
                           <Button Classes="search-result-item"
                                   Tag="{Binding}" Click="OnResultItemClicked">
-                            <DockPanel>
-                              <Border DockPanel.Dock="Right" Classes="content-match-badge"
-                                      IsVisible="{Binding IsContentMatch}">
-                                <TextBlock Text="in content" FontSize="10"
-                                           Foreground="{DynamicResource Brush.AccentDefault}" />
+                            <Panel>
+                              <!-- Selection pipe (Strata-style) -->
+                              <Border x:Name="SelectionPipe"
+                                      Width="2.5" Height="16" CornerRadius="1.25"
+                                      Background="{DynamicResource Brush.AccentGradient}"
+                                      HorizontalAlignment="Left" VerticalAlignment="Center"
+                                      Margin="-7,0,0,0"
+                                      IsHitTestVisible="False"
+                                      Opacity="0">
+                                <Border.Transitions>
+                                  <Transitions>
+                                    <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
+                                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.2" Easing="CubicEaseOut" />
+                                  </Transitions>
+                                </Border.Transitions>
                               </Border>
 
-                              <!-- Category icon per result -->
-                              <PathIcon DockPanel.Dock="Left"
-                                        Data="{Binding CategoryGeometry}"
-                                        Width="13" Height="13"
-                                        Foreground="{DynamicResource Brush.TextTertiary}"
-                                        Margin="0,0,10,0" VerticalAlignment="Center"
-                                        Opacity="0.45" />
+                              <DockPanel Margin="4,0,0,0">
+                                <Border DockPanel.Dock="Right" Classes="content-match-badge"
+                                        IsVisible="{Binding IsContentMatch}">
+                                  <TextBlock Text="in content" FontSize="10"
+                                             Foreground="{DynamicResource Brush.AccentDefault}" />
+                                </Border>
 
-                              <StackPanel VerticalAlignment="Center">
-                                <TextBlock Classes="search-result-title" Text="{Binding Title}" />
-                                <TextBlock Classes="search-result-subtitle" Text="{Binding Subtitle}"
-                                           IsVisible="{Binding Subtitle.Length}" />
-                              </StackPanel>
-                            </DockPanel>
+                                <!-- Category icon per result -->
+                                <PathIcon DockPanel.Dock="Left"
+                                          Data="{Binding CategoryGeometry}"
+                                          Width="13" Height="13"
+                                          Foreground="{DynamicResource Brush.TextTertiary}"
+                                          Margin="0,0,10,0" VerticalAlignment="Center"
+                                          Opacity="0.45" />
+
+                                <StackPanel VerticalAlignment="Center">
+                                  <TextBlock Classes="search-result-title" Text="{Binding Title}" />
+                                  <TextBlock Classes="search-result-subtitle" Text="{Binding Subtitle}"
+                                             IsVisible="{Binding Subtitle.Length}" />
+                                </StackPanel>
+                              </DockPanel>
+                            </Panel>
                           </Button>
                         </DataTemplate>
                       </ItemsControl.ItemTemplate>

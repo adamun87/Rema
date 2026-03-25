@@ -112,29 +112,35 @@ public partial class SearchOverlay : UserControl
         var flatIndex = vm.SelectedIndex;
         _lastRenderedSelection = flatIndex;
 
-        // Walk all result buttons and update their selected class
         int currentFlatIndex = 0;
         foreach (var groupContainer in _resultsList.GetVisualDescendants().OfType<ItemsControl>())
         {
-            // Skip the root ItemsControl
             if (groupContainer == _resultsList) continue;
 
             foreach (var button in groupContainer.GetVisualDescendants().OfType<Button>())
             {
                 if (!button.Classes.Contains("search-result-item")) continue;
 
-                if (currentFlatIndex == flatIndex)
+                var isSelected = currentFlatIndex == flatIndex;
+
+                if (isSelected)
                 {
                     if (!button.Classes.Contains("selected"))
                         button.Classes.Add("selected");
-
-                    // Scroll into view
                     button.BringIntoView();
                 }
                 else
                 {
                     button.Classes.Remove("selected");
                 }
+
+                // Toggle the selection pipe inside the button
+                var pipe = button.GetVisualDescendants()
+                    .OfType<Border>()
+                    .FirstOrDefault(b => b.Name == "SelectionPipe");
+                if (pipe is not null)
+                    pipe.Opacity = isSelected ? 1 : 0;
+
                 currentFlatIndex++;
             }
         }
