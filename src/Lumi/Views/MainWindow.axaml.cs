@@ -15,6 +15,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
+using Avalonia.Rendering.Composition;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -27,6 +28,11 @@ namespace Lumi.Views;
 
 public partial class MainWindow : Window
 {
+    private static readonly Thickness NavButtonBasePadding = new(6, 0);
+    private static readonly Thickness NavButtonCompactPadding = new(1, 0);
+    private const double NavLabelGap = 3;
+    private const double NavLabelMaxWidth = 52;
+
     private Panel? _onboardingPanel;
     private DockPanel? _mainPanel;
     private Border? _acrylicFallback;
@@ -55,6 +61,9 @@ public partial class MainWindow : Window
     private GridSplitter? _browserSplitter;
     private Grid? _chatContentGrid;
     private Border? _sidebarBorder;
+    private Border? _navPill;
+    private TextBlock?[] _navLabels = [];
+    private Rect[] _navHitRegions = [];
     private CancellationTokenSource? _sidebarAnimCts;
     private Border? _diffIsland;
     private ContentControl? _diffHost;
@@ -67,6 +76,11 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _browserAnimCts;
     private CancellationTokenSource? _shellAnimCts;
     private int _currentShellIndex = -1;
+    private int _activeNavIndex = -1;
+    private int _hoveredNavIndex = -1;
+    private bool _isNavPillWidthLocked;
+    private double[] _navBaseButtonWidths = [];
+    private double[] _navMinButtonWidths = [];
     private MainViewModel? _wiredVm;
 
     public MainWindow()
@@ -135,6 +149,7 @@ public partial class MainWindow : Window
         _chatIsland = this.FindControl<Border>("ChatIsland");
         _windowContentRoot = this.FindControl<Border>("WindowContentRoot");
         _sidebarBorder = this.FindControl<Border>("SidebarBorder");
+        _navPill = this.FindControl<Border>("NavPill");
 
         _pages =
         [
@@ -168,6 +183,9 @@ public partial class MainWindow : Window
             this.FindControl<Button>("NavMcpServers"),
             this.FindControl<Button>("NavSettings"),
         ];
+
+        WireNavHoverEvents();
+        Dispatcher.UIThread.Post(InitializeNavHoverVisuals, DispatcherPriority.Loaded);
 
         _renameOverlay = this.FindControl<Panel>("RenameOverlay");
         _renameTextBox = this.FindControl<TextBox>("RenameTextBox");
@@ -839,6 +857,7 @@ public partial class MainWindow : Window
 
     private void UpdateNavHighlight(int index)
     {
+        _activeNavIndex = index;
         for (int i = 0; i < _navButtons.Length; i++)
         {
             var btn = _navButtons[i];
@@ -849,6 +868,363 @@ public partial class MainWindow : Window
             else
                 btn.Classes.Remove("active");
         }
+
+        if (_hoveredNavIndex >= 0)
+            ApplyNavButtonLayout(_hoveredNavIndex);
+    }
+
+    private void InitializeNavHoverVisuals()
+    {
+        CaptureNavLayoutMetrics();
+        InitNavLabelVisuals();
+        LockNavPillWidth();
+        ApplyNavButtonLayout(-1);
+    }
+
+    private void InitNavLabelVisuals()
+    {
+        // Implicit Offset animation on each nav button — when the label expands
+        // and layout repositions siblings, the change animates smoothly on the
+        // render thread instead of snapping.
+        foreach (var btn in _navButtons)
+        {
+            if (btn is null) continue;
+            var v = ElementComposition.GetElementVisual(btn);
+            if (v is null) continue;
+
+            var compositor = v.Compositor;
+            var offsetAnim = compositor.CreateVector3DKeyFrameAnimation();
+            offsetAnim.Target = "Offset";
+            offsetAnim.InsertExpressionKeyFrame(1f, "this.FinalValue");
+            offsetAnim.Duration = TimeSpan.FromMilliseconds(200);
+
+            var implicitAnims = compositor.CreateImplicitAnimationCollection();
+            implicitAnims["Offset"] = offsetAnim;
+            v.ImplicitAnimations = implicitAnims;
+        }
+    }
+
+    private void CaptureNavLayoutMetrics()
+    {
+        if (_navButtons.Length == 0)
+            return;
+
+        if (_navButtons.Any(static button => button?.Bounds.Width <= 0))
+        {
+            Dispatcher.UIThread.Post(InitializeNavHoverVisuals, DispatcherPriority.Render);
+            return;
+        }
+
+        _navLabels = new TextBlock?[_navButtons.Length];
+        _navHitRegions = new Rect[_navButtons.Length];
+        _navBaseButtonWidths = new double[_navButtons.Length];
+        _navMinButtonWidths = new double[_navButtons.Length];
+        var centers = new double[_navButtons.Length];
+
+        for (var i = 0; i < _navButtons.Length; i++)
+        {
+            if (_navButtons[i] is not Button button)
+                continue;
+
+            _navLabels[i] = button
+                .GetVisualDescendants()
+                .OfType<TextBlock>()
+                .FirstOrDefault(textBlock => textBlock.Classes.Contains("nav-label"));
+
+            _navBaseButtonWidths[i] = button.Bounds.Width;
+            var contentWidth = Math.Max(0, button.Bounds.Width - (NavButtonBasePadding.Left + NavButtonBasePadding.Right));
+            _navMinButtonWidths[i] = contentWidth + NavButtonCompactPadding.Left + NavButtonCompactPadding.Right;
+
+            if (_navPill is not null)
+            {
+                var topLeft = button.TranslatePoint(default, _navPill);
+                centers[i] = (topLeft?.X ?? 0) + (button.Bounds.Width / 2d);
+            }
+        }
+
+        if (_activeNavIndex < 0)
+            _activeNavIndex = Array.FindIndex(_navButtons, button => button?.Classes.Contains("active") == true);
+
+        if (_navPill is null)
+            return;
+
+        for (var i = 0; i < _navHitRegions.Length; i++)
+        {
+            var left = i == 0 ? 0 : (centers[i - 1] + centers[i]) / 2d;
+            var right = i == _navHitRegions.Length - 1 ? _navPill.Bounds.Width : (centers[i] + centers[i + 1]) / 2d;
+            _navHitRegions[i] = new Rect(left, 0, Math.Max(0, right - left), _navPill.Bounds.Height);
+        }
+    }
+
+    private void LockNavPillWidth()
+    {
+        if (_isNavPillWidthLocked || _navPill is null)
+            return;
+
+        var width = _navPill.Bounds.Width;
+        if (width <= 0)
+        {
+            Dispatcher.UIThread.Post(LockNavPillWidth, DispatcherPriority.Render);
+            return;
+        }
+
+        _navPill.Width = Math.Ceiling(width);
+        _isNavPillWidthLocked = true;
+    }
+
+    private void WireNavHoverEvents()
+    {
+        if (_navPill is not null)
+        {
+            _navPill.PointerEntered += OnNavPillPointerEntered;
+            _navPill.PointerMoved += OnNavPillPointerMoved;
+            _navPill.PointerExited += OnNavPillPointerExited;
+            _navPill.AddHandler(PointerPressedEvent, OnNavPillPointerPressed, RoutingStrategies.Tunnel);
+        }
+    }
+
+    private void OnNavPillPointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (sender is not Border pill)
+            return;
+
+        UpdateHoveredNavButton(pill, e);
+    }
+
+    private void UpdateHoveredNavButton(Border pill, PointerEventArgs e)
+    {
+        SetHoveredNavButton(GetHoveredNavButtonIndex(pill, e.GetPosition(pill)));
+    }
+
+    private int GetHoveredNavButtonIndex(Border pill, Point pointerPosition)
+    {
+        if (_navHitRegions.Length == _navButtons.Length)
+        {
+            for (var i = 0; i < _navHitRegions.Length; i++)
+            {
+                if (_navButtons[i] is null)
+                    continue;
+
+                if (_navHitRegions[i].Contains(pointerPosition))
+                    return i;
+            }
+        }
+
+        for (var i = 0; i < _navButtons.Length; i++)
+        {
+            if (_navButtons[i] is not Button button || !button.IsVisible)
+                continue;
+
+            var topLeft = button.TranslatePoint(default, pill);
+            if (topLeft is null)
+                continue;
+
+            var bounds = new Rect(topLeft.Value, button.Bounds.Size);
+            if (bounds.Contains(pointerPosition))
+                return i;
+        }
+
+        return -1;
+    }
+
+    private void OnNavPillPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is not Border pill)
+            return;
+
+        var point = e.GetCurrentPoint(pill);
+        if (!point.Properties.IsLeftButtonPressed)
+            return;
+
+        var index = GetHoveredNavButtonIndex(pill, point.Position);
+        if (index < 0 || _navButtons[index] is not Button button)
+            return;
+
+        ExecuteNavButton(button);
+        e.Handled = true;
+    }
+
+    private void SetHoveredNavButton(int index)
+    {
+        if (_hoveredNavIndex == index)
+            return;
+
+        _hoveredNavIndex = index;
+        ApplyNavButtonLayout(index);
+    }
+
+    private void ApplyNavButtonLayout(int hoveredIndex)
+    {
+        if (_navBaseButtonWidths.Length != _navButtons.Length || _navMinButtonWidths.Length != _navButtons.Length)
+            CaptureNavLayoutMetrics();
+
+        if (_navBaseButtonWidths.Length != _navButtons.Length || _navMinButtonWidths.Length != _navButtons.Length)
+            return;
+
+        var reductions = hoveredIndex >= 0
+            ? DistributeNavReduction(hoveredIndex, GetHoveredNavExpansionWidth(hoveredIndex))
+            : new double[_navButtons.Length];
+
+        for (var i = 0; i < _navButtons.Length; i++)
+        {
+            if (_navButtons[i] is not Button button)
+                continue;
+
+            var isHovered = i == hoveredIndex;
+            SetClass(button, "hovered", isHovered);
+            button.Padding = GetNavButtonPadding(reductions[i]);
+
+            if (i < _navLabels.Length && _navLabels[i] is TextBlock label)
+                label.MaxWidth = isHovered ? MeasureNavLabelWidth(label) : 0;
+        }
+    }
+
+    private double[] DistributeNavReduction(int hoveredIndex, double requiredReduction)
+    {
+        var reductions = new double[_navButtons.Length];
+        var remaining = requiredReduction;
+        var remainingIndices = Enumerable.Range(0, _navButtons.Length)
+            .Where(index => index != hoveredIndex && index != _activeNavIndex && _navButtons[index] is not null)
+            .ToList();
+
+        while (remaining > 0.01 && remainingIndices.Count > 0)
+        {
+            var share = remaining / remainingIndices.Count;
+            for (var i = remainingIndices.Count - 1; i >= 0; i--)
+            {
+                var index = remainingIndices[i];
+                var remainingCapacity = (_navBaseButtonWidths[index] - _navMinButtonWidths[index]) - reductions[index];
+                if (remainingCapacity <= 0)
+                {
+                    remainingIndices.RemoveAt(i);
+                    continue;
+                }
+
+                var appliedReduction = Math.Min(share, remainingCapacity);
+                reductions[index] += appliedReduction;
+                remaining -= appliedReduction;
+                if (remainingCapacity - appliedReduction <= 0.01)
+                    remainingIndices.RemoveAt(i);
+            }
+        }
+
+        return reductions;
+    }
+
+    private double GetHoveredNavExpansionWidth(int hoveredIndex)
+    {
+        if (hoveredIndex < 0 || hoveredIndex >= _navLabels.Length || _navLabels[hoveredIndex] is not TextBlock label)
+            return 0;
+
+        var labelWidth = MeasureNavLabelWidth(label);
+        var desiredExpansionWidth = labelWidth > 0 ? labelWidth + NavLabelGap : 0;
+        return Math.Min(desiredExpansionWidth, GetAvailableNavReductionWidth(hoveredIndex));
+    }
+
+    private double GetAvailableNavReductionWidth(int hoveredIndex)
+    {
+        var availableWidth = 0d;
+        for (var i = 0; i < _navButtons.Length; i++)
+        {
+            if (i == hoveredIndex || i == _activeNavIndex || _navButtons[i] is null)
+                continue;
+
+            availableWidth += _navBaseButtonWidths[i] - _navMinButtonWidths[i];
+        }
+
+        return availableWidth;
+    }
+
+    private static double MeasureNavLabelWidth(TextBlock label)
+    {
+        var probe = new TextBlock
+        {
+            Text = label.Text,
+            FontFamily = label.FontFamily,
+            FontSize = label.FontSize,
+            FontStyle = label.FontStyle,
+            FontWeight = label.FontWeight,
+            FontStretch = label.FontStretch,
+            LineHeight = label.LineHeight,
+            TextWrapping = TextWrapping.NoWrap,
+            FlowDirection = label.FlowDirection,
+        };
+
+        probe.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        return Math.Min(probe.DesiredSize.Width, NavLabelMaxWidth);
+    }
+
+    private static Thickness GetNavButtonPadding(double widthReduction)
+    {
+        var horizontalPadding = Math.Clamp(
+            NavButtonBasePadding.Left - (widthReduction / 2d),
+            NavButtonCompactPadding.Left,
+            NavButtonBasePadding.Left);
+
+        return new Thickness(horizontalPadding, NavButtonBasePadding.Top, horizontalPadding, NavButtonBasePadding.Bottom);
+    }
+
+    private static void ExecuteNavButton(Button button)
+    {
+        var command = button.Command;
+        var parameter = button.CommandParameter;
+        if (command is null || !command.CanExecute(parameter))
+            return;
+
+        command.Execute(parameter);
+    }
+
+    private static void SetClass(StyledElement element, string className, bool enabled)
+    {
+        if (enabled)
+        {
+            if (!element.Classes.Contains(className))
+                element.Classes.Add(className);
+
+            return;
+        }
+
+        element.Classes.Remove(className);
+    }
+
+    private void OnNavPillPointerEntered(object? sender, PointerEventArgs e)
+    {
+        if (sender is not Border pill) return;
+
+        var visual = ElementComposition.GetElementVisual(pill);
+        if (visual is null) return;
+
+        var w = pill.Bounds.Width;
+        var h = pill.Bounds.Height;
+        visual.CenterPoint = new Avalonia.Vector3D(w / 2, h / 2, 0);
+        UpdateHoveredNavButton(pill, e);
+
+        var compositor = visual.Compositor;
+        var scaleAnim = compositor.CreateVector3DKeyFrameAnimation();
+        scaleAnim.Target = "Scale";
+        scaleAnim.InsertKeyFrame(1f, new Avalonia.Vector3D(1.12, 1.12, 1));
+        scaleAnim.Duration = TimeSpan.FromMilliseconds(250);
+        visual.StartAnimation("Scale", scaleAnim);
+    }
+
+    private void OnNavPillPointerExited(object? sender, PointerEventArgs e)
+    {
+        if (sender is not Border pill) return;
+
+        var visual = ElementComposition.GetElementVisual(pill);
+        if (visual is null) return;
+
+        var w = pill.Bounds.Width;
+        var h = pill.Bounds.Height;
+        visual.CenterPoint = new Avalonia.Vector3D(w / 2, h / 2, 0);
+        SetHoveredNavButton(-1);
+
+        var compositor = visual.Compositor;
+        var scaleAnim = compositor.CreateVector3DKeyFrameAnimation();
+        scaleAnim.Target = "Scale";
+        scaleAnim.InsertKeyFrame(1f, new Avalonia.Vector3D(1, 1, 1));
+        scaleAnim.Duration = TimeSpan.FromMilliseconds(250);
+        visual.StartAnimation("Scale", scaleAnim);
     }
 
     private void NewChatButton_Click(object? sender, RoutedEventArgs e)

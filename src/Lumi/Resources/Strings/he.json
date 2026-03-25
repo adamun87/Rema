@@ -57,6 +57,14 @@
   "Nav_McpServers": "שרתי MCP (Ctrl+6)",
   "Nav_Settings": "הגדרות (Ctrl+,)",
 
+  "NavLabel_Chats": "צ׳אטים",
+  "NavLabel_Projects": "פרויקטים",
+  "NavLabel_Skills": "כישורים",
+  "NavLabel_Lumis": "לומים",
+  "NavLabel_Memories": "זיכרונות",
+  "NavLabel_McpServers": "MCP",
+  "NavLabel_Settings": "הגדרות",
+
   "Sidebar_NewChat": "צ׳אט חדש",
   "Sidebar_NewChatTooltip": "צ׳אט חדש (Ctrl+N)",
   "Sidebar_Search": "חיפוש (Ctrl+K)",

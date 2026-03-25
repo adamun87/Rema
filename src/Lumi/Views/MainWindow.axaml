@@ -57,24 +57,37 @@
       <Setter Property="HorizontalAlignment" Value="Center" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="BoxShadow" Value="0 1 6 0 #16000000" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <BoxShadowsTransition Property="BoxShadow" Duration="0:0:0.25" Easing="CubicEaseOut" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Border.nav-pill:pointerover">
+      <Setter Property="BoxShadow" Value="0 4 16 0 #28000000" />
     </Style>
 
     <!-- Nav icon buttons inside pill -->
     <Style Selector="Button.nav-icon">
-      <Setter Property="Padding" Value="0" />
+      <Setter Property="Padding" Value="6,0" />
       <Setter Property="MinWidth" Value="0" />
       <Setter Property="MinHeight" Value="0" />
-      <Setter Property="Width" Value="26" />
       <Setter Property="Height" Value="26" />
       <Setter Property="CornerRadius" Value="9" />
       <Setter Property="BorderThickness" Value="0" />
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="Focusable" Value="False" />
       <Setter Property="Cursor" Value="Hand" />
-      <Setter Property="ToolTip.Placement" Value="Top" />
-      <Setter Property="ToolTip.VerticalOffset" Value="-6" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <ThicknessTransition Property="Padding" Duration="0:0:0.18" Easing="CubicEaseOut" />
+        </Transitions>
+      </Setter>
     </Style>
     <Style Selector="Button.nav-icon:pointerover /template/ Border#PART_Surface">
+      <Setter Property="Background" Value="#12FFFFFF" />
+    </Style>
+    <Style Selector="Button.nav-icon.hovered /template/ Border#PART_Surface">
       <Setter Property="Background" Value="#12FFFFFF" />
     </Style>
     <Style Selector="Button.nav-icon:pressed /template/ Border#PART_Surface">
@@ -84,6 +97,9 @@
       <Setter Property="Background" Value="#1CFFFFFF" />
     </Style>
     <Style Selector="Button.nav-icon.active:pointerover /template/ Border#PART_Surface">
+      <Setter Property="Background" Value="#24FFFFFF" />
+    </Style>
+    <Style Selector="Button.nav-icon.active.hovered /template/ Border#PART_Surface">
       <Setter Property="Background" Value="#24FFFFFF" />
     </Style>
     <Style Selector="Button.nav-icon PathIcon">
@@ -99,12 +115,44 @@
       <Setter Property="Opacity" Value="0.85" />
       <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
     </Style>
+    <Style Selector="Button.nav-icon.hovered PathIcon">
+      <Setter Property="Opacity" Value="0.85" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+    </Style>
     <Style Selector="Button.nav-icon:pressed PathIcon">
       <Setter Property="Opacity" Value="0.65" />
     </Style>
     <Style Selector="Button.nav-icon.active PathIcon">
       <Setter Property="Opacity" Value="1" />
       <Setter Property="Foreground" Value="{DynamicResource Brush.AccentDefault}" />
+    </Style>
+
+    <!-- Inline nav label — expands via code-behind hover classes -->
+    <Style Selector="Button.nav-icon TextBlock.nav-label">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}" />
+      <Setter Property="TextWrapping" Value="NoWrap" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="MaxWidth" Value="0" />
+      <Setter Property="Margin" Value="0" />
+      <Setter Property="IsHitTestVisible" Value="False" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.18" Easing="CubicEaseOut" />
+          <DoubleTransition Property="MaxWidth" Duration="0:0:0.2" Easing="CubicEaseOut" />
+          <ThicknessTransition Property="Margin" Duration="0:0:0.2" Easing="CubicEaseOut" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Button.nav-icon.hovered TextBlock.nav-label">
+      <Setter Property="Opacity" Value="0.85" />
+      <Setter Property="Margin" Value="3,0,0,0" />
+    </Style>
+    <Style Selector="Button.nav-icon.active.hovered TextBlock.nav-label">
+      <Setter Property="Foreground" Value="{DynamicResource Brush.AccentDefault}" />
+      <Setter Property="Opacity" Value="1" />
     </Style>
 
     <Style Selector="Button.project-pill">
@@ -159,47 +207,68 @@
           <Border DockPanel.Dock="Top" IsHitTestVisible="False" Height="30" />
 
           <!-- ── Bottom: Nav pill (always visible) ── -->
-          <Border DockPanel.Dock="Bottom" Margin="14,4,14,12">
+          <Border DockPanel.Dock="Bottom" Margin="14,4,14,12" ClipToBounds="False">
             <Border Classes="nav-pill" x:Name="NavPill"
-                    BorderBrush="#10FFFFFF">
+                    BorderBrush="#10FFFFFF" ClipToBounds="False">
               <Border.Background>
                 <SolidColorBrush Color="{DynamicResource Color.Surface1}" Opacity="0.55" />
               </Border.Background>
-              <StackPanel x:Name="NavRow" Orientation="Horizontal" Spacing="3">
-                <Button Classes="subtle nav-icon" x:Name="NavChat" ToolTip.Tip="{loc:Str Nav_Chats}"
+              <StackPanel x:Name="NavRow" Orientation="Horizontal" Spacing="3" HorizontalAlignment="Center">
+                <Button Classes="subtle nav-icon" x:Name="NavChat"
                         Command="{Binding SetNavCommand}" CommandParameter="0">
-                  <PathIcon Data="{StaticResource Icon.Chat}" Width="14" Height="14"
-                            Foreground="{DynamicResource Brush.TextSecondary}" />
+                  <StackPanel Orientation="Horizontal">
+                    <PathIcon Data="{StaticResource Icon.Chat}" Width="14" Height="14"
+                              VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextSecondary}" />
+                    <TextBlock Classes="nav-label" Text="{loc:Str NavLabel_Chats}" />
+                  </StackPanel>
                 </Button>
-                <Button Classes="subtle nav-icon" x:Name="NavProjects" ToolTip.Tip="{loc:Str Nav_Projects}"
+                <Button Classes="subtle nav-icon" x:Name="NavProjects"
                         Command="{Binding SetNavCommand}" CommandParameter="1">
-                  <PathIcon Data="{StaticResource Icon.Folder}" Width="14" Height="14"
-                            Foreground="{DynamicResource Brush.TextSecondary}" />
+                  <StackPanel Orientation="Horizontal">
+                    <PathIcon Data="{StaticResource Icon.Folder}" Width="14" Height="14"
+                              VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextSecondary}" />
+                    <TextBlock Classes="nav-label" Text="{loc:Str NavLabel_Projects}" />
+                  </StackPanel>
                 </Button>
-                <Button Classes="subtle nav-icon" x:Name="NavSkills" ToolTip.Tip="{loc:Str Nav_Skills}"
+                <Button Classes="subtle nav-icon" x:Name="NavSkills"
                         Command="{Binding SetNavCommand}" CommandParameter="2">
-                  <PathIcon Data="{StaticResource Icon.Bolt}" Width="14" Height="14"
-                            Foreground="{DynamicResource Brush.TextSecondary}" />
+                  <StackPanel Orientation="Horizontal">
+                    <PathIcon Data="{StaticResource Icon.Bolt}" Width="14" Height="14"
+                              VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextSecondary}" />
+                    <TextBlock Classes="nav-label" Text="{loc:Str NavLabel_Skills}" />
+                  </StackPanel>
                 </Button>
-                <Button Classes="subtle nav-icon" x:Name="NavAgents" ToolTip.Tip="{loc:Str Nav_Lumis}"
+                <Button Classes="subtle nav-icon" x:Name="NavAgents"
                         Command="{Binding SetNavCommand}" CommandParameter="3">
-                  <PathIcon Data="{StaticResource Icon.Sparkle}" Width="14" Height="14"
-                            Foreground="{DynamicResource Brush.TextSecondary}" />
+                  <StackPanel Orientation="Horizontal">
+                    <PathIcon Data="{StaticResource Icon.Sparkle}" Width="14" Height="14"
+                              VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextSecondary}" />
+                    <TextBlock Classes="nav-label" Text="{loc:Str NavLabel_Lumis}" />
+                  </StackPanel>
                 </Button>
-                <Button Classes="subtle nav-icon" x:Name="NavMemories" ToolTip.Tip="{loc:Str Nav_Memories}"
+                <Button Classes="subtle nav-icon" x:Name="NavMemories"
                         Command="{Binding SetNavCommand}" CommandParameter="4">
-                  <PathIcon Data="{StaticResource Icon.Memory}" Width="14" Height="14"
-                            Foreground="{DynamicResource Brush.TextSecondary}" />
+                  <StackPanel Orientation="Horizontal">
+                    <PathIcon Data="{StaticResource Icon.Memory}" Width="14" Height="14"
+                              VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextSecondary}" />
+                    <TextBlock Classes="nav-label" Text="{loc:Str NavLabel_Memories}" />
+                  </StackPanel>
                 </Button>
-                <Button Classes="subtle nav-icon" x:Name="NavMcpServers" ToolTip.Tip="{loc:Str Nav_McpServers}"
+                <Button Classes="subtle nav-icon" x:Name="NavMcpServers"
                         Command="{Binding SetNavCommand}" CommandParameter="5">
-                  <PathIcon Data="{StaticResource Icon.Plug}" Width="14" Height="14"
-                            Foreground="{DynamicResource Brush.TextSecondary}" />
+                  <StackPanel Orientation="Horizontal">
+                    <PathIcon Data="{StaticResource Icon.Plug}" Width="14" Height="14"
+                              VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextSecondary}" />
+                    <TextBlock Classes="nav-label" Text="{loc:Str NavLabel_McpServers}" />
+                  </StackPanel>
                 </Button>
-                <Button Classes="subtle nav-icon" x:Name="NavSettings" ToolTip.Tip="{loc:Str Nav_Settings}"
+                <Button Classes="subtle nav-icon" x:Name="NavSettings"
                         Command="{Binding SetNavCommand}" CommandParameter="6">
-                  <PathIcon Data="{StaticResource Icon.Gear}" Width="14" Height="14"
-                            Foreground="{DynamicResource Brush.TextSecondary}" />
+                  <StackPanel Orientation="Horizontal">
+                    <PathIcon Data="{StaticResource Icon.Gear}" Width="14" Height="14"
+                              VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextSecondary}" />
+                    <TextBlock Classes="nav-label" Text="{loc:Str NavLabel_Settings}" />
+                  </StackPanel>
                 </Button>
               </StackPanel>
             </Border>

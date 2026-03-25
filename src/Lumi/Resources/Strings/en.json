@@ -57,6 +57,14 @@
   "Nav_McpServers": "MCP Servers (Ctrl+6)",
   "Nav_Settings": "Settings (Ctrl+,)",
 
+  "NavLabel_Chats": "Chats",
+  "NavLabel_Projects": "Projects",
+  "NavLabel_Skills": "Skills",
+  "NavLabel_Lumis": "Lumis",
+  "NavLabel_Memories": "Memories",
+  "NavLabel_McpServers": "MCP",
+  "NavLabel_Settings": "Settings",
+
   "Sidebar_NewChat": "New Chat",
   "Sidebar_NewChatTooltip": "New chat (Ctrl+N)",
   "Sidebar_Search": "Search (Ctrl+K)",
