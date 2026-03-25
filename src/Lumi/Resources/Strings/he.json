@@ -534,5 +534,19 @@
   "Mcp_Install": "התקן",
   "Mcp_Installed": "מותקן",
 
-  "Chat_Loading": "טוען צ׳אט\u2026"
+  "Chat_Loading": "טוען צ׳אט\u2026",
+  "Setting_CheckForUpdates": "בדיקת עדכונים",
+  "SettingDesc_UpdateAvailable": "גרסה חדשה זמינה",
+  "Update_UpToDate": "הגרסה מעודכנת",
+  "Update_Checking": "בודק עדכונים\u2026",
+  "Update_Available": "v{0} זמינה",
+  "Update_Downloading": "מוריד\u2026 {0}%",
+  "Update_ReadyToRestart": "העדכון מוכן — הפעל מחדש",
+  "Update_Error": "בדיקת עדכונים נכשלה",
+  "Update_DevMode": "מצב פיתוח",
+  "Update_CheckNow": "בדוק עכשיו",
+  "Update_Download": "הורד",
+  "Update_Restart": "הפעל מחדש",
+  "Update_NotificationTitle": "עדכון זמין ללומי",
+  "Update_NotificationBody": "גרסה {0} מוכנה להורדה"
 }

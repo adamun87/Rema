@@ -14,6 +14,7 @@ public partial class SettingsViewModel : ObservableObject
     private readonly DataStore _dataStore;
     private readonly CopilotService _copilotService;
     private readonly BrowserService _browserService;
+    private readonly UpdateService _updateService;
 
     // ── Page navigation ──
     [ObservableProperty] private int _selectedPageIndex;
@@ -132,9 +133,36 @@ public partial class SettingsViewModel : ObservableObject
     }
 
     // ── About (read-only) ──
-    public string AppVersion => "0.1.0";
+    public string AppVersion { get; } =
+        System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version is { } v
+            ? $"{v.Major}.{v.Minor}.{v.Build}"
+            : "dev";
     public string DotNetVersion => System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription;
     public string OsVersion => System.Runtime.InteropServices.RuntimeInformation.OSDescription;
+
+    // ── Updates ──
+    [ObservableProperty] private string _updateStatusText = "";
+    [ObservableProperty] private bool _isUpdateAvailable;
+    [ObservableProperty] private bool _isUpdateDownloading;
+    [ObservableProperty] private bool _isUpdateReadyToRestart;
+    [ObservableProperty] private bool _isCheckingForUpdate;
+    [ObservableProperty] private int _updateDownloadProgress;
+
+    /// <summary>Check Now button should only show when not downloading/ready.</summary>
+    public bool IsCheckButtonVisible => !IsUpdateAvailable && !IsUpdateDownloading && !IsUpdateReadyToRestart;
+
+    partial void OnIsUpdateAvailableChanged(bool value) => OnPropertyChanged(nameof(IsCheckButtonVisible));
+    partial void OnIsUpdateDownloadingChanged(bool value) => OnPropertyChanged(nameof(IsCheckButtonVisible));
+    partial void OnIsUpdateReadyToRestartChanged(bool value) => OnPropertyChanged(nameof(IsCheckButtonVisible));
+
+    [RelayCommand]
+    private async Task CheckForUpdateAsync() => await _updateService.CheckForUpdateAsync();
+
+    [RelayCommand]
+    private async Task DownloadUpdateAsync() => await _updateService.DownloadUpdateAsync();
+
+    [RelayCommand]
+    private void ApplyUpdateAndRestart() => _updateService.ApplyUpdateAndRestart();
 
     /// <summary>Raised when a setting that affects other ViewModels changes.</summary>
     public event Action? SettingsChanged;
@@ -142,11 +170,12 @@ public partial class SettingsViewModel : ObservableObject
 
     public BrowserService BrowserService => _browserService;
 
-    public SettingsViewModel(DataStore dataStore, CopilotService copilotService, BrowserService browserService)
+    public SettingsViewModel(DataStore dataStore, CopilotService copilotService, BrowserService browserService, UpdateService updateService)
     {
         _dataStore = dataStore;
         _copilotService = copilotService;
         _browserService = browserService;
+        _updateService = updateService;
         var s = dataStore.Data.Settings;
 
         // General
@@ -189,6 +218,41 @@ public partial class SettingsViewModel : ObservableObject
         _selectedLanguage = langEntry.Code is not null
             ? $"{langEntry.DisplayName} ({langEntry.Code})"
             : $"English (en)";
+
+        // Wire update status changes
+        _updateService.StatusChanged += OnUpdateStatusChanged;
+    }
+
+    private void OnUpdateStatusChanged(UpdateStatus status)
+    {
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            IsCheckingForUpdate = status == UpdateStatus.Checking;
+            IsUpdateAvailable = status == UpdateStatus.UpdateAvailable;
+            IsUpdateDownloading = status == UpdateStatus.Downloading;
+            IsUpdateReadyToRestart = status == UpdateStatus.ReadyToRestart;
+            UpdateDownloadProgress = _updateService.DownloadProgress;
+
+            UpdateStatusText = status switch
+            {
+                UpdateStatus.Checking => Loc.Update_Checking,
+                UpdateStatus.UpToDate => Loc.Update_UpToDate,
+                UpdateStatus.UpdateAvailable => Loc.Get("Update_Available", _updateService.AvailableVersion ?? ""),
+                UpdateStatus.Downloading => Loc.Get("Update_Downloading", _updateService.DownloadProgress),
+                UpdateStatus.ReadyToRestart => Loc.Update_ReadyToRestart,
+                UpdateStatus.Error => Loc.Update_Error,
+                UpdateStatus.NotInstalled => Loc.Update_DevMode,
+                _ => ""
+            };
+
+            // System notification when update is found and window is minimized/inactive
+            if (status == UpdateStatus.UpdateAvailable)
+            {
+                NotificationService.ShowIfInactive(
+                    Loc.Update_NotificationTitle,
+                    Loc.Get("Update_NotificationBody", _updateService.AvailableVersion ?? ""));
+            }
+        });
     }
 
     // ── Auto-save on every property change + notify IsModified ──

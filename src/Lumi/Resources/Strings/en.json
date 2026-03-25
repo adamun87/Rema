@@ -534,5 +534,19 @@
   "Mcp_Install": "Install",
   "Mcp_Installed": "Installed",
 
-  "Chat_Loading": "Loading chat\u2026"
+  "Chat_Loading": "Loading chat\u2026",
+  "Setting_CheckForUpdates": "Check for Updates",
+  "SettingDesc_UpdateAvailable": "A new version is available",
+  "Update_UpToDate": "You're up to date",
+  "Update_Checking": "Checking for updates\u2026",
+  "Update_Available": "v{0} available",
+  "Update_Downloading": "Downloading\u2026 {0}%",
+  "Update_ReadyToRestart": "Update ready — restart to apply",
+  "Update_Error": "Update check failed",
+  "Update_DevMode": "Running in dev mode",
+  "Update_CheckNow": "Check Now",
+  "Update_Download": "Download",
+  "Update_Restart": "Restart",
+  "Update_NotificationTitle": "Lumi Update Available",
+  "Update_NotificationBody": "Version {0} is ready to download"
 }

@@ -34,7 +34,9 @@ public partial class App : Application
             Loc.Load(dataStore.Data.Settings.Language);
 
             var copilotService = new CopilotService();
-            var vm = new MainViewModel(dataStore, copilotService, Program.ForceOnboarding);
+            var updateService = new UpdateService();
+            updateService.Initialize();
+            var vm = new MainViewModel(dataStore, copilotService, updateService, Program.ForceOnboarding);
 
             // Save data and dispose CopilotService on app shutdown.
             // The window is already hidden at this point so nothing blocks the user.
@@ -42,6 +44,7 @@ public partial class App : Application
             // an in-flight fire-and-forget save that needs the dispatcher to complete.
             desktop.ShutdownRequested += (_, _) =>
             {
+                updateService.Dispose();
                 Task.Run(async () =>
                 {
                     try
@@ -99,6 +102,9 @@ public partial class App : Application
 
                     if (!string.IsNullOrWhiteSpace(globalHotkey))
                         _hotkeyService.Register(globalHotkey);
+
+                    // Start checking for updates in background
+                    updateService.StartPeriodicChecks();
                 }, DispatcherPriority.Background);
             };
 

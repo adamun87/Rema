@@ -1,6 +1,7 @@
 using Avalonia;
 using System;
 using System.Linq;
+using Velopack;
 #if DEBUG
 using AvaloniaMcp.Diagnostics;
 #endif
@@ -15,6 +16,9 @@ class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // Velopack must run before anything else — it may apply updates and exit immediately
+        VelopackApp.Build().Run();
+
         ForceOnboarding = args.Contains("--onboarding", StringComparer.OrdinalIgnoreCase);
 
 #if DEBUG

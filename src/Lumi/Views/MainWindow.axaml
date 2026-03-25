@@ -304,8 +304,15 @@
                         Command="{Binding SetNavCommand}" CommandParameter="6">
                   <StackPanel Orientation="Horizontal">
                     <TextBlock Classes="nav-label" Text="{loc:Str NavLabel_Settings}" />
-                    <PathIcon Data="{StaticResource Icon.Gear}" Width="14" Height="14"
-                               VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextSecondary}" />
+                    <Panel>
+                      <PathIcon Data="{StaticResource Icon.Gear}" Width="14" Height="14"
+                                 VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextSecondary}" />
+                      <Border x:Name="UpdateBadge" Width="7" Height="7" CornerRadius="4"
+                              Background="{DynamicResource Brush.AccentDefault}"
+                              HorizontalAlignment="Right" VerticalAlignment="Top"
+                              Margin="0,-1,-1,0"
+                              IsVisible="{Binding SettingsVM.IsUpdateAvailable}" />
+                    </Panel>
                   </StackPanel>
                 </Button>
               </StackPanel>

@@ -73,7 +73,7 @@ public partial class MainViewModel : ObservableObject
     // Project list for filter
     public ObservableCollection<Project> Projects { get; } = [];
 
-    public MainViewModel(DataStore dataStore, CopilotService copilotService, bool forceOnboarding = false)
+    public MainViewModel(DataStore dataStore, CopilotService copilotService, UpdateService updateService, bool forceOnboarding = false)
     {
         _dataStore = dataStore;
         _copilotService = copilotService;
@@ -112,7 +112,7 @@ public partial class MainViewModel : ObservableObject
         ProjectsVM = new ProjectsViewModel(dataStore);
         MemoriesVM = new MemoriesViewModel(dataStore);
         McpServersVM = new McpServersViewModel(dataStore);
-        SettingsVM = new SettingsViewModel(dataStore, copilotService, _settingsBrowserService);
+        SettingsVM = new SettingsViewModel(dataStore, copilotService, _settingsBrowserService, updateService);
         SettingsVM.LoginVM = LoginVM;
         SearchOverlayVM = new SearchOverlayViewModel(dataStore, () => SelectedNavIndex);
 
