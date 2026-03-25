@@ -215,6 +215,34 @@
           <!-- ── Top: Title bar inset (respects window chrome) ── -->
           <Border DockPanel.Dock="Top" IsHitTestVisible="False" Height="30" />
 
+          <!-- ── Search button (opens command palette) ── -->
+          <Border DockPanel.Dock="Top" Margin="16,4,16,0">
+            <Button Classes="subtle" HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Left"
+                    CornerRadius="{DynamicResource Radius.Base}"
+                    Padding="10,7" MinHeight="0"
+                    ToolTip.Tip="{loc:Str Sidebar_Search}"
+                    Click="SearchButton_Click">
+              <DockPanel>
+                <Border DockPanel.Dock="Right"
+                        Background="{DynamicResource Brush.ControlDefault}"
+                        CornerRadius="4" Padding="5,1"
+                        BorderBrush="{DynamicResource Brush.BorderSubtle}"
+                        BorderThickness="1">
+                  <TextBlock Text="Ctrl+K" FontSize="10"
+                             Foreground="{DynamicResource Brush.TextTertiary}" />
+                </Border>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <PathIcon Data="{StaticResource Icon.Search}" Width="12" Height="12"
+                            Foreground="{DynamicResource Brush.TextTertiary}" />
+                  <TextBlock Text="{loc:Str Sidebar_Search_Short}" FontSize="{DynamicResource Font.SizeCaption}"
+                             Foreground="{DynamicResource Brush.TextTertiary}"
+                             VerticalAlignment="Center" />
+                </StackPanel>
+              </DockPanel>
+            </Button>
+          </Border>
+
           <!-- ── Bottom: Nav pill (always visible) ── -->
           <Border DockPanel.Dock="Bottom" Margin="14,4,14,12" ClipToBounds="False">
             <Border Classes="nav-pill" x:Name="NavPill"

@@ -20,6 +20,7 @@ public class SearchResultItem
     public object? Item { get; init; }
     public int Priority { get; init; } // Lower = better match
     public bool IsContentMatch { get; init; }
+    public int SettingsPageIndex { get; init; } = -1; // For settings results
 }
 
 public class SearchResultGroup
@@ -107,6 +108,7 @@ public partial class SearchOverlayViewModel : ObservableObject
         allResults.AddRange(SearchAgents(query, currentNav));
         allResults.AddRange(SearchMemories(query, currentNav));
         allResults.AddRange(SearchMcpServers(query, currentNav));
+        allResults.AddRange(SearchSettings(query, currentNav));
 
         // Group results: current tab first, then others
         var groups = allResults
@@ -391,5 +393,64 @@ public partial class SearchOverlayViewModel : ObservableObject
     {
         if (!projectId.HasValue) return null;
         return _dataStore.Data.Projects.FirstOrDefault(p => p.Id == projectId.Value)?.Name;
+    }
+
+    // ── Settings search ──
+
+    private static readonly (string Name, string Page, int PageIndex)[] SettingsIndex =
+    [
+        ("Your Name", "Profile", 0),
+        ("Language", "Profile", 0),
+        ("Launch at Startup", "General", 1),
+        ("Start Minimized", "General", 1),
+        ("Minimize to Tray", "General", 1),
+        ("Enable Notifications", "General", 1),
+        ("Global Hotkey", "General", 1),
+        ("Dark Mode", "Appearance", 2),
+        ("Compact Density", "Appearance", 2),
+        ("Font Size", "Appearance", 2),
+        ("Show Animations", "Appearance", 2),
+        ("Send with Enter", "Chat", 3),
+        ("Show Timestamps", "Chat", 3),
+        ("Show Tool Calls", "Chat", 3),
+        ("Show Reasoning", "Chat", 3),
+        ("Expand Reasoning While Streaming", "Chat", 3),
+        ("Auto Generate Titles", "Chat", 3),
+        ("GitHub Account", "AI & Models", 4),
+        ("Preferred Model", "AI & Models", 4),
+        ("Reasoning Effort", "AI & Models", 4),
+        ("Auto Save Memories", "Privacy & Data", 5),
+        ("Auto Save Chats", "Privacy & Data", 5),
+        ("Import Browser Cookies", "Privacy & Data", 5),
+        ("Clear All Chats", "Privacy & Data", 5),
+        ("Clear All Memories", "Privacy & Data", 5),
+        ("Reset All Settings", "Privacy & Data", 5),
+        ("Version", "About", 6),
+    ];
+
+    private List<SearchResultItem> SearchSettings(string query, int currentNav)
+    {
+        if (string.IsNullOrEmpty(query)) return [];
+
+        var results = new List<SearchResultItem>();
+        foreach (var (name, page, pageIndex) in SettingsIndex)
+        {
+            if (name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                page.Contains(query, StringComparison.OrdinalIgnoreCase))
+            {
+                var priority = name.StartsWith(query, StringComparison.OrdinalIgnoreCase) ? 0 : 10;
+                results.Add(new SearchResultItem
+                {
+                    Category = "Settings",
+                    CategoryGlyph = "⚙",
+                    Title = name,
+                    Subtitle = page,
+                    NavIndex = 6,
+                    Priority = priority,
+                    SettingsPageIndex = pageIndex,
+                });
+            }
+        }
+        return results;
     }
 }

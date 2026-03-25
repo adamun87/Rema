@@ -1326,6 +1326,12 @@ public partial class MainWindow : Window
         Dispatcher.UIThread.Post(() => _chatView?.FocusComposer(), DispatcherPriority.Input);
     }
 
+    private void SearchButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel vm)
+            vm.SearchOverlayVM.Open();
+    }
+
     private void OnOnboardingDragStripPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
@@ -1828,6 +1834,15 @@ public partial class MainWindow : Window
 
                 case McpServer server:
                     vm.McpServersVM.SelectedServer = server;
+                    break;
+
+                default:
+                    // Settings result — navigate to the specific settings page
+                    if (result.SettingsPageIndex >= 0)
+                    {
+                        vm.SettingsVM.SearchQuery = "";
+                        vm.SettingsVM.SelectedPageIndex = result.SettingsPageIndex;
+                    }
                     break;
             }
         });

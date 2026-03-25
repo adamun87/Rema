@@ -28,7 +28,7 @@
       <Setter Property="ClipToBounds" Value="True" />
     </Style>
 
-    <!-- Search input styling — suppress all Strata TextBox chrome -->
+    <!-- Search input styling — fully suppress Strata TextBox chrome -->
     <Style Selector="TextBox.search-input">
       <Setter Property="FontSize" Value="15" />
       <Setter Property="Padding" Value="10,12" />
@@ -37,19 +37,30 @@
       <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
       <Setter Property="CaretBrush" Value="{DynamicResource Brush.AccentDefault}" />
     </Style>
-    <Style Selector="TextBox.search-input:focus">
-      <Setter Property="BorderThickness" Value="0" />
-    </Style>
-    <Style Selector="TextBox.search-input:pointerover">
+    <Style Selector="TextBox.search-input /template/ Border#PART_Border">
       <Setter Property="Background" Value="Transparent" />
-    </Style>
-    <Style Selector="TextBox.search-input:focus /template/ Border#PART_BorderElement">
       <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BoxShadow" Value="0 0 0 0 Transparent" />
+      <Setter Property="MinHeight" Value="0" />
     </Style>
-    <Style Selector="TextBox.search-input /template/ Border#PART_BorderElement">
-      <Setter Property="BorderThickness" Value="0" />
+    <Style Selector="TextBox.search-input:focus /template/ Border#PART_Border">
       <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="BoxShadow" Value="0 0 0 0 Transparent" />
+    </Style>
+    <Style Selector="TextBox.search-input:focus-within /template/ Border#PART_Border">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="BoxShadow" Value="0 0 0 0 Transparent" />
+    </Style>
+    <Style Selector="TextBox.search-input:pointerover /template/ Border#PART_Border">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="BoxShadow" Value="0 0 0 0 Transparent" />
+    </Style>
+    <Style Selector="TextBox.search-input:focus-within /template/ Border#FocusAccentBar">
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="IsVisible" Value="False" />
     </Style>
 
     <!-- Category header -->
@@ -70,11 +81,19 @@
       <Setter Property="CornerRadius" Value="{DynamicResource Radius.Base}" />
       <Setter Property="BorderThickness" Value="0" />
       <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <BrushTransition Property="Background" Duration="0:0:0.12" />
+        </Transitions>
+      </Setter>
     </Style>
     <Style Selector="Button.search-result-item:pointerover /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource Brush.ControlHover}" />
     </Style>
     <Style Selector="Button.search-result-item.selected /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource Brush.AccentSubtle}" />
+    </Style>
+    <Style Selector="Button.search-result-item.selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource Brush.AccentSubtle}" />
     </Style>
 
