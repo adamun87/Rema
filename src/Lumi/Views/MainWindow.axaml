@@ -1082,9 +1082,18 @@
 
     <!-- ═══ Onboarding Overlay ═══ -->
     <Panel x:Name="OnboardingPanel" IsVisible="True">
-      <Border Background="{DynamicResource Brush.SurfaceCard}" />
-      <views:OnboardingView x:Name="OnboardingView"
-                             DataContext="{Binding OnboardingVM}" />
+      <Grid RowDefinitions="38,*">
+        <Grid Grid.Row="0" ColumnDefinitions="*,144">
+          <Border x:Name="OnboardingDragStrip"
+                  Grid.Column="0"
+                  Background="Transparent"
+                  PointerPressed="OnOnboardingDragStripPointerPressed" />
+        </Grid>
+        <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceCard}" />
+        <views:OnboardingView Grid.Row="1"
+                              x:Name="OnboardingView"
+                              DataContext="{Binding OnboardingVM}" />
+      </Grid>
     </Panel>
 
     <!-- ═══ Rename Dialog Overlay ═══ -->

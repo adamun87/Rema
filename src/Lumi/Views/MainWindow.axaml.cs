@@ -1298,6 +1298,15 @@ public partial class MainWindow : Window
         Dispatcher.UIThread.Post(() => _chatView?.FocusComposer(), DispatcherPriority.Input);
     }
 
+    private void OnOnboardingDragStripPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+            return;
+
+        BeginMoveDrag(e);
+        e.Handled = true;
+    }
+
     private void AttachListBoxHandlers()
     {
         foreach (var lb in this.GetVisualDescendants().OfType<ListBox>())
