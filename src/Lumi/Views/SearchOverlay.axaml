@@ -154,9 +154,20 @@
     <!-- Search card -->
     <Border Classes="search-card" x:Name="SearchCard">
       <DockPanel>
-        <!-- Stratum line accent at top -->
+        <!-- Stratum line accent at top — animates on open -->
         <Border DockPanel.Dock="Top" Height="2"
-                Background="{DynamicResource Brush.StratumLine}" />
+                Background="{DynamicResource Brush.StratumLine}"
+                x:Name="StratumLine"
+                RenderTransformOrigin="0.5,0.5"
+                RenderTransform="scaleX(0)"
+                Opacity="0">
+          <Border.Transitions>
+            <Transitions>
+              <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.35" Easing="CubicEaseOut" />
+              <DoubleTransition Property="Opacity" Duration="0:0:0.2" />
+            </Transitions>
+          </Border.Transitions>
+        </Border>
 
         <!-- Search input area -->
         <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource Brush.BorderSubtle}"
@@ -225,8 +236,9 @@
                         <TextBlock Text="Current" FontSize="10" FontWeight="Medium"
                                    Foreground="{DynamicResource Brush.AccentDefault}" />
                       </Border>
-                      <TextBlock Text="{Binding CategoryGlyph}" FontSize="11" Margin="0,0,6,0"
-                                 VerticalAlignment="Center" />
+                      <PathIcon Data="{Binding CategoryGeometry}" Width="12" Height="12"
+                                Foreground="{DynamicResource Brush.TextTertiary}"
+                                Margin="0,0,7,0" VerticalAlignment="Center" />
                       <TextBlock Classes="search-category"
                                  Text="{Binding Category}" VerticalAlignment="Center" />
                     </DockPanel>

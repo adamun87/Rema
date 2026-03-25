@@ -1,11 +1,13 @@
 using System;
 using System.Linq;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
+using Avalonia.Media.Transformation;
 using Avalonia.Rendering.Composition;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -17,11 +19,13 @@ public partial class SearchOverlay : UserControl
 {
     private Border? _scrim;
     private Border? _searchCard;
+    private Border? _stratumLine;
     private TextBox? _searchInput;
     private ItemsControl? _resultsList;
     private TextBlock? _emptyState;
     private ScrollViewer? _resultsScroller;
     private int _lastRenderedSelection = -1;
+    private bool _isAnimating;
 
     public SearchOverlay()
     {
@@ -33,6 +37,7 @@ public partial class SearchOverlay : UserControl
         AvaloniaXamlLoader.Load(this);
         _scrim = this.FindControl<Border>("Scrim");
         _searchCard = this.FindControl<Border>("SearchCard");
+        _stratumLine = this.FindControl<Border>("StratumLine");
         _searchInput = this.FindControl<TextBox>("SearchInput");
         _resultsList = this.FindControl<ItemsControl>("ResultsList");
         _emptyState = this.FindControl<TextBlock>("EmptyState");
@@ -46,15 +51,23 @@ public partial class SearchOverlay : UserControl
     {
         base.OnPropertyChanged(change);
 
-        if (change.Property == IsVisibleProperty && change.GetNewValue<bool>())
+        if (change.Property == IsVisibleProperty && change.GetNewValue<bool>() && !_isAnimating)
         {
-            // Focus the search input when overlay becomes visible
+            _isAnimating = true;
+            // Reset stratum line to collapsed state before animating
+            if (_stratumLine is not null)
+            {
+                _stratumLine.Opacity = 0;
+                _stratumLine.RenderTransform = TransformOperations.Parse("scaleX(0)");
+            }
+
             Dispatcher.UIThread.Post(() =>
             {
                 _searchInput?.Focus();
                 _searchInput?.SelectAll();
                 AnimateOpen();
-            }, DispatcherPriority.Input);
+                _isAnimating = false;
+            }, DispatcherPriority.Render);
         }
     }
 
@@ -177,15 +190,15 @@ public partial class SearchOverlay : UserControl
 
         var w = (float)_searchCard.Bounds.Width;
         var h = (float)_searchCard.Bounds.Height;
-        if (w <= 0) w = 640;
+        if (w <= 0) w = 560;
         if (h <= 0) h = 400;
-        visual.CenterPoint = new System.Numerics.Vector3(w / 2f, h / 2f, 0f);
+        visual.CenterPoint = new System.Numerics.Vector3(w / 2f, 0f, 0f);
 
-        // Scale animation: 0.95 → 1.0
+        // Scale animation: 0.97 → 1.0 (subtle, vertical only from top)
         var scaleAnim = compositor.CreateVector3KeyFrameAnimation();
-        scaleAnim.InsertKeyFrame(0f, new System.Numerics.Vector3(0.95f, 0.95f, 1f));
+        scaleAnim.InsertKeyFrame(0f, new System.Numerics.Vector3(1f, 0.97f, 1f));
         scaleAnim.InsertKeyFrame(1f, new System.Numerics.Vector3(1f, 1f, 1f));
-        scaleAnim.Duration = TimeSpan.FromMilliseconds(180);
+        scaleAnim.Duration = TimeSpan.FromMilliseconds(200);
         visual.StartAnimation("Scale", scaleAnim);
 
         // Opacity animation: 0 → 1
@@ -194,6 +207,18 @@ public partial class SearchOverlay : UserControl
         opacityAnim.InsertKeyFrame(1f, 1f);
         opacityAnim.Duration = TimeSpan.FromMilliseconds(150);
         visual.StartAnimation("Opacity", opacityAnim);
+
+        // Animate stratum line: scaleX(0) → scaleX(1) with a slight delay
+        if (_stratumLine is not null)
+        {
+            Dispatcher.UIThread.Post(async () =>
+            {
+                await Task.Delay(80);
+                if (_stratumLine is null) return;
+                _stratumLine.Opacity = 1;
+                _stratumLine.RenderTransform = TransformOperations.Parse("scaleX(1)");
+            });
+        }
     }
 
     /// <summary>Called from result item button clicks.</summary>
