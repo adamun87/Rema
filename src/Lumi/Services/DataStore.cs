@@ -153,6 +153,7 @@ public class DataStore
                 ToolStatus = m.ToolStatus,
                 ToolOutput = m.ToolOutput,
                 IsStreaming = m.IsStreaming,
+                Model = m.Model,
                 Attachments = [..m.Attachments],
                 ActiveSkills = [..m.ActiveSkills.Select(static s => new SkillReference
                 {

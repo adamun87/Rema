@@ -43,6 +43,7 @@ public class TranscriptBuilder
     public HashSet<string> ShownFileChips { get; } = new(StringComparer.OrdinalIgnoreCase);
     public List<SkillReference> PendingFetchedSkillRefs { get; } = [];
     private PlanCardItem? _pendingPlanCard;
+    private string? _pendingModelName;
 
     public void SetLiveTarget(ObservableCollection<TranscriptTurn> target) => _liveTarget = target;
 
@@ -83,6 +84,7 @@ public class TranscriptBuilder
         CloseCurrentToolGroup();
         FlushPendingFileEdits();
         FlushPendingPlanCard();
+        FlushPendingModelLabel();
         CollapseAllCompletedTurns();
         FinalizeCurrentTurn();
 
@@ -111,6 +113,7 @@ public class TranscriptBuilder
         _typingTurn = null;
         _currentTurn = null;
         _pendingPlanCard = null;
+        _pendingModelName = null;
         _terminalPreviewsByToolCallId.Clear();
         _toolParentById.Clear();
         _subagentsByToolCallId.Clear();
@@ -677,6 +680,7 @@ public class TranscriptBuilder
         {
             FlushPendingFileEdits();
             FlushPendingPlanCard();
+            FlushPendingModelLabel();
             FinalizeCurrentTurn();
 
             var userItem = new UserMessageItem(msgVm, showTimestamps, (msg, edited) => _ = _resendFromMessageAction(msg, edited));
@@ -692,6 +696,7 @@ public class TranscriptBuilder
         }
 
         var assistantItem = new AssistantMessageItem(msgVm, showTimestamps);
+        _pendingModelName = ChatViewModel.FormatModelDisplay(msgVm.Message.Model);
         if (!msgVm.IsStreaming && (PendingToolFileChips.Count > 0 || msgVm.Message.Sources.Count > 0 || msgVm.Message.ActiveSkills.Count > 0))
         {
             assistantItem.ApplyExtras(PendingToolFileChips.Count > 0 ? PendingToolFileChips.ToList() : null);
@@ -780,6 +785,29 @@ public class TranscriptBuilder
 
         AppendToCurrentTurn(_pendingPlanCard, TurnStableIdFor("plan"));
         _pendingPlanCard = null;
+    }
+
+    private void FlushPendingModelLabel()
+    {
+        if (string.IsNullOrWhiteSpace(_pendingModelName))
+            return;
+
+        AppendToCurrentTurn(new TurnModelItem(_pendingModelName), TurnStableIdFor("turn-model"));
+        _pendingModelName = null;
+    }
+
+    /// <summary>Appends a model label at the end of the current turn (called at AssistantTurnEnd).</summary>
+    public void AppendModelLabel(string? modelId)
+    {
+        var displayName = ChatViewModel.FormatModelDisplay(modelId);
+        if (string.IsNullOrWhiteSpace(displayName))
+            return;
+
+        // Avoid duplicate model labels in the same turn (agentic multi-turn)
+        if (_currentTurn is not null && _currentTurn.Items.Any(static i => i is TurnModelItem))
+            return;
+
+        AppendToCurrentTurn(new TurnModelItem(displayName), TurnStableIdFor("turn-model"));
     }
 
     private List<FileChangeItem> GroupFileEdits()

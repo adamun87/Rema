@@ -398,16 +398,18 @@
               </ContentControl.DataTemplates>
             </ContentControl>
 
-            <!-- Model label -->
-            <TextBlock Text="{Binding ModelName}"
-                       IsVisible="{Binding ModelName, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                       FontSize="10"
-                       Foreground="{DynamicResource Brush.TextTertiary}"
-                       Margin="0,2,0,0" />
-
           </StackPanel>
         </sc:StrataChatMessage.Content>
       </sc:StrataChatMessage>
+    </DataTemplate>
+
+    <!-- ── Turn model label (end of turn) ── -->
+    <DataTemplate DataType="vm:TurnModelItem">
+      <TextBlock Text="{Binding ModelName}"
+                 FontSize="10"
+                 Foreground="{DynamicResource Brush.TextTertiary}"
+                 Margin="0,4,0,0"
+                 HorizontalAlignment="Left" />
     </DataTemplate>
 
     <!-- ── File changes summary (separate item at end of turn) ── -->

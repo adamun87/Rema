@@ -806,3 +806,16 @@ public partial class PlanCardItem : TranscriptItem
     [RelayCommand]
     private void Open() => _openAction?.Invoke();
 }
+
+// ── Turn model label (end of turn) ──────────────────
+
+public partial class TurnModelItem : TranscriptItem
+{
+    [ObservableProperty] private string _modelName;
+
+    public TurnModelItem(string modelName, string? stableId = null)
+        : base(stableId ?? TranscriptIds.Create("turn-model"))
+    {
+        _modelName = modelName;
+    }
+}

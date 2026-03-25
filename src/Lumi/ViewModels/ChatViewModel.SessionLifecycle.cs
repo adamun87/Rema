@@ -863,6 +863,7 @@ public partial class ChatViewModel
                     {
                         _transcriptBuilder.HideTypingIndicator();
                         _transcriptBuilder.CloseCurrentToolGroup();
+                        _transcriptBuilder.AppendModelLabel(chat.LastModelUsed);
                         IsBusy = runtime.IsBusy;
                         IsStreaming = runtime.IsStreaming;
                         StatusText = runtime.StatusText;
