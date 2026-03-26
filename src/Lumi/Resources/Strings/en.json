@@ -98,8 +98,8 @@
   "Chat_WelcomeSubtitle": "Start a conversation, use a skill, or switch to a Lumi agent.",
   "Chat_Placeholder": "Message Lumi\u2026",
   "Chat_SuggestionA": "Plan my day",
-  "Chat_SuggestionB": "Summarize this",
-  "Chat_SuggestionC": "Help me write",
+  "Chat_SuggestionB": "Research a topic",
+  "Chat_SuggestionC": "Create a document",
   "Chat_AvatarLetter": "L",
 
   "Editor_Lumi": "Lumi Editor",

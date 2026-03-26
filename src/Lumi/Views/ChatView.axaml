@@ -154,13 +154,19 @@
       <Setter Property="IsVisible" Value="False" />
     </Style>
 
+    <!-- ── In-chat suggestion chips (smaller than welcome) ── -->
+    <Style Selector="WrapPanel#SuggestionChipsRow Button.transcript-suggestion">
+      <Setter Property="Padding" Value="10,4" />
+      <Setter Property="FontSize" Value="10" />
+    </Style>
+
     <!-- ── Suggestion loading pills (transcript) ── -->
     <Style Selector="Border.suggestion-pill">
       <Setter Property="Background" Value="{DynamicResource Brush.Surface2}" />
       <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderSubtle}" />
       <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="16" />
-      <Setter Property="Height" Value="34" />
+      <Setter Property="CornerRadius" Value="14" />
+      <Setter Property="Height" Value="30" />
     </Style>
     <Style Selector="Border.suggestion-pill.pill-a">
       <Style.Animations>
@@ -764,7 +770,7 @@
     <Panel x:Name="WelcomePanel" Classes.active="{Binding IsWelcomeVisible}">
       <!-- Centered greeting (offset up to leave room for composer) -->
       <StackPanel x:Name="WelcomeGreeting" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16"
-                  MaxWidth="480" Margin="0,0,0,120">
+                  MaxWidth="560" Margin="0,0,0,120">
         <Border x:Name="WelcomeOrb" Width="64" Height="64" CornerRadius="14"
                 HorizontalAlignment="Center" Opacity="0.9" ClipToBounds="True">
           <Image Source="avares://Lumi/Assets/lumi-icon.png"
@@ -784,17 +790,26 @@
           <Button Classes="transcript-suggestion" Margin="0,0,8,8"
                   Command="{Binding SelectSuggestionCommand}"
                   CommandParameter="{loc:Str Chat_SuggestionA}">
-            <TextBlock Text="{loc:Str Chat_SuggestionA}" />
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock Text="☀️" />
+              <TextBlock Text="{loc:Str Chat_SuggestionA}" />
+            </StackPanel>
           </Button>
           <Button Classes="transcript-suggestion" Margin="0,0,8,8"
                   Command="{Binding SelectSuggestionCommand}"
                   CommandParameter="{loc:Str Chat_SuggestionB}">
-            <TextBlock Text="{loc:Str Chat_SuggestionB}" />
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock Text="🔍" />
+              <TextBlock Text="{loc:Str Chat_SuggestionB}" />
+            </StackPanel>
           </Button>
           <Button Classes="transcript-suggestion" Margin="0,0,8,8"
                   Command="{Binding SelectSuggestionCommand}"
                   CommandParameter="{loc:Str Chat_SuggestionC}">
-            <TextBlock Text="{loc:Str Chat_SuggestionC}" />
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock Text="📄" />
+              <TextBlock Text="{loc:Str Chat_SuggestionC}" />
+            </StackPanel>
           </Button>
         </WrapPanel>
       </StackPanel>
