@@ -42,7 +42,6 @@ public partial class ChatView : UserControl
     private bool _viewportEvaluationQueued;
     private bool _viewportEvaluationRequested;
     private ScrollAnchorState? _pendingResizeAnchor;
-    private readonly Dictionary<string, double> _observedTurnHeights = new(StringComparer.Ordinal);
 
     private static readonly string ClipboardImagesDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -162,8 +161,6 @@ public partial class ChatView : UserControl
         UnsubscribeMountedTurns();
         _subscribedMountedTurns = mountedTurns;
         _subscribedMountedTurns.CollectionChanged += OnMountedTurnsChanged;
-        foreach (var turn in _subscribedMountedTurns)
-            SubscribeToTurn(turn);
     }
 
     private void UnsubscribeMountedTurns()
@@ -172,10 +169,6 @@ public partial class ChatView : UserControl
             return;
 
         _subscribedMountedTurns.CollectionChanged -= OnMountedTurnsChanged;
-        foreach (var turn in _subscribedMountedTurns)
-            turn.PropertyChanged -= OnMountedTurnPropertyChanged;
-
-        _observedTurnHeights.Clear();
         _subscribedMountedTurns = null;
     }
 
@@ -207,66 +200,10 @@ public partial class ChatView : UserControl
 
     private void OnMountedTurnsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        if (e.OldItems is not null)
-        {
-            foreach (TranscriptTurn turn in e.OldItems)
-            {
-                turn.PropertyChanged -= OnMountedTurnPropertyChanged;
-                _observedTurnHeights.Remove(turn.StableId);
-            }
-        }
-
-        if (e.NewItems is not null)
-        {
-            foreach (TranscriptTurn turn in e.NewItems)
-                SubscribeToTurn(turn);
-        }
-    }
-
-    private void SubscribeToTurn(TranscriptTurn turn)
-    {
-        _observedTurnHeights[turn.StableId] = turn.MeasuredHeight;
-        turn.PropertyChanged += OnMountedTurnPropertyChanged;
-    }
-
-    // ── Scroll management ────────────────────────────────
-
-    private void OnMountedTurnPropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName != nameof(TranscriptTurn.MeasuredHeight)
-            || sender is not TranscriptTurn turn
-            || _chatShell is null
-            || _transcriptScrollViewer is null
-            || _isApplyingTranscriptMutation)
-            return;
-
-        _observedTurnHeights.TryGetValue(turn.StableId, out var previousHeight);
-        _observedTurnHeights[turn.StableId] = turn.MeasuredHeight;
-
-        var delta = turn.MeasuredHeight - previousHeight;
-        if (Math.Abs(delta) < 0.5)
-            return;
-
-        // During active streaming ScrollToEnd() manages positioning — skip
-        // compensation for all turns (not just the streaming one) to avoid
-        // scroll-position fights that cause visible jumps.
-        if (TurnHasStreamingContent(turn) || _subscribedVm is { IsBusy: true })
-            return;
-
-        var control = FindRealizedTurnControl(turn.StableId);
-        var point = control?.TranslatePoint(default, _transcriptScrollViewer);
-        if (control is null || point is null)
-            return;
-
-        if (_chatShell.IsPinnedToBottom)
-            return;
-
-        if (point.Value.Y + control.Bounds.Height > 0)
-            return;
-
-        var beforeOffset = _chatShell.VerticalOffset;
-        _chatShell.ScrollToVerticalOffset(beforeOffset + delta);
-        _subscribedVm?.RecordTranscriptScrollCompensation("height-change", beforeOffset, _chatShell.VerticalOffset);
+        // Placeholder for future per-turn subscription needs.
+        // Height compensation was removed — scroll anchoring during paging
+        // is handled by CaptureAnchor/RestoreAnchor and the shell's
+        // ScrollToEnd takes care of streaming positioning.
     }
 
     private void OnScrollToEndRequested() => _chatShell?.ScrollToEnd();
@@ -560,21 +497,6 @@ public partial class ChatView : UserControl
             return false;
 
         return Math.Abs(Math.Abs(e.OffsetDelta.Y) - extentDeltaY) <= LayoutShiftDeltaTolerance;
-    }
-
-    private static bool TurnHasStreamingContent(TranscriptTurn turn)
-    {
-        foreach (var item in turn.Items)
-        {
-            if (item is AssistantMessageItem { IsStreaming: true }
-                or ReasoningItem { IsActive: true }
-                or SubagentToolCallItem { IsActive: true })
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     // ── File picker (requires View-level StorageProvider) ──
