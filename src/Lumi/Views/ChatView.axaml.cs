@@ -22,9 +22,6 @@ namespace Lumi.Views;
 
 public partial class ChatView : UserControl
 {
-    private const double ScrollMutationDeltaThreshold = 0.05d;
-    private const double LayoutShiftDeltaTolerance = 0.2d;
-
     private StrataChatShell? _chatShell;
     private StrataChatComposer? _composer;
     private Panel? _composerSpacer;
@@ -184,7 +181,7 @@ public partial class ChatView : UserControl
             return;
         }
 
-        _transcriptScrollViewer.ScrollChanged += OnTranscriptScrollChanged;
+        _chatShell.TranscriptViewportChanged += OnTranscriptViewportChanged;
         _transcriptScrollViewer.SizeChanged += OnTranscriptViewportSizeChanged;
     }
 
@@ -193,7 +190,8 @@ public partial class ChatView : UserControl
         if (_transcriptScrollViewer is null)
             return;
 
-        _transcriptScrollViewer.ScrollChanged -= OnTranscriptScrollChanged;
+        if (_chatShell is not null)
+            _chatShell.TranscriptViewportChanged -= OnTranscriptViewportChanged;
         _transcriptScrollViewer.SizeChanged -= OnTranscriptViewportSizeChanged;
         _transcriptScrollViewer = null;
     }
@@ -207,6 +205,14 @@ public partial class ChatView : UserControl
     }
 
     private void OnScrollToEndRequested() => _chatShell?.ScrollToEnd();
+
+    private void SyncTranscriptPinnedState()
+    {
+        if (_subscribedVm is null || _chatShell is null)
+            return;
+
+        _subscribedVm.UpdateTranscriptPinnedState(_chatShell.IsPinnedToBottom, _chatShell.CurrentDistanceFromBottom);
+    }
 
     private void OnUserMessageSent()
     {
@@ -234,7 +240,7 @@ public partial class ChatView : UserControl
         viewModel.EnsureMountedTranscriptCoverage(chatShell.ViewportHeight);
         await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Loaded);
         chatShell.ScrollToEnd();
-        viewModel.UpdateTranscriptPinnedState(chatShell.IsPinnedToBottom, chatShell.CurrentDistanceFromBottom);
+        SyncTranscriptPinnedState();
         FocusComposer();
 
         // After ScrollToEnd settles, adjust if the user message is barely hidden.
@@ -289,17 +295,13 @@ public partial class ChatView : UserControl
             _chatShell.ScrollToVerticalOffset(0);
     }
 
-    private void OnTranscriptScrollChanged(object? sender, ScrollChangedEventArgs e)
+    private void OnTranscriptViewportChanged(object? sender, StrataTranscriptViewportChangedEventArgs e)
     {
-        if (_isApplyingTranscriptMutation || _subscribedVm is null || _chatShell is null || _transcriptScrollViewer is null)
+        if (_isApplyingTranscriptMutation || _subscribedVm is null)
             return;
 
-        _subscribedVm.UpdateTranscriptPinnedState(_chatShell.IsPinnedToBottom, _chatShell.CurrentDistanceFromBottom);
-
-        if (Math.Abs(e.OffsetDelta.Y) < ScrollMutationDeltaThreshold)
-            return;
-
-        if (IsLikelyLayoutDrivenOffsetChange(e))
+        _subscribedVm.UpdateTranscriptPinnedState(e.IsPinnedToBottom, e.DistanceFromBottom);
+        if (e.IsPinnedToBottom)
             return;
 
         QueueTranscriptViewportEvaluation();
@@ -330,7 +332,9 @@ public partial class ChatView : UserControl
                 var mutation = _subscribedVm.UpdateTranscriptViewport(
                     _chatShell.VerticalOffset,
                     _chatShell.ViewportHeight,
-                    _chatShell.ExtentHeight);
+                    _chatShell.ExtentHeight,
+                    _chatShell.IsPinnedToBottom,
+                    _chatShell.CurrentDistanceFromBottom);
 
                 if (!mutation.HasChanges)
                 {
@@ -422,8 +426,7 @@ public partial class ChatView : UserControl
             if (mutation.RequiresAnchorRestore)
                 RestoreAnchor(anchor, mutation.Kind == TranscriptWindowMutationKind.Prepend ? "prepend" : "cleanup");
 
-            if (_chatShell is not null && _subscribedVm is not null)
-                _subscribedVm.UpdateTranscriptPinnedState(_chatShell.IsPinnedToBottom, _chatShell.CurrentDistanceFromBottom);
+            SyncTranscriptPinnedState();
         }
         finally
         {
@@ -484,19 +487,6 @@ public partial class ChatView : UserControl
         return itemsHost is null
             ? Enumerable.Empty<TranscriptTurnControl>()
             : itemsHost.GetVisualDescendants().OfType<TranscriptTurnControl>();
-    }
-
-    private static bool IsLikelyLayoutDrivenOffsetChange(ScrollChangedEventArgs e)
-    {
-        var extentDeltaY = Math.Abs(e.ExtentDelta.Y);
-        if (extentDeltaY < ScrollMutationDeltaThreshold)
-            return false;
-
-        var viewportDeltaY = Math.Abs(e.ViewportDelta.Y);
-        if (viewportDeltaY > ScrollMutationDeltaThreshold)
-            return false;
-
-        return Math.Abs(Math.Abs(e.OffsetDelta.Y) - extentDeltaY) <= LayoutShiftDeltaTolerance;
     }
 
     // ── File picker (requires View-level StorageProvider) ──

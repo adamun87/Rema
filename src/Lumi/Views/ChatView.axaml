@@ -299,7 +299,9 @@
                             IsStreaming="{Binding IsStreaming}">
         <sc:StrataChatMessage.Content>
           <StackPanel Spacing="6">
-            <lc:TranscriptTextContent Text="{Binding Content}" />
+            <lc:TranscriptTextContent Text="{Binding Content}"
+                                      PreferPlainText="{Binding IsStreaming}"
+                                      RenderMarkdownWhileStreaming="True" />
 
             <!-- Skills section -->
             <ContentControl Content="{Binding DisplaySkills}"
@@ -619,6 +621,7 @@
 
             <lc:TranscriptTextContent Text="{Binding TranscriptText}"
                                       PreferPlainText="{Binding IsActive}"
+                                      RenderMarkdownWhileStreaming="True"
                                       IsVisible="{Binding HasTranscriptText}" />
 
             <ItemsControl ItemsSource="{Binding Activities}"
@@ -808,7 +811,9 @@
 
     <!-- Active chat -->
     <Panel x:Name="ChatPanel" Classes.active="{Binding IsChatVisible}">
-      <sc:StrataChatShell x:Name="ChatShell" IsOnline="True">
+      <sc:StrataChatShell x:Name="ChatShell"
+                          IsOnline="True"
+                          IsStreaming="{Binding IsStreaming}">
 
         <sc:StrataChatShell.Header>
           <DockPanel Margin="0,0,8,0">

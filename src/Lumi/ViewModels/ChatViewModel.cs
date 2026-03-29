@@ -370,15 +370,20 @@ public partial class ChatViewModel : ObservableObject
         return mutation;
     }
 
-    internal TranscriptWindowMutation UpdateTranscriptViewport(double offsetY, double viewportHeight, double extentHeight)
+    internal TranscriptWindowMutation UpdateTranscriptViewport(
+        double offsetY,
+        double viewportHeight,
+        double extentHeight,
+        bool isPinnedToBottom,
+        double distanceFromBottom)
     {
         var mutation = _transcriptWindow.UpdateViewport(
             new TranscriptViewportState(
                 offsetY,
                 viewportHeight,
                 extentHeight,
-                _transcriptWindow.IsPinnedToBottom,
-                _transcriptWindow.DistanceFromBottom),
+                isPinnedToBottom,
+                distanceFromBottom),
             "scroll");
         if (ShowTranscriptDiagnostics)
             OnPropertyChanged(nameof(TranscriptDiagnosticsText));
