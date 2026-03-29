@@ -77,7 +77,7 @@ public class DataStore
     /// </summary>
     public void Save()
     {
-        SaveAsync().GetAwaiter().GetResult();
+        Task.Run(() => SaveAsync()).GetAwaiter().GetResult();
     }
 
     /// <summary>
