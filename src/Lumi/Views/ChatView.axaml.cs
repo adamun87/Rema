@@ -39,6 +39,8 @@ public partial class ChatView : UserControl
     private bool _viewportEvaluationQueued;
     private bool _viewportEvaluationRequested;
     private ScrollAnchorState? _pendingResizeAnchor;
+    private readonly Dictionary<string, double> _observedTurnHeights = new(StringComparer.Ordinal);
+    private readonly HashSet<TranscriptTurn> _heightSubscribedTurns = new();
 
     private static readonly string ClipboardImagesDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -158,6 +160,8 @@ public partial class ChatView : UserControl
         UnsubscribeMountedTurns();
         _subscribedMountedTurns = mountedTurns;
         _subscribedMountedTurns.CollectionChanged += OnMountedTurnsChanged;
+        foreach (var turn in _subscribedMountedTurns)
+            SubscribeToTurnHeight(turn);
     }
 
     private void UnsubscribeMountedTurns()
@@ -166,6 +170,7 @@ public partial class ChatView : UserControl
             return;
 
         _subscribedMountedTurns.CollectionChanged -= OnMountedTurnsChanged;
+        UnsubscribeAllTurnHeights();
         _subscribedMountedTurns = null;
     }
 
@@ -198,10 +203,87 @@ public partial class ChatView : UserControl
 
     private void OnMountedTurnsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        // Placeholder for future per-turn subscription needs.
-        // Height compensation was removed — scroll anchoring during paging
-        // is handled by CaptureAnchor/RestoreAnchor and the shell's
-        // ScrollToEnd takes care of streaming positioning.
+        if (e.Action == NotifyCollectionChangedAction.Reset)
+        {
+            // Reset fires with OldItems=null — use tracked set to unsubscribe.
+            UnsubscribeAllTurnHeights();
+
+            if (_subscribedMountedTurns is not null)
+            {
+                foreach (var turn in _subscribedMountedTurns)
+                    SubscribeToTurnHeight(turn);
+            }
+            return;
+        }
+
+        if (e.OldItems is not null)
+        {
+            foreach (TranscriptTurn turn in e.OldItems)
+            {
+                turn.PropertyChanged -= OnMountedTurnPropertyChanged;
+                _observedTurnHeights.Remove(turn.StableId);
+                _heightSubscribedTurns.Remove(turn);
+            }
+        }
+
+        if (e.NewItems is not null)
+        {
+            foreach (TranscriptTurn turn in e.NewItems)
+                SubscribeToTurnHeight(turn);
+        }
+    }
+
+    private void UnsubscribeAllTurnHeights()
+    {
+        foreach (var turn in _heightSubscribedTurns)
+            turn.PropertyChanged -= OnMountedTurnPropertyChanged;
+        _heightSubscribedTurns.Clear();
+        _observedTurnHeights.Clear();
+    }
+
+    private void SubscribeToTurnHeight(TranscriptTurn turn)
+    {
+        _observedTurnHeights[turn.StableId] = turn.MeasuredHeight;
+        _heightSubscribedTurns.Add(turn);
+        turn.PropertyChanged += OnMountedTurnPropertyChanged;
+    }
+
+    private void OnMountedTurnPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(TranscriptTurn.MeasuredHeight)
+            || sender is not TranscriptTurn turn
+            || _chatShell is null
+            || _transcriptScrollViewer is null
+            || _isApplyingTranscriptMutation)
+            return;
+
+        _observedTurnHeights.TryGetValue(turn.StableId, out var previousHeight);
+        _observedTurnHeights[turn.StableId] = turn.MeasuredHeight;
+
+        var delta = turn.MeasuredHeight - previousHeight;
+        if (Math.Abs(delta) < 0.5)
+            return;
+
+        // During active streaming ScrollToEnd() manages positioning — skip
+        // compensation for all turns to avoid scroll-position fights.
+        if (_subscribedVm is { IsBusy: true })
+            return;
+
+        if (_chatShell.IsPinnedToBottom)
+            return;
+
+        var control = FindRealizedTurnControl(turn.StableId);
+        var point = control?.TranslatePoint(default, _transcriptScrollViewer);
+        if (control is null || point is null)
+            return;
+
+        // Only compensate for turns fully above the viewport.
+        if (point.Value.Y + control.Bounds.Height > 0)
+            return;
+
+        var beforeOffset = _chatShell.VerticalOffset;
+        _chatShell.ScrollToVerticalOffset(beforeOffset + delta);
+        _subscribedVm?.RecordTranscriptScrollCompensation("height-change", beforeOffset, _chatShell.VerticalOffset);
     }
 
     private void OnScrollToEndRequested() => _chatShell?.ScrollToEnd();

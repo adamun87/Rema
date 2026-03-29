@@ -862,7 +862,10 @@ public partial class ChatViewModel
                     Dispatcher.UIThread.Post(() =>
                     {
                     if (_activeSession == session)
+                    {
                         _transcriptBuilder.AppendModelLabel(turnModelId);
+                        ScrollToEndRequested?.Invoke();
+                    }
                     });
 
                     // The SDK tells us if background tasks (shells/agents) are still running.
@@ -893,7 +896,10 @@ public partial class ChatViewModel
 
                     // Flush file changes only when session is truly idle (not between agentic turns).
                     if (_activeSession == session)
+                    {
                         _transcriptBuilder.FlushPendingFileEdits();
+                        ScrollToEndRequested?.Invoke();
+                    }
 
                     // Memory checkpoint + suggestions only when session is truly idle.
                     // Running these on every AssistantTurnEndEvent creates a storm of

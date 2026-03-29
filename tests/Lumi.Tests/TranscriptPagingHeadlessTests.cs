@@ -274,6 +274,95 @@ public sealed class TranscriptPagingHeadlessTests
         await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Loaded);
     }
 
+    [Fact]
+    public async Task HeightChangeAboveViewport_CompensatedByScrollOffset()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+
+        await session.Dispatch(async () =>
+        {
+            var controller = new TranscriptWindowController(new TranscriptPagingOptions
+            {
+                MaxPageWeight = 4,
+                MaxTurnsPerPage = 2,
+                MinInitialPages = 3,
+                MaxMountedPages = 6,
+            });
+            var source = CreateVisualTurns(20);
+            controller.BindTranscript(source, "ui-anchor");
+            controller.ResetToLatest(400, "ui-anchor");
+
+            var (window, shell, scrollViewer) = await CreateHostAsync(controller);
+            try
+            {
+                // Scroll to a middle position — not at the bottom.
+                shell.ResetAutoScroll();
+                shell.ScrollToEnd();
+                await PumpAsync();
+
+                var midOffset = shell.ExtentHeight / 2;
+                shell.ScrollToVerticalOffset(midOffset);
+                await PumpAsync();
+
+                // Capture the first visible turn as our anchor.
+                var anchorBefore = CaptureAnchor(window, scrollViewer);
+                Assert.NotNull(anchorBefore);
+
+                // Find a turn whose visual control is fully above the viewport.
+                TranscriptTurnControl? aboveTurn = null;
+                foreach (var ttc in window.GetVisualDescendants().OfType<TranscriptTurnControl>())
+                {
+                    if (ttc.Turn is null) continue;
+                    var pt = ttc.TranslatePoint(default, scrollViewer);
+                    if (pt is null) continue;
+                    // Fully above viewport
+                    if (pt.Value.Y + ttc.Bounds.Height < 0)
+                    {
+                        aboveTurn = ttc;
+                        break;
+                    }
+                }
+
+                Assert.NotNull(aboveTurn);
+                var turnModel = aboveTurn!.Turn!;
+                var heightBefore = turnModel.MeasuredHeight;
+
+                // Add a new item to the turn — this will increase its rendered height.
+                turnModel.Items.Add(new VisualTranscriptItem(
+                    $"extra:{turnModel.StableId}", 120, "Extra content"));
+                await PumpAsync();
+
+                var heightAfter = turnModel.MeasuredHeight;
+                var heightDelta = heightAfter - heightBefore;
+                Assert.True(heightDelta > 1, "Turn height should have increased.");
+
+                // Without compensation the anchor drifts by roughly heightDelta.
+                var anchorDrifted = CaptureAnchor(window, scrollViewer);
+                Assert.NotNull(anchorDrifted);
+                Assert.Equal(anchorBefore!.Value.StableId, anchorDrifted!.Value.StableId);
+
+                var drift = anchorDrifted.Value.ViewportY - anchorBefore.Value.ViewportY;
+                Assert.True(Math.Abs(drift) > 1,
+                    $"Expected viewport drift from height change, but drift was {drift:F1}px");
+
+                // Apply height compensation (same logic as ChatView.OnMountedTurnPropertyChanged).
+                shell.ScrollToVerticalOffset(shell.VerticalOffset + heightDelta);
+                await PumpAsync();
+
+                var anchorAfterCompensation = CaptureAnchor(window, scrollViewer);
+                Assert.NotNull(anchorAfterCompensation);
+                Assert.Equal(anchorBefore.Value.StableId, anchorAfterCompensation!.Value.StableId);
+                Assert.InRange(
+                    Math.Abs(anchorAfterCompensation.Value.ViewportY - anchorBefore.Value.ViewportY),
+                    0, 2.0);
+            }
+            finally
+            {
+                window.Close();
+            }
+        }, CancellationToken.None);
+    }
+
     private static int GetHostedItemCount(TranscriptTurnControl control)
     {
         return Assert.IsType<StackPanel>(control.Content).Children.Count;
