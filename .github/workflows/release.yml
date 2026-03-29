@@ -48,7 +48,8 @@ jobs:
           endpoint: https://wus2.codesigning.azure.net/
           trusted-signing-account-name: acsfluentsearch
           certificate-profile-name: profileFluentSearch1
-          files: publish\Lumi.exe
+          files-folder: ${{ github.workspace }}\publish
+          files-folder-filter: exe
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
@@ -77,8 +78,8 @@ jobs:
           endpoint: https://wus2.codesigning.azure.net/
           trusted-signing-account-name: acsfluentsearch
           certificate-profile-name: profileFluentSearch1
-          files-folder: Releases
-          files-folder-filter: '*.exe'
+          files-folder: ${{ github.workspace }}\Releases
+          files-folder-filter: exe
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
