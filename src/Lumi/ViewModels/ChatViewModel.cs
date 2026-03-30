@@ -406,6 +406,14 @@ public partial class ChatViewModel : ObservableObject
         return changed;
     }
 
+    internal bool MountTranscriptPageContainingTurn(TranscriptTurn turn)
+    {
+        var changed = _transcriptWindow.MountPageContainingTurn(turn, "search-navigate");
+        if (changed && ShowTranscriptDiagnostics)
+            OnPropertyChanged(nameof(TranscriptDiagnosticsText));
+        return changed;
+    }
+
     internal void RecordTranscriptScrollCompensation(string reason, double beforeOffset, double afterOffset)
     {
         _transcriptWindow.RecordScrollCompensation(reason, beforeOffset, afterOffset);

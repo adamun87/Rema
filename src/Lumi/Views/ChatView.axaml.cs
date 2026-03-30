@@ -8,6 +8,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Documents;
 using Avalonia.Input;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media.Imaging;
@@ -41,6 +42,18 @@ public partial class ChatView : UserControl
     private ScrollAnchorState? _pendingResizeAnchor;
     private readonly Dictionary<string, double> _observedTurnHeights = new(StringComparer.Ordinal);
     private readonly HashSet<TranscriptTurn> _heightSubscribedTurns = new();
+
+    // ── Ctrl+F search state ──
+    private Border? _searchBar;
+    private TextBox? _searchInput;
+    private TextBlock? _searchMatchCounter;
+    private readonly List<SearchHit> _searchHits = [];
+    private int _currentHitIndex = -1;
+    private SelectableTextBlock? _highlightedStb;
+    private System.Threading.CancellationTokenSource? _searchDebounce;
+
+    /// <summary>A match against a TranscriptItem's raw content, with the occurrence index within that item.</summary>
+    private sealed record SearchHit(TranscriptTurn Turn, TranscriptItem Item, int OccurrenceInItem, string Query);
 
     private static readonly string ClipboardImagesDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -98,12 +111,32 @@ public partial class ChatView : UserControl
         AddHandler(StrataFileAttachment.OpenRequestedEvent, OnFileAttachmentOpenRequested);
         AddHandler(StrataChatMessage.CopyTurnRequestedEvent, OnCopyTurnRequested);
         SizeChanged += OnChatViewSizeChanged;
+
+        // ── Search bar controls ──
+        _searchBar = this.FindControl<Border>("SearchBar");
+        _searchInput = this.FindControl<TextBox>("SearchInput");
+        _searchMatchCounter = this.FindControl<TextBlock>("SearchMatchCounter");
+
+        var searchPrevBtn = this.FindControl<Button>("SearchPrevBtn");
+        var searchNextBtn = this.FindControl<Button>("SearchNextBtn");
+        var searchCloseBtn = this.FindControl<Button>("SearchCloseBtn");
+
+        if (_searchInput is not null)
+        {
+            _searchInput.TextChanged += (_, _) => OnSearchQueryChanged();
+            _searchInput.KeyDown += OnSearchInputKeyDown;
+        }
+
+        if (searchPrevBtn is not null) searchPrevBtn.Click += (_, _) => NavigateSearchMatch(-1);
+        if (searchNextBtn is not null) searchNextBtn.Click += (_, _) => NavigateSearchMatch(1);
+        if (searchCloseBtn is not null) searchCloseBtn.Click += (_, _) => CloseSearch();
     }
 
     protected override void OnDataContextChanged(EventArgs e)
     {
         base.OnDataContextChanged(e);
         UnsubscribeFromViewModel();
+        ResetSearchState();
 
         if (DataContext is ChatViewModel vm)
         {
@@ -333,6 +366,10 @@ public partial class ChatView : UserControl
             await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Loaded);
             AdjustScrollAfterTurnCompleted();
         }
+
+        // Re-execute search if active (mounted turns changed)
+        if (!string.IsNullOrWhiteSpace(_searchInput?.Text))
+            ExecuteSearch();
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -772,5 +809,288 @@ public partial class ChatView : UserControl
 
         _worktreeHighlight.Width = target.Bounds.Width;
         _worktreeHighlight.Margin = new Thickness(target.Bounds.Left, 0, 0, 0);
+    }
+
+    // ── Ctrl+F in-chat search ────────────────────────────
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (e.Handled) return;
+
+        var ctrl = (e.KeyModifiers & KeyModifiers.Control) != 0;
+
+        if (ctrl && e.Key == Key.F)
+        {
+            OpenSearch();
+            e.Handled = true;
+        }
+    }
+
+    private void OnSearchInputKeyDown(object? sender, KeyEventArgs e)
+    {
+        var shift = (e.KeyModifiers & KeyModifiers.Shift) != 0;
+
+        switch (e.Key)
+        {
+            case Key.Escape:
+                CloseSearch();
+                e.Handled = true;
+                break;
+            case Key.Enter:
+                FlushPendingSearch();
+                NavigateSearchMatch(shift ? -1 : 1);
+                e.Handled = true;
+                break;
+            case Key.F3:
+                FlushPendingSearch();
+                NavigateSearchMatch(shift ? -1 : 1);
+                e.Handled = true;
+                break;
+        }
+    }
+
+    /// <summary>If a debounced search is pending, execute it immediately.</summary>
+    private void FlushPendingSearch()
+    {
+        if (_searchDebounce is not null && !_searchDebounce.IsCancellationRequested)
+        {
+            _searchDebounce.Cancel();
+            _searchDebounce.Dispose();
+            _searchDebounce = null;
+            ExecuteSearch();
+        }
+    }
+
+    private void OpenSearch()
+    {
+        if (_searchBar is null || _searchInput is null) return;
+
+        _searchBar.Classes.Add("open");
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            _searchInput.Focus();
+            _searchInput.SelectAll();
+        }, DispatcherPriority.Input);
+    }
+
+    private void CloseSearch()
+    {
+        if (_searchBar is null) return;
+
+        _searchDebounce?.Cancel();
+        _searchDebounce?.Dispose();
+        _searchDebounce = null;
+        _searchBar.Classes.Remove("open");
+        ResetSearchState();
+
+        FocusComposer();
+    }
+
+    private void OnSearchQueryChanged()
+    {
+        _searchDebounce?.Cancel();
+        _searchDebounce?.Dispose();
+        _searchDebounce = new System.Threading.CancellationTokenSource();
+        var token = _searchDebounce.Token;
+
+        Dispatcher.UIThread.Post(async () =>
+        {
+            try
+            {
+                await Task.Delay(200, token);
+            }
+            catch (TaskCanceledException)
+            {
+                return;
+            }
+
+            if (token.IsCancellationRequested) return;
+            ExecuteSearch();
+        });
+    }
+
+    private void ExecuteSearch()
+    {
+        var query = _searchInput?.Text;
+        _searchHits.Clear();
+        _currentHitIndex = -1;
+        ClearSearchHighlight();
+
+        if (string.IsNullOrWhiteSpace(query) || _subscribedVm is null)
+        {
+            UpdateSearchCounter();
+            return;
+        }
+
+        // Search ALL transcript turns (including unmounted/off-screen)
+        foreach (var turn in _subscribedVm.TranscriptTurns)
+        {
+            foreach (var item in turn.Items)
+            {
+                var content = item switch
+                {
+                    UserMessageItem u => u.Content,
+                    AssistantMessageItem a => a.Content,
+                    ErrorMessageItem err => err.Content,
+                    ReasoningItem r => r.Content,
+                    _ => null
+                };
+                if (content is null) continue;
+
+                // Count occurrences in the raw content (case-insensitive)
+                var pos = 0;
+                var occurrence = 0;
+                while (pos < content.Length)
+                {
+                    var idx = content.IndexOf(query, pos, StringComparison.OrdinalIgnoreCase);
+                    if (idx < 0) break;
+                    _searchHits.Add(new SearchHit(turn, item, occurrence, query));
+                    occurrence++;
+                    pos = idx + query.Length;
+                }
+            }
+        }
+
+        if (_searchHits.Count > 0)
+            _currentHitIndex = 0;
+
+        UpdateSearchCounter();
+    }
+
+    private async void NavigateSearchMatch(int direction)
+    {
+        if (_searchHits.Count == 0) return;
+
+        ClearSearchHighlight();
+        _currentHitIndex = (_currentHitIndex + direction + _searchHits.Count) % _searchHits.Count;
+        UpdateSearchCounter();
+
+        var hit = _searchHits[_currentHitIndex];
+        if (_subscribedVm is null) return;
+
+        // Ensure the turn's page is mounted
+        _subscribedVm.MountTranscriptPageContainingTurn(hit.Turn);
+
+        // Wait for layout so the newly mounted controls are in the visual tree
+        await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Loaded);
+
+        HighlightHit(hit);
+    }
+
+    private void HighlightHit(SearchHit hit)
+    {
+        var query = hit.Query;
+        if (string.IsNullOrEmpty(query) || _transcript is null) return;
+
+        // Find the visual for this item
+        Control? itemVisual = null;
+        foreach (var d in _transcript.GetVisualDescendants())
+        {
+            if (d is Avalonia.Controls.Presenters.ContentPresenter cp &&
+                ReferenceEquals(cp.Content, hit.Item))
+            { itemVisual = cp; break; }
+        }
+        if (itemVisual is null) return;
+
+        // Walk SelectableTextBlocks inside, find the Nth occurrence
+        var occurrencesSeen = 0;
+        foreach (var d in itemVisual.GetVisualDescendants())
+        {
+            if (d is not SelectableTextBlock stb || !stb.IsVisible) continue;
+
+            var text = ExtractStbText(stb, out var posMap);
+            if (string.IsNullOrEmpty(text)) continue;
+
+            var searchFrom = 0;
+            while (searchFrom < text.Length)
+            {
+                var idx = text.IndexOf(query, searchFrom, StringComparison.OrdinalIgnoreCase);
+                if (idx < 0) break;
+
+                if (occurrencesSeen == hit.OccurrenceInItem)
+                {
+                    var selStart = posMap is not null ? posMap[idx] : idx;
+                    var selEnd = posMap is not null ? posMap[idx + query.Length - 1] + 1 : idx + query.Length;
+                    stb.SelectionStart = selStart;
+                    stb.SelectionEnd = selEnd;
+                    _highlightedStb = stb;
+                    stb.BringIntoView();
+                    return;
+                }
+
+                occurrencesSeen++;
+                searchFrom = idx + query.Length;
+            }
+        }
+    }
+
+    private static string? ExtractStbText(SelectableTextBlock stb, out List<int>? posMap)
+    {
+        posMap = null;
+        var text = stb.Text;
+        if (!string.IsNullOrEmpty(text)) return text;
+
+        if (stb.Inlines is not { Count: > 0 }) return null;
+
+        var rawSb = new System.Text.StringBuilder();
+        foreach (var inline in stb.Inlines)
+        {
+            if (inline is Run run)
+                rawSb.Append(run.Text ?? "");
+            else if (inline is Avalonia.Controls.Documents.LineBreak)
+                rawSb.Append('\n');
+            else
+                rawSb.Append('\uFFFC');
+        }
+        var rawText = rawSb.ToString();
+
+        // Strip \u2005 inline code padding, build position map
+        posMap = new List<int>(rawText.Length);
+        var strippedSb = new System.Text.StringBuilder(rawText.Length);
+        for (var i = 0; i < rawText.Length; i++)
+        {
+            if (rawText[i] != '\u2005')
+            {
+                posMap.Add(i);
+                strippedSb.Append(rawText[i]);
+            }
+        }
+        return strippedSb.ToString();
+    }
+
+    private void UpdateSearchCounter()
+    {
+        if (_searchMatchCounter is null) return;
+
+        if (_searchHits.Count == 0)
+        {
+            var hasQuery = !string.IsNullOrWhiteSpace(_searchInput?.Text);
+            _searchMatchCounter.Text = hasQuery ? "No results" : "";
+        }
+        else
+        {
+            _searchMatchCounter.Text = $"{_currentHitIndex + 1} of {_searchHits.Count}";
+        }
+    }
+
+    private void ClearSearchHighlight()
+    {
+        if (_highlightedStb is not null)
+        {
+            _highlightedStb.SelectionStart = 0;
+            _highlightedStb.SelectionEnd = 0;
+            _highlightedStb = null;
+        }
+    }
+
+    private void ResetSearchState()
+    {
+        ClearSearchHighlight();
+        _searchHits.Clear();
+        _currentHitIndex = -1;
+        if (_searchMatchCounter is not null)
+            _searchMatchCounter.Text = "";
     }
 }

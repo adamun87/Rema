@@ -443,6 +443,42 @@ internal sealed class TranscriptWindowController : ObservableObject, IDisposable
         return true;
     }
 
+    /// <summary>
+    /// Mounts the page containing the specified turn so it becomes part of MountedTurns.
+    /// Returns true if the mounted range changed.
+    /// </summary>
+    public bool MountPageContainingTurn(TranscriptTurn turn, string reason)
+    {
+        if (_pages.Count == 0) return false;
+
+        var targetPageIndex = -1;
+        for (var p = 0; p < _pages.Count; p++)
+        {
+            foreach (var t in _pages[p].Turns)
+            {
+                if (ReferenceEquals(t, turn))
+                {
+                    targetPageIndex = p;
+                    break;
+                }
+            }
+            if (targetPageIndex >= 0) break;
+        }
+
+        if (targetPageIndex < 0) return false;
+
+        if (targetPageIndex >= _firstMountedPageIndex && targetPageIndex <= _lastMountedPageIndex)
+            return false; // Already mounted
+
+        // Shift the mounted window to center on the target page
+        _firstMountedPageIndex = targetPageIndex;
+        _lastMountedPageIndex = Math.Min(targetPageIndex + _options.MaxMountedPages - 1, _pages.Count - 1);
+        ClampMountedRange();
+        ReconcileMountedTurns(BuildDesiredMountedTurns());
+        UpdateDiagnostics("search-jump", reason);
+        return true;
+    }
+
     public TranscriptWindowDiagnosticsSnapshot CaptureSnapshot()
     {
         return new TranscriptWindowDiagnosticsSnapshot(
