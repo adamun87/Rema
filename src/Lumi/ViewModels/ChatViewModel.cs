@@ -1104,9 +1104,10 @@ public partial class ChatViewModel : ObservableObject
         var isSilentRetry = _silentRetryPrompt is not null && prompt == _silentRetryPrompt;
         _silentRetryPrompt = null;
 
+        ChatMessage? userMsg = null;
         if (!isSilentRetry)
         {
-            var userMsg = new ChatMessage
+            userMsg = new ChatMessage
             {
                 Role = "user",
                 Content = prompt,
@@ -1143,7 +1144,7 @@ public partial class ChatViewModel : ObservableObject
 
                         // Rebase attachment paths before persisting so the saved
                         // chat has the corrected worktree paths from the start.
-                        if (attachments is { Count: > 0 })
+                        if (attachments is { Count: > 0 } && userMsg is not null)
                             RebaseAttachmentPaths(attachments, userMsg, projectDir, path);
 
                         QueueSaveChat(targetChat, saveIndex: false);
@@ -1167,7 +1168,7 @@ public partial class ChatViewModel : ObservableObject
         // Rebase attachment paths for existing worktrees (e.g. files dragged from the
         // project directory while an existing worktree is already selected).
         // New worktrees are handled inside the creation block above.
-        if (!needsWorktreeCreation && WorktreePath is { Length: > 0 } wtPath && attachments is { Count: > 0 })
+        if (!needsWorktreeCreation && WorktreePath is { Length: > 0 } wtPath && attachments is { Count: > 0 } && userMsg is not null)
         {
             var projDir = GetProjectWorkingDirectory();
             RebaseAttachmentPaths(attachments, userMsg, projDir, wtPath);
