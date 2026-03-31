@@ -48,77 +48,69 @@ public partial class DiffView : UserControl
         if (_nextBtn is not null) _nextBtn.Click += (_, _) => NavigateChange(1);
     }
 
-    /// <summary>
-    /// Shows the entire current file with changed regions highlighted.
-    /// Finds where each edit's NewText appears in the file and highlights those lines.
-    /// </summary>
     public async void SetFileChangeDiff(FileChangeItem fileChange)
     {
-        if (_diffContent is null) return;
+        var filePath = fileChange.FilePath;
+        var ext = Path.GetExtension(filePath)?.TrimStart('.') ?? string.Empty;
+        await RenderDiffAsync(
+            ext,
+            () => fileChange.HasSnapshots
+                ? UnifiedDiffBuilder.BuildFromSnapshots(fileChange.OriginalContent, fileChange.CurrentContent)
+                : UnifiedDiffBuilder.BuildFromEdits(fileChange.Edits, fileChange.IsCreate));
+    }
+
+    public async void SetSnapshotDiff(string filePath, string? originalContent, string? currentContent)
+    {
+        var ext = Path.GetExtension(filePath)?.TrimStart('.') ?? string.Empty;
+        await RenderDiffAsync(ext, () => UnifiedDiffBuilder.BuildFromSnapshots(originalContent, currentContent));
+    }
+
+    public async void SetUnifiedDiffText(string filePath, string? unifiedDiff)
+    {
+        var ext = Path.GetExtension(filePath)?.TrimStart('.') ?? string.Empty;
+        await RenderDiffAsync(ext, () => UnifiedDiffBuilder.BuildFromUnifiedDiff(unifiedDiff));
+    }
+
+    private async Task RenderDiffAsync(string language, Func<DiffDocument> createDocument)
+    {
+        if (_diffContent is null)
+            return;
+
         _diffContent.Children.Clear();
         _changeRegionControls.Clear();
         _currentChangeIndex = -1;
         CancelPendingScroll();
 
-        // Show centered loading overlay
-        if (_loadingOverlay is not null) _loadingOverlay.IsVisible = true;
+        if (_loadingOverlay is not null)
+            _loadingOverlay.IsVisible = true;
 
         var isDark = Application.Current?.ActualThemeVariant == ThemeVariant.Dark;
-        var filePath = fileChange.FilePath;
-        var edits = fileChange.Edits.ToList();
-        var isCreate = fileChange.IsCreate;
 
-        // Determine language from file extension
-        var ext = Path.GetExtension(filePath)?.TrimStart('.');
-        var language = ext ?? "";
-
-        // Heavy work on background thread: file I/O + change detection + tokenization
         var result = await Task.Run(() =>
         {
-            string content;
-            try { content = File.Exists(filePath) ? File.ReadAllText(filePath) : ""; }
-            catch { content = ""; }
-
-            if (string.IsNullOrEmpty(content))
-                return (Lines: Array.Empty<string>(), Diff: DiffAlgorithm.ComputeChangedLines("", edits, isCreate), TokenizedLines: Array.Empty<TokenizedLine>());
-
-            var lines = content.Split('\n');
-
-            // Use LCS-based diff to highlight only actually-changed lines
-            var diff = DiffAlgorithm.ComputeChangedLines(content, edits, isCreate);
-
-            // Tokenize all lines on background thread (TextMate is not UI-bound)
-            var tokenized = TokenizeLines(lines, language, isDark);
-
-            return (Lines: lines, Diff: diff, TokenizedLines: tokenized);
+            var document = createDocument();
+            var displayLines = document.Hunks
+                .SelectMany(static hunk => hunk.Lines)
+                .Select(static line => line.Text)
+                .ToArray();
+            var tokenizedLines = TokenizeLines(displayLines, language, isDark);
+            return (Document: document, TokenizedLines: tokenizedLines);
         });
 
-        if (result.Lines.Length == 0)
-        {
-            if (_loadingOverlay is not null) _loadingOverlay.IsVisible = false;
-            UpdateStats(fileChange.LinesAdded, fileChange.LinesRemoved);
-            UpdateNavigation();
-            return;
-        }
-
-        // Yield to ensure loading overlay renders before heavy UI control creation
         await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Render);
+        await BuildDiffViewAsync(result.Document, result.TokenizedLines, isDark);
 
-        // Build UI controls in batches so the loading animation stays alive
-        await BuildFileViewAsync(result.Lines, isDark, result.Diff, result.TokenizedLines);
+        if (_loadingOverlay is not null)
+            _loadingOverlay.IsVisible = false;
 
-        if (_loadingOverlay is not null) _loadingOverlay.IsVisible = false;
-        UpdateStats(fileChange.LinesAdded, fileChange.LinesRemoved);
+        UpdateStats(result.Document.AddedLineCount, result.Document.RemovedLineCount);
         UpdateNavigation();
-
         ScheduleScrollToFirstChange();
     }
 
-    /// <summary>Pre-tokenized line data produced on background thread.</summary>
     private readonly record struct TokenRun(int Start, int End, int FgColorId, int FontStyleBits);
     private readonly record struct TokenizedLine(TokenRun[] Runs);
 
-    /// <summary>Tokenizes all lines using TextMate on a background thread.</summary>
     private static TokenizedLine[] TokenizeLines(string[] lines, string language, bool isDark)
     {
         var (options, registry) = GetRegistryPair(isDark);
@@ -128,333 +120,225 @@ public partial class DiffView : UserControl
         Theme? theme = grammar is not null ? registry.GetTheme() : null;
 
         var result = new TokenizedLine[lines.Length];
-        IStateStack? ruleStack = null;
 
-        for (int i = 0; i < lines.Length; i++)
+        for (var i = 0; i < lines.Length; i++)
         {
-            var lineText = lines[i].TrimEnd('\r');
+            var lineText = lines[i];
             if (grammar is null || theme is null || string.IsNullOrEmpty(lineText))
             {
-                // Advance ruleStack for blank lines to keep state consistent
-                if (grammar is not null)
-                {
-                    try { ruleStack = grammar.TokenizeLine(lineText, ruleStack, TimeSpan.FromMilliseconds(50))?.RuleStack ?? ruleStack; }
-                    catch { }
-                }
                 result[i] = new TokenizedLine([]);
                 continue;
             }
 
             try
             {
-                var tokenResult = grammar.TokenizeLine(lineText, ruleStack, TimeSpan.FromMilliseconds(200));
-                if (tokenResult?.Tokens is { Length: > 0 })
+                var tokenResult = grammar.TokenizeLine(lineText, null, TimeSpan.FromMilliseconds(150));
+                if (tokenResult?.Tokens is not { Length: > 0 })
                 {
-                    ruleStack = tokenResult.RuleStack;
-                    var runs = new TokenRun[tokenResult.Tokens.Length];
-                    for (int j = 0; j < tokenResult.Tokens.Length; j++)
-                    {
-                        var token = tokenResult.Tokens[j];
-                        int start = token.StartIndex;
-                        int end = (j + 1 < tokenResult.Tokens.Length) ? tokenResult.Tokens[j + 1].StartIndex : lineText.Length;
-                        if (start >= lineText.Length) { runs[j] = new TokenRun(0, 0, 0, -1); continue; }
-                        if (end > lineText.Length) end = lineText.Length;
-
-                        int fgColorId = 0;
-                        int fontStyleBits = -1;
-                        var rules = theme.Match(token.Scopes);
-                        if (rules is not null)
-                            foreach (var rule in rules)
-                            {
-                                if (rule.foreground > 0) fgColorId = rule.foreground;
-                                if ((int)rule.fontStyle >= 0) fontStyleBits = (int)rule.fontStyle;
-                            }
-                        runs[j] = new TokenRun(start, end, fgColorId, fontStyleBits);
-                    }
-                    result[i] = new TokenizedLine(runs);
-                }
-                else
-                {
-                    ruleStack = tokenResult?.RuleStack ?? ruleStack;
                     result[i] = new TokenizedLine([]);
+                    continue;
                 }
+
+                var runs = new TokenRun[tokenResult.Tokens.Length];
+                for (var j = 0; j < tokenResult.Tokens.Length; j++)
+                {
+                    var token = tokenResult.Tokens[j];
+                    var start = token.StartIndex;
+                    var end = j + 1 < tokenResult.Tokens.Length
+                        ? tokenResult.Tokens[j + 1].StartIndex
+                        : lineText.Length;
+
+                    if (start >= lineText.Length)
+                    {
+                        runs[j] = new TokenRun(0, 0, 0, -1);
+                        continue;
+                    }
+
+                    if (end > lineText.Length)
+                        end = lineText.Length;
+
+                    var fgColorId = 0;
+                    var fontStyleBits = -1;
+                    var rules = theme.Match(token.Scopes);
+                    if (rules is not null)
+                    {
+                        foreach (var rule in rules)
+                        {
+                            if (rule.foreground > 0)
+                                fgColorId = rule.foreground;
+                            if ((int)rule.fontStyle >= 0)
+                                fontStyleBits = (int)rule.fontStyle;
+                        }
+                    }
+
+                    runs[j] = new TokenRun(start, end, fgColorId, fontStyleBits);
+                }
+
+                result[i] = new TokenizedLine(runs);
             }
             catch
             {
                 result[i] = new TokenizedLine([]);
             }
         }
+
         return result;
     }
 
-    /// <summary>
-    /// Shows the file with explicit changed line numbers highlighted.
-    /// Used for git diffs where we know exactly which lines changed.
-    /// </summary>
-    public async void SetFileDiffWithChangedLines(string filePath, HashSet<int> changedLineNumbers)
+    private async Task BuildDiffViewAsync(DiffDocument document, TokenizedLine[] tokenizedLines, bool isDark)
     {
-        if (_diffContent is null) return;
-        _diffContent.Children.Clear();
-        _changeRegionControls.Clear();
-        _currentChangeIndex = -1;
-        CancelPendingScroll();
+        if (_diffContent is null)
+            return;
 
-        if (_loadingOverlay is not null) _loadingOverlay.IsVisible = true;
-
-        var isDark = Application.Current?.ActualThemeVariant == ThemeVariant.Dark;
-        var ext = Path.GetExtension(filePath)?.TrimStart('.');
-        var language = ext ?? "";
-
-        var result = await Task.Run(() =>
+        if (document.Hunks.Count == 0)
         {
-            string content;
-            try { content = File.Exists(filePath) ? File.ReadAllText(filePath) : ""; }
-            catch { content = ""; }
-
-            if (string.IsNullOrEmpty(content))
-                return (Lines: Array.Empty<string>(), TokenizedLines: Array.Empty<TokenizedLine>());
-
-            var lines = content.Split('\n');
-            var tokenized = TokenizeLines(lines, language, isDark);
-            return (Lines: lines, TokenizedLines: tokenized);
-        });
-
-        if (result.Lines.Length == 0)
-        {
-            if (_loadingOverlay is not null) _loadingOverlay.IsVisible = false;
-            UpdateStats(changedLineNumbers.Count, 0);
-            UpdateNavigation();
+            _diffContent.Children.Add(BuildEmptyState(document.EmptyStateText ?? "No diff available."));
             return;
         }
 
-        await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Render);
-        await BuildFileViewAsync(result.Lines, isDark, new DiffResult(changedLineNumbers, []), result.TokenizedLines);
-
-        if (_loadingOverlay is not null) _loadingOverlay.IsVisible = false;
-        UpdateStats(changedLineNumbers.Count, 0);
-        UpdateNavigation();
-
-        ScheduleScrollToFirstChange();
-    }
-
-    private async Task BuildFileViewAsync(string[] lines, bool isDark, DiffResult diff, TokenizedLine[] tokenizedLines)
-    {
-        if (_diffContent is null) return;
-
         var monoFont = new FontFamily("Cascadia Code, Cascadia Mono, Consolas, Courier New, monospace");
         const double fontSize = 12.5;
-        const int batchSize = 30;
-
-        var changeBg = isDark
-            ? new SolidColorBrush(Color.FromArgb(30, 63, 185, 80))
-            : new SolidColorBrush(Color.FromArgb(35, 0, 160, 0));
-        var changeGutterBg = isDark
-            ? new SolidColorBrush(Color.FromArgb(60, 63, 185, 80))
-            : new SolidColorBrush(Color.FromArgb(70, 0, 160, 0));
-        var gutterBg = isDark
-            ? new SolidColorBrush(Color.FromArgb(20, 128, 128, 128))
-            : new SolidColorBrush(Color.FromArgb(15, 0, 0, 0));
-        var gutterFg = isDark
-            ? new SolidColorBrush(Color.FromArgb(120, 200, 200, 200))
-            : new SolidColorBrush(Color.FromArgb(120, 80, 80, 80));
-        var changeGutterFg = isDark
-            ? new SolidColorBrush(Color.FromArgb(180, 63, 185, 80))
-            : new SolidColorBrush(Color.FromArgb(200, 0, 140, 0));
-        var deletionBg = isDark
-            ? new SolidColorBrush(Color.FromArgb(40, 248, 81, 73))
-            : new SolidColorBrush(Color.FromArgb(40, 208, 0, 0));
-        var deletionFg = isDark
-            ? new SolidColorBrush(Color.FromArgb(160, 248, 81, 73))
-            : new SolidColorBrush(Color.FromArgb(180, 208, 0, 0));
+        const int batchSize = 80;
 
         var brushMap = GetBrushMap(isDark);
         var (_, registry) = GetRegistryPair(isDark);
         Theme? theme = registry.GetTheme();
 
-        // Build a lookup of deletion points: afterLineIndex → count
-        var deletionMap = new Dictionary<int, int>();
-        foreach (var d in diff.Deletions)
+        var palette = DiffPalette.Create(isDark);
+        var displayLineIndex = 0;
+
+        foreach (var hunk in document.Hunks)
         {
-            if (deletionMap.TryGetValue(d.AfterLineIndex, out var existing))
-                deletionMap[d.AfterLineIndex] = existing + d.Count;
-            else
-                deletionMap[d.AfterLineIndex] = d.Count;
-        }
+            var header = BuildHunkHeader(hunk.Header, monoFont, fontSize, palette);
+            _diffContent.Children.Add(header);
+            _changeRegionControls.Add(header);
 
-        bool inChangeRegion = false;
-
-        // Deletions before the first line
-        if (deletionMap.TryGetValue(-1, out var leadingDeleted))
-        {
-            var marker = BuildDeletionMarker(leadingDeleted, monoFont, fontSize, deletionBg, deletionFg);
-            _diffContent.Children.Add(marker);
-            _changeRegionControls.Add(marker);
-        }
-
-        for (int i = 0; i < lines.Length; i++)
-        {
-            var lineText = lines[i].TrimEnd('\r');
-            bool isChanged = diff.ChangedLines.Contains(i);
-
-            var tokenized = i < tokenizedLines.Length ? tokenizedLines[i] : new TokenizedLine([]);
-            var row = BuildHighlightedLine(
-                lineText, i + 1, tokenized, theme, brushMap,
-                monoFont, fontSize,
-                isChanged ? changeBg : null,
-                isChanged ? changeGutterBg : gutterBg,
-                isChanged ? changeGutterFg : gutterFg,
-                isDark);
-            _diffContent.Children.Add(row);
-
-            // Track change regions for navigation (after row is created for Bounds access)
-            if (isChanged && !inChangeRegion)
+            foreach (var line in hunk.Lines)
             {
-                _changeRegionControls.Add(row);
-                inChangeRegion = true;
-            }
-            else if (!isChanged)
-            {
-                inChangeRegion = false;
-            }
+                var tokenized = displayLineIndex < tokenizedLines.Length
+                    ? tokenizedLines[displayLineIndex]
+                    : new TokenizedLine([]);
+                displayLineIndex++;
 
-            // Render deletion marker after this line if deletions occurred here
-            if (deletionMap.TryGetValue(i, out var deletedCount))
-            {
-                var marker = BuildDeletionMarker(deletedCount, monoFont, fontSize, deletionBg, deletionFg);
-                _diffContent.Children.Add(marker);
-                if (!inChangeRegion)
-                    _changeRegionControls.Add(marker);
-                inChangeRegion = false;
-            }
+                _diffContent.Children.Add(BuildDiffLine(line, tokenized, theme, brushMap, monoFont, fontSize, palette));
 
-            // Yield every batch to keep loading animation alive
-            if ((i + 1) % batchSize == 0)
-                await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+                if (displayLineIndex % batchSize == 0)
+                    await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+            }
         }
     }
 
-    private static Border BuildDeletionMarker(int count, FontFamily font, double fontSize, IBrush bg, IBrush fg)
+    private sealed record DiffPalette(
+        IBrush HeaderBackground,
+        IBrush HeaderForeground,
+        IBrush LineNumberBackground,
+        IBrush LineNumberForeground,
+        IBrush AddedBackground,
+        IBrush AddedLineNumberBackground,
+        IBrush AddedForeground,
+        IBrush RemovedBackground,
+        IBrush RemovedLineNumberBackground,
+        IBrush RemovedForeground,
+        IBrush ContextBackground)
     {
-        var label = count == 1 ? "1 line removed" : $"{count} lines removed";
-
-        var gutter = new Border
+        public static DiffPalette Create(bool isDark)
         {
-            Background = bg,
-            Width = 48,
-            Padding = new Thickness(4, 0),
-            Child = new TextBlock
-            {
-                Text = "−",
-                FontFamily = font,
-                FontSize = fontSize,
-                Foreground = fg,
-                HorizontalAlignment = HorizontalAlignment.Right,
-                VerticalAlignment = VerticalAlignment.Center,
-            }
-        };
+            return isDark
+                ? new DiffPalette(
+                    HeaderBackground: new SolidColorBrush(Color.FromArgb(28, 88, 166, 255)),
+                    HeaderForeground: new SolidColorBrush(Color.FromArgb(180, 200, 220, 255)),
+                    LineNumberBackground: new SolidColorBrush(Color.FromArgb(18, 128, 128, 128)),
+                    LineNumberForeground: new SolidColorBrush(Color.FromArgb(120, 200, 200, 200)),
+                    AddedBackground: new SolidColorBrush(Color.FromArgb(28, 63, 185, 80)),
+                    AddedLineNumberBackground: new SolidColorBrush(Color.FromArgb(60, 63, 185, 80)),
+                    AddedForeground: new SolidColorBrush(Color.FromArgb(220, 63, 185, 80)),
+                    RemovedBackground: new SolidColorBrush(Color.FromArgb(32, 248, 81, 73)),
+                    RemovedLineNumberBackground: new SolidColorBrush(Color.FromArgb(60, 248, 81, 73)),
+                    RemovedForeground: new SolidColorBrush(Color.FromArgb(220, 248, 81, 73)),
+                    ContextBackground: Brushes.Transparent)
+                : new DiffPalette(
+                    HeaderBackground: new SolidColorBrush(Color.FromArgb(28, 0, 102, 204)),
+                    HeaderForeground: new SolidColorBrush(Color.FromArgb(200, 0, 102, 204)),
+                    LineNumberBackground: new SolidColorBrush(Color.FromArgb(14, 0, 0, 0)),
+                    LineNumberForeground: new SolidColorBrush(Color.FromArgb(120, 80, 80, 80)),
+                    AddedBackground: new SolidColorBrush(Color.FromArgb(24, 0, 160, 0)),
+                    AddedLineNumberBackground: new SolidColorBrush(Color.FromArgb(48, 0, 160, 0)),
+                    AddedForeground: new SolidColorBrush(Color.FromArgb(210, 0, 140, 0)),
+                    RemovedBackground: new SolidColorBrush(Color.FromArgb(24, 208, 0, 0)),
+                    RemovedLineNumberBackground: new SolidColorBrush(Color.FromArgb(48, 208, 0, 0)),
+                    RemovedForeground: new SolidColorBrush(Color.FromArgb(210, 176, 0, 0)),
+                    ContextBackground: Brushes.Transparent);
+        }
+    }
 
-        var content = new TextBlock
-        {
-            Text = $"  {label}",
-            FontFamily = font,
-            FontSize = fontSize * 0.9,
-            Foreground = fg,
-            FontStyle = Avalonia.Media.FontStyle.Italic,
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(8, 0, 0, 0),
-        };
-
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
-        Grid.SetColumn(gutter, 0);
-        Grid.SetColumn(content, 1);
-        grid.Children.Add(gutter);
-        grid.Children.Add(content);
-
+    private static Border BuildHunkHeader(string? headerText, FontFamily font, double fontSize, DiffPalette palette)
+    {
         return new Border
         {
-            Background = bg,
-            MinHeight = 22,
-            Padding = new Thickness(0, 1),
-            Child = grid,
-        };
-    }
-
-    private void UpdateStats(int added, int removed)
-    {
-        if (_statsText is null) return;
-        _statsText.Text = removed == 0 ? $"+{added}" : $"+{added}  −{removed}";
-    }
-
-    private void UpdateNavigation()
-    {
-        if (_changeCountText is null) return;
-        _changeCountText.Text = _changeRegionControls.Count > 0
-            ? $"{_changeRegionControls.Count} changes"
-            : "";
-    }
-
-    private void NavigateChange(int direction)
-    {
-        if (_changeRegionControls.Count == 0 || _diffScroller is null) return;
-        _currentChangeIndex += direction;
-        if (_currentChangeIndex >= _changeRegionControls.Count) _currentChangeIndex = 0;
-        if (_currentChangeIndex < 0) _currentChangeIndex = _changeRegionControls.Count - 1;
-        ScrollToCurrentChange();
-    }
-
-    private void ScrollToCurrentChange()
-    {
-        if (_changeRegionControls.Count == 0 || _diffScroller is null) return;
-        if (_currentChangeIndex < 0 || _currentChangeIndex >= _changeRegionControls.Count) return;
-        var control = _changeRegionControls[_currentChangeIndex];
-        if (control.Bounds.Height > 0)
-            _diffScroller.Offset = new Vector(_diffScroller.Offset.X, Math.Max(0, control.Bounds.Y - 40));
-    }
-
-    private void ScheduleScrollToFirstChange()
-    {
-        CancelPendingScroll();
-        if (_changeRegionControls.Count == 0 || _diffContent is null || _diffScroller is null) return;
-
-        _pendingScrollHandler = (_, _) =>
-        {
-            if (_changeRegionControls.Count == 0) { CancelPendingScroll(); return; }
-            var first = _changeRegionControls[0];
-            if (first.Bounds.Height <= 0) return; // Not laid out yet
-            CancelPendingScroll();
-            _currentChangeIndex = 0;
-            ScrollToCurrentChange();
-        };
-        _diffContent.LayoutUpdated += _pendingScrollHandler;
-    }
-
-    private void CancelPendingScroll()
-    {
-        if (_pendingScrollHandler is not null && _diffContent is not null)
-        {
-            _diffContent.LayoutUpdated -= _pendingScrollHandler;
-            _pendingScrollHandler = null;
-        }
-    }
-
-    private static Border BuildHighlightedLine(
-        string text, int lineNumber,
-        TokenizedLine tokenized, Theme? theme, Dictionary<int, IBrush> brushMap,
-        FontFamily font, double fontSize,
-        IBrush? lineBg, IBrush gutterBg, IBrush gutterFg, bool isDark)
-    {
-        var gutter = new Border
-        {
-            Background = gutterBg,
-            Width = 48,
-            Padding = new Thickness(4, 0),
+            Background = palette.HeaderBackground,
+            Padding = new Thickness(12, 4),
+            Margin = new Thickness(0, 6, 0, 2),
             Child = new TextBlock
             {
-                Text = lineNumber.ToString(),
+                Text = string.IsNullOrWhiteSpace(headerText) ? "Change" : headerText,
+                FontFamily = font,
+                FontSize = fontSize * 0.95,
+                Foreground = palette.HeaderForeground,
+            }
+        };
+    }
+
+    private static Border BuildDiffLine(
+        DiffLine line,
+        TokenizedLine tokenized,
+        Theme? theme,
+        Dictionary<int, IBrush> brushMap,
+        FontFamily font,
+        double fontSize,
+        DiffPalette palette)
+    {
+        var lineBackground = line.Kind switch
+        {
+            DiffLineKind.Added => palette.AddedBackground,
+            DiffLineKind.Removed => palette.RemovedBackground,
+            _ => palette.ContextBackground
+        };
+
+        var lineNumberBackground = line.Kind switch
+        {
+            DiffLineKind.Added => palette.AddedLineNumberBackground,
+            DiffLineKind.Removed => palette.RemovedLineNumberBackground,
+            _ => palette.LineNumberBackground
+        };
+
+        var symbolForeground = line.Kind switch
+        {
+            DiffLineKind.Added => palette.AddedForeground,
+            DiffLineKind.Removed => palette.RemovedForeground,
+            _ => palette.LineNumberForeground
+        };
+
+        var oldNumber = BuildLineNumberCell(line.OldLineNumber, font, fontSize, lineNumberBackground, palette.LineNumberForeground);
+        var newNumber = BuildLineNumberCell(line.NewLineNumber, font, fontSize, lineNumberBackground, palette.LineNumberForeground);
+
+        var symbol = new Border
+        {
+            Background = lineNumberBackground,
+            Width = 18,
+            Padding = new Thickness(0),
+            Child = new TextBlock
+            {
+                Text = line.Kind switch
+                {
+                    DiffLineKind.Added => "+",
+                    DiffLineKind.Removed => "−",
+                    _ => " "
+                },
                 FontFamily = font,
                 FontSize = fontSize,
-                Foreground = gutterFg,
-                HorizontalAlignment = HorizontalAlignment.Right,
+                FontWeight = FontWeight.SemiBold,
+                Foreground = symbolForeground,
+                HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
             }
         };
@@ -470,51 +354,181 @@ public partial class DiffView : UserControl
         };
 
         var inlines = content.Inlines ??= new InlineCollection();
+        AddTokenizedInlines(inlines, line.Text, tokenized, theme, brushMap);
 
-        if (tokenized.Runs.Length > 0 && theme is not null && !string.IsNullOrEmpty(text))
-        {
-            foreach (var run in tokenized.Runs)
-            {
-                if (run.Start >= run.End || run.Start >= text.Length) continue;
-                int end = Math.Min(run.End, text.Length);
-                var r = new Run(text[run.Start..end]);
-
-                if (run.FgColorId > 0)
-                {
-                    var brush = GetOrCreateBrush(brushMap, theme, run.FgColorId);
-                    if (brush != Brushes.Transparent) r.Foreground = brush;
-                }
-                if (run.FontStyleBits > 0)
-                {
-                    if ((run.FontStyleBits & (int)TextMateSharp.Themes.FontStyle.Italic) != 0)
-                        r.FontStyle = Avalonia.Media.FontStyle.Italic;
-                    if ((run.FontStyleBits & (int)TextMateSharp.Themes.FontStyle.Bold) != 0)
-                        r.FontWeight = FontWeight.Bold;
-                }
-                inlines.Add(r);
-            }
-        }
-        else
-        {
-            if (!string.IsNullOrEmpty(text)) inlines.Add(new Run(text));
-        }
-
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
-        Grid.SetColumn(gutter, 0);
-        Grid.SetColumn(content, 1);
-        grid.Children.Add(gutter);
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,Auto,*") };
+        Grid.SetColumn(oldNumber, 0);
+        Grid.SetColumn(newNumber, 1);
+        Grid.SetColumn(symbol, 2);
+        Grid.SetColumn(content, 3);
+        grid.Children.Add(oldNumber);
+        grid.Children.Add(newNumber);
+        grid.Children.Add(symbol);
         grid.Children.Add(content);
 
         return new Border
         {
-            Background = lineBg ?? Brushes.Transparent,
+            Background = lineBackground,
             MinHeight = 20,
             Padding = new Thickness(0, 1),
             Child = grid,
         };
     }
 
-    // ── TextMate helpers ──────────────────────────────────────
+    private static Border BuildLineNumberCell(int? lineNumber, FontFamily font, double fontSize, IBrush background, IBrush foreground)
+    {
+        return new Border
+        {
+            Background = background,
+            Width = 48,
+            Padding = new Thickness(4, 0),
+            Child = new TextBlock
+            {
+                Text = lineNumber?.ToString() ?? string.Empty,
+                FontFamily = font,
+                FontSize = fontSize,
+                Foreground = foreground,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Center,
+            }
+        };
+    }
+
+    private static void AddTokenizedInlines(
+        InlineCollection inlines,
+        string text,
+        TokenizedLine tokenized,
+        Theme? theme,
+        Dictionary<int, IBrush> brushMap)
+    {
+        if (tokenized.Runs.Length > 0 && theme is not null && !string.IsNullOrEmpty(text))
+        {
+            foreach (var run in tokenized.Runs)
+            {
+                if (run.Start >= run.End || run.Start >= text.Length)
+                    continue;
+
+                var end = Math.Min(run.End, text.Length);
+                var segment = new Run(text[run.Start..end]);
+
+                if (run.FgColorId > 0)
+                {
+                    var brush = GetOrCreateBrush(brushMap, theme, run.FgColorId);
+                    if (brush != Brushes.Transparent)
+                        segment.Foreground = brush;
+                }
+
+                if (run.FontStyleBits > 0)
+                {
+                    if ((run.FontStyleBits & (int)TextMateSharp.Themes.FontStyle.Italic) != 0)
+                        segment.FontStyle = Avalonia.Media.FontStyle.Italic;
+                    if ((run.FontStyleBits & (int)TextMateSharp.Themes.FontStyle.Bold) != 0)
+                        segment.FontWeight = FontWeight.Bold;
+                }
+
+                inlines.Add(segment);
+            }
+        }
+        else if (!string.IsNullOrEmpty(text))
+        {
+            inlines.Add(new Run(text));
+        }
+    }
+
+    private static Border BuildEmptyState(string message)
+    {
+        return new Border
+        {
+            Padding = new Thickness(16),
+            Child = new TextBlock
+            {
+                Text = message,
+                Classes = { "caption" },
+                Foreground = Brushes.Gray
+            }
+        };
+    }
+
+    private void UpdateStats(int added, int removed)
+    {
+        if (_statsText is null)
+            return;
+
+        _statsText.Text = removed == 0
+            ? $"+{added}"
+            : $"+{added}  −{removed}";
+    }
+
+    private void UpdateNavigation()
+    {
+        if (_changeCountText is null)
+            return;
+
+        _changeCountText.Text = _changeRegionControls.Count > 0
+            ? $"{_changeRegionControls.Count} changes"
+            : string.Empty;
+    }
+
+    private void NavigateChange(int direction)
+    {
+        if (_changeRegionControls.Count == 0 || _diffScroller is null)
+            return;
+
+        _currentChangeIndex += direction;
+        if (_currentChangeIndex >= _changeRegionControls.Count)
+            _currentChangeIndex = 0;
+        if (_currentChangeIndex < 0)
+            _currentChangeIndex = _changeRegionControls.Count - 1;
+
+        ScrollToCurrentChange();
+    }
+
+    private void ScrollToCurrentChange()
+    {
+        if (_changeRegionControls.Count == 0 || _diffScroller is null)
+            return;
+        if (_currentChangeIndex < 0 || _currentChangeIndex >= _changeRegionControls.Count)
+            return;
+
+        var control = _changeRegionControls[_currentChangeIndex];
+        if (control.Bounds.Height > 0)
+            _diffScroller.Offset = new Vector(_diffScroller.Offset.X, Math.Max(0, control.Bounds.Y - 40));
+    }
+
+    private void ScheduleScrollToFirstChange()
+    {
+        CancelPendingScroll();
+        if (_changeRegionControls.Count == 0 || _diffContent is null || _diffScroller is null)
+            return;
+
+        _pendingScrollHandler = (_, _) =>
+        {
+            if (_changeRegionControls.Count == 0)
+            {
+                CancelPendingScroll();
+                return;
+            }
+
+            var first = _changeRegionControls[0];
+            if (first.Bounds.Height <= 0)
+                return;
+
+            CancelPendingScroll();
+            _currentChangeIndex = 0;
+            ScrollToCurrentChange();
+        };
+
+        _diffContent.LayoutUpdated += _pendingScrollHandler;
+    }
+
+    private void CancelPendingScroll()
+    {
+        if (_pendingScrollHandler is not null && _diffContent is not null)
+        {
+            _diffContent.LayoutUpdated -= _pendingScrollHandler;
+            _pendingScrollHandler = null;
+        }
+    }
 
     private static (RegistryOptions options, Registry registry) GetRegistryPair(bool isDark)
     {
@@ -524,6 +538,7 @@ public partial class DiffView : UserControl
             s_darkRegistry ??= new Registry(s_darkOptions);
             return (s_darkOptions, s_darkRegistry);
         }
+
         s_lightOptions ??= new RegistryOptions(ThemeName.LightPlus);
         s_lightRegistry ??= new Registry(s_lightOptions);
         return (s_lightOptions, s_lightRegistry);
@@ -543,6 +558,7 @@ public partial class DiffView : UserControl
     {
         if (brushMap.TryGetValue(colorId, out var brush))
             return brush;
+
         var hex = theme.GetColor(colorId);
         brush = Color.TryParse(hex, out var color)
             ? new SolidColorBrush(color).ToImmutable()

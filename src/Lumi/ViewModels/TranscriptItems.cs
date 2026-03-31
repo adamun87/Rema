@@ -464,6 +464,8 @@ public partial class ToolCallItem : ToolCallItemBase
     public string? DiffFilePath { get; set; }
     public string? DiffToolName { get; set; }
     public List<(string? OldText, string? NewText)>? DiffEdits { get; set; }
+    public string? DiffOriginalContent { get; set; }
+    public string? DiffCurrentContent { get; set; }
     public Action<FileChangeItem>? ShowFileChangeAction { get; set; }
 
     public ToolCallItem(string toolName, StrataAiToolCallStatus status, string? stableId = null)
@@ -482,6 +484,8 @@ public partial class ToolCallItem : ToolCallItemBase
         if (DiffEdits is not null)
             foreach (var (old, @new) in DiffEdits)
                 item.AddEdit(old, @new);
+        if (DiffOriginalContent is not null || DiffCurrentContent is not null)
+            item.SetSnapshots(DiffOriginalContent, DiffCurrentContent);
         ShowFileChangeAction.Invoke(item);
     }
 }
@@ -694,6 +698,9 @@ public partial class FileChangeItem : ObservableObject
     public string StatsAdded => $"+{LinesAdded}";
     public string StatsRemoved => LinesRemoved > 0 ? $"−{LinesRemoved}" : "";
     public bool HasRemovals => LinesRemoved > 0;
+    public string? OriginalContent { get; private set; }
+    public string? CurrentContent { get; private set; }
+    public bool HasSnapshots { get; private set; }
 
     /// <summary>All edits applied to this file (old text → new text pairs).</summary>
     public List<(string? OldText, string? NewText)> Edits { get; } = [];
@@ -718,6 +725,13 @@ public partial class FileChangeItem : ObservableObject
         Edits.Add((oldText, newText));
         LinesAdded += CountLines(newText);
         LinesRemoved += CountLines(oldText);
+    }
+
+    public void SetSnapshots(string? originalContent, string? currentContent)
+    {
+        OriginalContent = originalContent;
+        CurrentContent = currentContent;
+        HasSnapshots = true;
     }
 
     /// <summary>

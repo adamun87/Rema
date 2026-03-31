@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Animation;
 using Avalonia.Animation.Easings;
 using Avalonia.Controls;
@@ -2266,12 +2267,14 @@ public partial class MainWindow : Window
 
             var row = new Button
             {
+                Name = CreateGitDiffRowName(file.FileName, listPanel.Children.Count),
                 HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
                 HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Left,
                 Padding = new Thickness(10, 8),
                 Background = Avalonia.Media.Brushes.Transparent,
                 Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
             };
+            AutomationProperties.SetName(row, $"Open diff for {file.FileName}");
             row.Classes.Add("subtle");
 
             var content = new DockPanel();
@@ -2373,6 +2376,12 @@ public partial class MainWindow : Window
         ShowDiffPanelAnimated();
     }
 
+    private static string CreateGitDiffRowName(string fileName, int rowIndex)
+    {
+        var safeFileName = new string(fileName.Select(ch => char.IsLetterOrDigit(ch) ? ch : '_').ToArray());
+        return $"GitDiffRow_{rowIndex}_{safeFileName}";
+    }
+
     /// <summary>Opens a single file diff with breadcrumb back-nav in the header.</summary>
     private void ShowGitFileDiffWithBackNav(GitFileChangeViewModel file)
     {
@@ -2413,24 +2422,22 @@ public partial class MainWindow : Window
         // Build the diff view
         if (file.Change.Kind is GitChangeKind.Added or GitChangeKind.Untracked)
         {
-            _ = HighlightAllLinesAsync(file.Change.FullPath, diffView);
+            _ = ShowAddedGitFileDiffAsync(file.Change.FullPath, diffView);
         }
         else
         {
-            _ = LoadGitDiffWithLineNumbersAsync(file.Change, diffView);
+            _ = LoadGitUnifiedDiffAsync(file.Change, diffView);
         }
     }
 
-    private async Task HighlightAllLinesAsync(string filePath, DiffView diffView)
+    private async Task ShowAddedGitFileDiffAsync(string filePath, DiffView diffView)
     {
-        var lineCount = await Task.Run(() =>
+        var content = await Task.Run(() =>
         {
-            try { return System.IO.File.Exists(filePath) ? System.IO.File.ReadAllLines(filePath).Length : 0; }
-            catch { return 0; }
+            try { return System.IO.File.Exists(filePath) ? System.IO.File.ReadAllText(filePath) : string.Empty; }
+            catch { return string.Empty; }
         });
-        var allLines = new HashSet<int>();
-        for (int i = 0; i < lineCount; i++) allLines.Add(i);
-        Dispatcher.UIThread.Post(() => diffView.SetFileDiffWithChangedLines(filePath, allLines));
+        Dispatcher.UIThread.Post(() => diffView.SetSnapshotDiff(filePath, string.Empty, content));
     }
 
     private void OnDiffBreadcrumbClick(object? sender, Avalonia.Input.PointerPressedEventArgs e)
@@ -2439,56 +2446,13 @@ public partial class MainWindow : Window
             ShowGitChangesPanel(_lastGitChangesList);
     }
 
-    private async Task LoadGitDiffWithLineNumbersAsync(GitFileChange change, DiffView diffView)
+    private async Task LoadGitUnifiedDiffAsync(GitFileChange change, DiffView diffView)
     {
         var repoDir = System.IO.Path.GetDirectoryName(change.FullPath) ?? "";
         var diff = await GitService.GetFileDiffAsync(repoDir, System.IO.Path.GetFileName(change.FullPath));
         if (diff is null)
             diff = await GitService.GetFileDiffAsync(repoDir, change.RelativePath);
-
-        var changedLines = new HashSet<int>();
-        if (diff is not null)
-        {
-            // Parse @@ headers to get new-file line numbers for changed lines
-            foreach (var line in diff.Split('\n'))
-            {
-                if (line.StartsWith("@@"))
-                {
-                    // Format: @@ -oldStart[,oldCount] +newStart[,newCount] @@
-                    var match = System.Text.RegularExpressions.Regex.Match(line, @"\+(\d+)(?:,(\d+))?");
-                    if (match.Success)
-                    {
-                        var start = int.Parse(match.Groups[1].Value) - 1; // 0-indexed
-                        // Track which lines in this hunk are actually added/modified
-                        int currentLine = start;
-                        // Find the content lines after this @@ header
-                        var allLines = diff.Split('\n');
-                        int idx = Array.IndexOf(allLines, line);
-                        for (int i = idx + 1; i < allLines.Length; i++)
-                        {
-                            var hunkLine = allLines[i];
-                            if (hunkLine.StartsWith("@@") || hunkLine.StartsWith("diff ")) break;
-                            if (hunkLine.StartsWith('+') && !hunkLine.StartsWith("+++"))
-                            {
-                                changedLines.Add(currentLine);
-                                currentLine++;
-                            }
-                            else if (hunkLine.StartsWith('-') && !hunkLine.StartsWith("---"))
-                            {
-                                // Removed line — doesn't advance new file position
-                            }
-                            else
-                            {
-                                // Context line
-                                currentLine++;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        Dispatcher.UIThread.Post(() => diffView.SetFileDiffWithChangedLines(change.FullPath, changedLines));
+        Dispatcher.UIThread.Post(() => diffView.SetUnifiedDiffText(change.FullPath, diff));
     }
 
     /// <summary>Shows the diff island with animation (shared by file diff and git changes list).</summary>
