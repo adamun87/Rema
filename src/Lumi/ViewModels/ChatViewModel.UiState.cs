@@ -46,11 +46,11 @@ public partial class ChatViewModel
 
     partial void OnPlanContentChanged(string? value)
     {
-        if (CurrentChat is not null)
-        {
-            CurrentChat.PlanContent = value;
-            QueueSaveChat(CurrentChat, saveIndex: true, touchIndex: true);
-        }
+        if (CurrentChat is null || string.Equals(CurrentChat.PlanContent, value, StringComparison.Ordinal))
+            return;
+
+        CurrentChat.PlanContent = value;
+        QueueSaveChat(CurrentChat, saveIndex: true);
     }
 
     // ── SDK-discovered agents ──
@@ -904,8 +904,11 @@ public partial class ChatViewModel
 
         if (CurrentChat is not null)
         {
+            if (string.Equals(CurrentChat.SdkAgentName, value, StringComparison.Ordinal))
+                return;
+
             CurrentChat.SdkAgentName = value;
-            QueueSaveChat(CurrentChat, saveIndex: true, touchIndex: true);
+            QueueSaveChat(CurrentChat, saveIndex: true);
         }
     }
 

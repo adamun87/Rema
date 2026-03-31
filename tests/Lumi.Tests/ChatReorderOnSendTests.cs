@@ -1,3 +1,7 @@
+using System.Threading;
+using System.Threading.Tasks;
+using Avalonia.Headless;
+using Avalonia.Threading;
 using Lumi.Models;
 using Lumi.Services;
 using Lumi.ViewModels;
@@ -11,6 +15,7 @@ namespace Lumi.Tests;
 /// Bug: ChatUpdated only fired for *new* chats, so existing chats
 /// kept their old position after a message was sent.
 /// </summary>
+[Collection("Headless UI")]
 public class ChatReorderOnSendTests
 {
     private static DataStore CreateDataStore(params Chat[] chats)
@@ -42,6 +47,7 @@ public class ChatReorderOnSendTests
         Assert.Equal("Newer", firstChat?.Title);
 
         // Simulate a message sent to the older chat (updates timestamp)
+        older.UpdatedAt = DateTimeOffset.Now;
         ds.MarkChatChanged(older);
         vm.RefreshChatList();
 
@@ -69,6 +75,7 @@ public class ChatReorderOnSendTests
         Assert.True(vm.ChatGroups.Count >= 2, "Expected at least two time groups");
 
         // Simulate message sent → timestamp becomes "now"
+        yesterday.UpdatedAt = DateTimeOffset.Now;
         ds.MarkChatChanged(yesterday);
         vm.RefreshChatList();
 
@@ -91,6 +98,7 @@ public class ChatReorderOnSendTests
 
         // Update timestamp on older chat, then raise ChatUpdated on ChatVM
         // (simulates what happens when SendMessage fires the event)
+        older.UpdatedAt = DateTimeOffset.Now;
         ds.MarkChatChanged(older);
         vm.ChatVM.RaiseChatUpdatedForTest();
 
@@ -125,12 +133,49 @@ public class ChatReorderOnSendTests
         Assert.Single(vm.ChatGroups.SelectMany(g => g.Chats));
 
         // Simulate message sent to project chat
+        projectChat.UpdatedAt = DateTimeOffset.Now;
         ds.MarkChatChanged(projectChat);
         vm.RefreshChatList();
 
         // Still visible and now in Today group
         firstChat = GetFirstChat(vm);
         Assert.Equal("Project Chat", firstChat?.Title);
+    }
+
+    [Fact]
+    public async Task LoadChatAsync_DoesNotBumpChatWhenOnlyMetadataChanges()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+
+        await session.Dispatch(async () =>
+        {
+            var olderUpdatedAt = DateTimeOffset.Now.AddHours(-2);
+            var older = new Chat
+            {
+                Title = "Older",
+                UpdatedAt = olderUpdatedAt
+            };
+            var newer = new Chat
+            {
+                Title = "Newer",
+                UpdatedAt = DateTimeOffset.Now.AddMinutes(-5),
+                PlanContent = "Persisted plan"
+            };
+            newer.Messages.Add(new ChatMessage { Role = "user", Content = "Hello" });
+
+            var ds = CreateDataStore(older, newer);
+            var vm = new MainViewModel(ds, new CopilotService(), new UpdateService());
+
+            Assert.Equal("Newer", GetFirstChat(vm)?.Title);
+
+            await vm.ChatVM.LoadChatAsync(newer);
+            await vm.ChatVM.LoadChatAsync(older);
+            vm.RefreshChatList();
+
+            Assert.Equal(older.Id, vm.ChatVM.CurrentChat?.Id);
+            Assert.Equal(olderUpdatedAt, older.UpdatedAt);
+            Assert.Equal("Newer", GetFirstChat(vm)?.Title);
+        }, CancellationToken.None);
     }
 
     private static Chat? GetFirstChat(MainViewModel vm)

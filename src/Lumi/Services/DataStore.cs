@@ -48,11 +48,12 @@ public class DataStore
 
     public AppData Data => _data;
 
+    /// <summary>Marks a chat as needing persistence. Does not change <see cref="Chat.UpdatedAt"/>
+    /// — callers that represent real user/assistant activity should bump the timestamp themselves.</summary>
     public void MarkChatChanged(Chat chat)
     {
         ArgumentNullException.ThrowIfNull(chat);
 
-        chat.UpdatedAt = DateTimeOffset.Now;
         var version = Interlocked.Increment(ref _nextChatChangeVersion);
         lock (_chatChangeSync)
         {

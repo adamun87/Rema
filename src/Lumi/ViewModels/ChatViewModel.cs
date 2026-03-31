@@ -726,7 +726,7 @@ public partial class ChatViewModel : ObservableObject
             chat.CopilotSessionId = createdSession.SessionId;
             _activeSession = createdSession;
             SubscribeToSession(createdSession, chat);
-            await SaveCurrentChatAsync(touchIndex: true);
+            await SaveCurrentChatAsync();
             return true;
         }
         catch (OperationCanceledException) when (sessionCts is not null && sessionCts.IsCancellationRequested && !ct.IsCancellationRequested)
@@ -1909,14 +1909,16 @@ public partial class ChatViewModel : ObservableObject
     {
         if (CurrentChat is null) return;
         if (touchIndex)
-            _dataStore.MarkChatChanged(CurrentChat);
+            CurrentChat.UpdatedAt = DateTimeOffset.Now;
+        _dataStore.MarkChatChanged(CurrentChat);
         await SaveChatAsync(CurrentChat, saveIndex);
     }
 
     private void QueueSaveChat(Chat chat, bool saveIndex, bool releaseIfInactive = false, bool touchIndex = false)
     {
         if (touchIndex)
-            _dataStore.MarkChatChanged(chat);
+            chat.UpdatedAt = DateTimeOffset.Now;
+        _dataStore.MarkChatChanged(chat);
         _ = SaveChatAsync(chat, saveIndex, releaseIfInactive);
     }
 
