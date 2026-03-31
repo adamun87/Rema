@@ -8,6 +8,9 @@ namespace Lumi.Models;
     WriteIndented = true,
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(AppData))]
+[JsonSerializable(typeof(Chat))]
+[JsonSerializable(typeof(List<Chat>))]
+[JsonSerializable(typeof(UserSettings))]
 [JsonSerializable(typeof(JsonDocument))]
 [JsonSerializable(typeof(List<ChatMessage>))]
 [JsonSerializable(typeof(List<McpServer>))]

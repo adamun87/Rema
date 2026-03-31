@@ -72,6 +72,9 @@ public class Chat : INotifyPropertyChanged
     /// <summary>Last model used in this chat. Restored as the selected model when the chat is reopened.</summary>
     public string? LastModelUsed { get; set; }
 
+    /// <summary>Last reasoning effort used in this chat. Restored alongside the selected model when reopened.</summary>
+    public string? LastReasoningEffortUsed { get; set; }
+
     /// <summary>Cumulative input tokens consumed across all turns of this chat.</summary>
     public long TotalInputTokens { get; set; }
 

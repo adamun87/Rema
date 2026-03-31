@@ -25,6 +25,7 @@ public partial class MainViewModel : ObservableObject
     /// <summary>A dedicated BrowserService for Settings cookie import/clear (not tied to any chat).</summary>
     private readonly BrowserService _settingsBrowserService;
     private bool _isRefreshingCopilotState;
+    private bool _isSyncingDefaultModelSelectionFromChat;
 
     private const int ChatPageSize = 50;
     private int _chatLoadLimit = ChatPageSize;
@@ -116,11 +117,21 @@ public partial class MainViewModel : ObservableObject
         SettingsVM.LoginVM = LoginVM;
         SearchOverlayVM = new SearchOverlayViewModel(dataStore, () => SelectedNavIndex);
 
-        // When the chat model selector changes the global default, sync it to SettingsVM
-        ChatVM.DefaultModelChanged += model =>
+        // When the chat model selector changes the global default, sync it to SettingsVM.
+        ChatVM.DefaultModelSelectionChanged += (model, reasoningEffort) =>
         {
-            if (SettingsVM.PreferredModel != model)
-                SettingsVM.PreferredModel = model;
+            if (SettingsVM.PreferredModel != model || SettingsVM.ReasoningEffort != (reasoningEffort ?? string.Empty))
+            {
+                _isSyncingDefaultModelSelectionFromChat = true;
+                try
+                {
+                    SettingsVM.SyncDefaultModelSelectionFromChat(model, reasoningEffort);
+                }
+                finally
+                {
+                    _isSyncingDefaultModelSelectionFromChat = false;
+                }
+            }
         };
 
         // Sync settings changes back to MainViewModel
@@ -130,7 +141,9 @@ public partial class MainViewModel : ObservableObject
                 IsDarkTheme = SettingsVM.IsDarkTheme;
             else if (args.PropertyName == nameof(SettingsViewModel.IsCompactDensity))
                 IsCompactDensity = SettingsVM.IsCompactDensity;
-            else if (args.PropertyName == nameof(SettingsViewModel.PreferredModel)
+            else if ((args.PropertyName == nameof(SettingsViewModel.PreferredModel)
+                      || args.PropertyName == nameof(SettingsViewModel.ReasoningEffort))
+                     && !_isSyncingDefaultModelSelectionFromChat
                      && !string.IsNullOrWhiteSpace(SettingsVM.PreferredModel)
                      && (ChatVM.CurrentChat is null || ChatVM.CurrentChat.Messages.Count == 0))
                 ChatVM.RestoreDefaultModelSelection();
@@ -248,6 +261,8 @@ public partial class MainViewModel : ObservableObject
             ChatVM.AvailableModels.Clear();
             foreach (var id in modelIds)
                 ChatVM.AvailableModels.Add(id);
+            ChatVM.UpdateModelCapabilities(models);
+            SettingsVM.UpdateModelCapabilities(models);
             ChatVM.SelectedModel = selected;
 
             SettingsVM.UpdateAvailableModels(modelIds);

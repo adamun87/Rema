@@ -35,6 +35,9 @@ public partial class ChatViewModel
     [ObservableProperty] private string? _projectBadgeText;
     [ObservableProperty] private string? _agentBadgeText;
     [ObservableProperty] private string[]? _qualityLevels;
+    [ObservableProperty] private string? _selectedQuality;
+    private bool _suppressModelSelectionSideEffects;
+    private bool _suppressSelectedQualitySync;
 
     // ── Plan (server may still generate plans) ──
     [ObservableProperty] private bool _hasPlan;
@@ -108,22 +111,134 @@ public partial class ChatViewModel
         ToggleBrowser();
     }
 
-    private static readonly string[] ReasoningLevels = [Loc.Quality_Low, Loc.Quality_Medium, Loc.Quality_High];
+    // Model reasoning effort capabilities from SDK
+    private Dictionary<string, List<string>> _modelReasoningEfforts = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, string> _modelDefaultEfforts = new(StringComparer.OrdinalIgnoreCase);
 
-    private static bool IsReasoningModel(string? modelId)
+    /// <summary>
+    /// Updates the model capabilities cache from SDK ModelInfo list.
+    /// Called by MainViewModel after fetching models from the SDK.
+    /// </summary>
+    public void UpdateModelCapabilities(List<GitHub.Copilot.SDK.ModelInfo> models)
     {
-        if (string.IsNullOrEmpty(modelId))
-            return false;
-
-        return modelId.StartsWith("o1", StringComparison.OrdinalIgnoreCase)
-            || modelId.StartsWith("o3", StringComparison.OrdinalIgnoreCase)
-            || modelId.StartsWith("o4", StringComparison.OrdinalIgnoreCase)
-            || modelId.Contains("think", StringComparison.OrdinalIgnoreCase);
+        ModelSelectionHelper.ApplyModelCapabilities(models, _modelReasoningEfforts, _modelDefaultEfforts);
+        UpdateQualityLevels(SelectedModel);
     }
 
     private void UpdateQualityLevels(string? modelId)
     {
-        QualityLevels = IsReasoningModel(modelId) ? ReasoningLevels : null;
+        QualityLevels = ModelSelectionHelper.GetQualityLevels(modelId, _modelReasoningEfforts);
+        SyncSelectedQualityFromState(modelId);
+    }
+
+    private string? GetStoredReasoningEffortPreference()
+    {
+        if (CurrentChat is { LastReasoningEffortUsed: { Length: > 0 } chatEffort })
+            return chatEffort;
+
+        return string.IsNullOrWhiteSpace(_dataStore.Data.Settings.ReasoningEffort)
+            ? null
+            : _dataStore.Data.Settings.ReasoningEffort;
+    }
+
+    internal string? GetSelectedReasoningEffort()
+    {
+        var explicitEffort = ModelSelectionHelper.DisplayToEffort(SelectedQuality);
+        if (!string.IsNullOrWhiteSpace(explicitEffort))
+        {
+            return ModelSelectionHelper.NormalizeEffort(
+                explicitEffort,
+                SelectedModel,
+                _modelReasoningEfforts,
+                _modelDefaultEfforts);
+        }
+
+        return ModelSelectionHelper.NormalizeEffort(
+            GetStoredReasoningEffortPreference(),
+            SelectedModel,
+            _modelReasoningEfforts,
+            _modelDefaultEfforts);
+    }
+
+    internal string? GetPersistedReasoningEffortPreference()
+    {
+        var normalizedEffort = GetSelectedReasoningEffort();
+        if (!string.IsNullOrWhiteSpace(normalizedEffort))
+            return normalizedEffort;
+
+        var explicitEffort = ModelSelectionHelper.DisplayToEffort(SelectedQuality);
+        if (!string.IsNullOrWhiteSpace(explicitEffort))
+            return explicitEffort;
+
+        return GetStoredReasoningEffortPreference();
+    }
+
+    private void SyncSelectedQualityFromState(string? modelId = null, string? preferredEffort = null)
+    {
+        if (QualityLevels is null)
+        {
+            SetSelectedQualityValue(null);
+            return;
+        }
+
+        var display = ModelSelectionHelper.ResolveSelectedQualityDisplay(
+            preferredEffort ?? GetStoredReasoningEffortPreference(),
+            modelId ?? SelectedModel,
+            _modelReasoningEfforts,
+            _modelDefaultEfforts);
+
+        SetSelectedQualityValue(display);
+    }
+
+    private void SetSelectedQualityValue(string? value)
+    {
+        if (SelectedQuality == value)
+            return;
+
+        _suppressSelectedQualitySync = true;
+        SelectedQuality = value;
+        _suppressSelectedQualitySync = false;
+    }
+
+    internal void ApplyModelSelection(string? modelId, string? reasoningEffort)
+    {
+        _suppressModelSelectionSideEffects = true;
+        try
+        {
+            SetSelectedModelValue(modelId);
+            SyncSelectedQualityFromState(modelId, reasoningEffort);
+        }
+        finally
+        {
+            _suppressModelSelectionSideEffects = false;
+        }
+    }
+
+    partial void OnSelectedQualityChanged(string? value)
+    {
+        if (_suppressSelectedQualitySync || _suppressModelSelectionSideEffects)
+            return;
+
+        var effort = GetPersistedReasoningEffortPreference();
+        var persistedEffort = effort ?? string.Empty;
+
+        if (CurrentChat is null || CurrentChat.Messages.Count == 0)
+        {
+            if (_dataStore.Data.Settings.ReasoningEffort != persistedEffort)
+            {
+                _dataStore.Data.Settings.ReasoningEffort = persistedEffort;
+                _dataStore.Save();
+            }
+
+            DefaultModelSelectionChanged?.Invoke(SelectedModel ?? string.Empty, effort);
+            return;
+        }
+
+        if (CurrentChat.LastReasoningEffortUsed != effort)
+            CurrentChat.LastReasoningEffortUsed = effort;
+
+        QueueModelSelectionSave();
+        QueueMidSessionModelSelectionSync();
     }
 
     private void InitializeMvvmUiState()

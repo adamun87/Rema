@@ -77,7 +77,11 @@ public partial class SettingsViewModel : ObservableObject
     // ── AI & Models ──
     [ObservableProperty] private string _preferredModel;
     [ObservableProperty] private string _reasoningEffort;
-    [ObservableProperty] private int _reasoningEffortIndex; // 0=Auto, 1=Low, 2=Medium, 3=High, 4=Extra High
+    [ObservableProperty] private string[]? _qualityLevels;
+    [ObservableProperty] private string? _selectedQuality;
+    private bool _suppressSelectedQualitySync;
+    private readonly Dictionary<string, List<string>> _modelReasoningEfforts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _modelDefaultEfforts = new(StringComparer.OrdinalIgnoreCase);
     public ObservableCollection<string> AvailableModels { get; } = [];
 
     // ── GitHub Account ──
@@ -204,9 +208,9 @@ public partial class SettingsViewModel : ObservableObject
         // AI
         _preferredModel = s.PreferredModel;
         _reasoningEffort = s.ReasoningEffort;
-        _reasoningEffortIndex = s.ReasoningEffort switch { "low" => 1, "medium" => 2, "high" => 3, "xhigh" => 4, _ => 0 };
         if (!string.IsNullOrWhiteSpace(_preferredModel))
             AvailableModels.Add(_preferredModel);
+        UpdateQualityLevels(_preferredModel);
 
         // Privacy
         _enableMemoryAutoSave = s.EnableMemoryAutoSave;
@@ -291,19 +295,134 @@ public partial class SettingsViewModel : ObservableObject
     partial void OnExpandReasoningWhileStreamingChanged(bool value) { _dataStore.Data.Settings.ExpandReasoningWhileStreaming = value; Save(); NotifyModified(); }
     partial void OnAutoGenerateTitlesChanged(bool value) { _dataStore.Data.Settings.AutoGenerateTitles = value; Save(); NotifyModified(); }
 
-    partial void OnPreferredModelChanged(string value){ _dataStore.Data.Settings.PreferredModel = value; Save(); SettingsChanged?.Invoke(); NotifyModified(); }
-    partial void OnReasoningEffortIndexChanged(int value)
+    private void UpdateQualityLevels(string? modelId)
     {
-        var effort = value switch { 1 => "low", 2 => "medium", 3 => "high", 4 => "xhigh", _ => "" };
-        ReasoningEffort = effort;
+        QualityLevels = ModelSelectionHelper.GetQualityLevels(modelId, _modelReasoningEfforts);
+        SyncSelectedQualityFromState(modelId);
     }
-    partial void OnReasoningEffortChanged(string value) { _dataStore.Data.Settings.ReasoningEffort = value; Save(); SettingsChanged?.Invoke(); NotifyModified(); }
+
+    private string? GetSelectedReasoningEffort()
+    {
+        var explicitEffort = ModelSelectionHelper.DisplayToEffort(SelectedQuality);
+        if (!string.IsNullOrWhiteSpace(explicitEffort))
+        {
+            return ModelSelectionHelper.NormalizeEffort(
+                explicitEffort,
+                PreferredModel,
+                _modelReasoningEfforts,
+                _modelDefaultEfforts);
+        }
+
+        return ModelSelectionHelper.NormalizeEffort(
+            string.IsNullOrWhiteSpace(ReasoningEffort) ? null : ReasoningEffort,
+            PreferredModel,
+            _modelReasoningEfforts,
+            _modelDefaultEfforts);
+    }
+
+    private void SyncSelectedQualityFromState(string? modelId = null, string? preferredEffort = null)
+    {
+        if (QualityLevels is null)
+        {
+            SetSelectedQualityValue(null);
+            return;
+        }
+
+        var display = ModelSelectionHelper.ResolveSelectedQualityDisplay(
+            preferredEffort ?? (string.IsNullOrWhiteSpace(ReasoningEffort) ? null : ReasoningEffort),
+            modelId ?? PreferredModel,
+            _modelReasoningEfforts,
+            _modelDefaultEfforts);
+
+        SetSelectedQualityValue(display);
+    }
+
+    private void SetSelectedQualityValue(string? value)
+    {
+        if (SelectedQuality == value)
+            return;
+
+        _suppressSelectedQualitySync = true;
+        SelectedQuality = value;
+        _suppressSelectedQualitySync = false;
+    }
+
+    partial void OnPreferredModelChanged(string value)
+    {
+        _dataStore.Data.Settings.PreferredModel = value;
+        if (!string.IsNullOrWhiteSpace(value) && !AvailableModels.Contains(value))
+            AvailableModels.Add(value);
+
+        UpdateQualityLevels(value);
+        var resolvedEffort = GetSelectedReasoningEffort() ?? string.Empty;
+        if (ReasoningEffort != resolvedEffort)
+        {
+            ReasoningEffort = resolvedEffort;
+            return;
+        }
+
+        Save();
+        NotifyModified();
+    }
+
+    partial void OnSelectedQualityChanged(string? value)
+    {
+        if (_suppressSelectedQualitySync)
+            return;
+
+        var resolvedEffort = GetSelectedReasoningEffort() ?? string.Empty;
+        if (ReasoningEffort != resolvedEffort)
+        {
+            ReasoningEffort = resolvedEffort;
+            return;
+        }
+
+        Save();
+        NotifyModified();
+    }
+
+    partial void OnReasoningEffortChanged(string value)
+    {
+        _dataStore.Data.Settings.ReasoningEffort = value;
+        SyncSelectedQualityFromState(PreferredModel, value);
+        Save();
+        NotifyModified();
+    }
+
+    public void SyncDefaultModelSelectionFromChat(string model, string? reasoningEffort)
+    {
+        if (string.IsNullOrWhiteSpace(model))
+            return;
+
+        var normalizedEffort = ModelSelectionHelper.NormalizeEffort(
+            reasoningEffort,
+            model,
+            _modelReasoningEfforts,
+            _modelDefaultEfforts) ?? string.Empty;
+
+        if (PreferredModel != model)
+            PreferredModel = model;
+
+        if (ReasoningEffort != normalizedEffort)
+            ReasoningEffort = normalizedEffort;
+    }
 
     public void UpdateAvailableModels(System.Collections.Generic.List<string> models)
     {
         AvailableModels.Clear();
         foreach (var m in models)
             AvailableModels.Add(m);
+
+        if (!string.IsNullOrWhiteSpace(PreferredModel) && !AvailableModels.Contains(PreferredModel))
+            AvailableModels.Add(PreferredModel);
+
+        UpdateQualityLevels(PreferredModel);
+    }
+
+    public void UpdateModelCapabilities(List<GitHub.Copilot.SDK.ModelInfo> models)
+    {
+        ModelSelectionHelper.ApplyModelCapabilities(models, _modelReasoningEfforts, _modelDefaultEfforts);
+        UpdateQualityLevels(PreferredModel);
     }
 
     [RelayCommand]
@@ -415,6 +534,7 @@ public partial class SettingsViewModel : ObservableObject
     public bool IsShowReasoningModified => ShowReasoning != _defaults.ShowReasoning;
     public bool IsExpandReasoningWhileStreamingModified => ExpandReasoningWhileStreaming != _defaults.ExpandReasoningWhileStreaming;
     public bool IsAutoGenerateTitlesModified => AutoGenerateTitles != _defaults.AutoGenerateTitles;
+    public bool IsDefaultModelSelectionModified => PreferredModel != _defaults.PreferredModel || ReasoningEffort != _defaults.ReasoningEffort;
     public bool IsPreferredModelModified=> PreferredModel != _defaults.PreferredModel;
     public bool IsReasoningEffortModified => ReasoningEffort != _defaults.ReasoningEffort;
     public bool IsEnableMemoryAutoSaveModified => EnableMemoryAutoSave != _defaults.EnableMemoryAutoSave;
@@ -437,6 +557,7 @@ public partial class SettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(IsShowReasoningModified));
         OnPropertyChanged(nameof(IsExpandReasoningWhileStreamingModified));
         OnPropertyChanged(nameof(IsAutoGenerateTitlesModified));
+        OnPropertyChanged(nameof(IsDefaultModelSelectionModified));
         OnPropertyChanged(nameof(IsPreferredModelModified));
         OnPropertyChanged(nameof(IsReasoningEffortModified));
         OnPropertyChanged(nameof(IsEnableMemoryAutoSaveModified));
@@ -459,8 +580,12 @@ public partial class SettingsViewModel : ObservableObject
     [RelayCommand] private void RevertShowReasoning() => ShowReasoning = _defaults.ShowReasoning;
     [RelayCommand] private void RevertExpandReasoningWhileStreaming() => ExpandReasoningWhileStreaming = _defaults.ExpandReasoningWhileStreaming;
     [RelayCommand] private void RevertAutoGenerateTitles() => AutoGenerateTitles = _defaults.AutoGenerateTitles;
-    [RelayCommand] private void RevertPreferredModel()=> PreferredModel = _defaults.PreferredModel;
-    [RelayCommand] private void RevertReasoningEffort() => ReasoningEffort = _defaults.ReasoningEffort;
+    [RelayCommand]
+    private void RevertDefaultModelSelection()
+    {
+        PreferredModel = _defaults.PreferredModel;
+        ReasoningEffort = _defaults.ReasoningEffort;
+    }
     [RelayCommand] private void RevertEnableMemoryAutoSave() => EnableMemoryAutoSave = _defaults.EnableMemoryAutoSave;
     [RelayCommand] private void RevertAutoSaveChats() => AutoSaveChats = _defaults.AutoSaveChats;
 

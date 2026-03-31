@@ -262,21 +262,18 @@
 
         <sc:StrataSettingGroup Header="{loc:Str SettingsGroup_Model}">
           <sc:StrataSetting Header="{loc:Str Setting_PreferredModel}" Description="{loc:Str SettingDesc_PreferredModel}"
-                            IsModified="{Binding IsPreferredModelModified}">
-            <ComboBox ItemsSource="{Binding AvailableModels}"
-                      SelectedItem="{Binding PreferredModel, Mode=TwoWay}"
-                      Width="220" IsEditable="True">
-              <ComboBox.ItemTemplate>
+                            IsModified="{Binding IsDefaultModelSelectionModified}">
+            <sc:StrataModelPicker Width="300"
+                                  Models="{Binding AvailableModels}"
+                                  SelectedModel="{Binding PreferredModel, Mode=TwoWay}"
+                                  QualityLevels="{Binding QualityLevels}"
+                                  SelectedQuality="{Binding SelectedQuality, Mode=TwoWay}">
+              <sc:StrataModelPicker.ModelItemTemplate>
                 <DataTemplate>
                   <TextBlock Text="{Binding Converter={StaticResource ModelDisplayConverter}}" />
                 </DataTemplate>
-              </ComboBox.ItemTemplate>
-            </ComboBox>
-          </sc:StrataSetting>
-          <sc:StrataSetting Header="{loc:Str Setting_ReasoningEffort}" Description="{loc:Str SettingDesc_ReasoningEffort}"
-                            IsModified="{Binding IsReasoningEffortModified}">
-            <ComboBox x:Name="ReasoningEffortCombo" Width="220"
-                      SelectedIndex="{Binding ReasoningEffortIndex}" />
+              </sc:StrataModelPicker.ModelItemTemplate>
+            </sc:StrataModelPicker>
           </sc:StrataSetting>
         </sc:StrataSettingGroup>
       </StackPanel>

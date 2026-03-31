@@ -19,7 +19,6 @@ public partial class SettingsView : UserControl
 {
     private Control?[] _pages = [];
     private ComboBox? _settingsSexCombo;
-    private ComboBox? _reasoningEffortCombo;
     private Control? _searchResultsHeader;
     private TextBlock? _searchCountText;
     private TextBlock? _searchQueryText;
@@ -128,19 +127,6 @@ public partial class SettingsView : UserControl
                 Loc.Onboarding_SexMale,
                 Loc.Onboarding_SexFemale,
                 Loc.Onboarding_SexPreferNot,
-            };
-        }
-
-        _reasoningEffortCombo = this.FindControl<ComboBox>("ReasoningEffortCombo");
-        if (_reasoningEffortCombo is not null)
-        {
-            _reasoningEffortCombo.ItemsSource = new[]
-            {
-                Loc.Setting_ReasoningEffortAuto,
-                Loc.Setting_ReasoningEffortLow,
-                Loc.Setting_ReasoningEffortMedium,
-                Loc.Setting_ReasoningEffortHigh,
-                Loc.Setting_ReasoningEffortXHigh,
             };
         }
 
@@ -277,8 +263,7 @@ public partial class SettingsView : UserControl
         [Loc.Setting_ShowToolCalls] = vm => vm.RevertShowToolCallsCommand.Execute(null),
         [Loc.Setting_ShowReasoning] = vm => vm.RevertShowReasoningCommand.Execute(null),
         [Loc.Setting_AutoGenerateTitles] = vm => vm.RevertAutoGenerateTitlesCommand.Execute(null),
-        [Loc.Setting_PreferredModel] = vm => vm.RevertPreferredModelCommand.Execute(null),
-        [Loc.Setting_ReasoningEffort] = vm => vm.RevertReasoningEffortCommand.Execute(null),
+        [Loc.Setting_PreferredModel] = vm => vm.RevertDefaultModelSelectionCommand.Execute(null),
         [Loc.Setting_AutoSaveMemories] = vm => vm.RevertEnableMemoryAutoSaveCommand.Execute(null),
         [Loc.Setting_AutoSaveChats] = vm => vm.RevertAutoSaveChatsCommand.Execute(null),
     };

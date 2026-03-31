@@ -1409,6 +1409,32 @@ public partial class ChatViewModel
                     });
                     break;
 
+                case SessionStartEvent start:
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                    var effectiveModel = !string.IsNullOrWhiteSpace(start.Data.SelectedModel)
+                        ? start.Data.SelectedModel
+                        : chat.LastModelUsed ?? SelectedModel;
+                    if (!string.IsNullOrWhiteSpace(effectiveModel))
+                    {
+                        if (!AvailableModels.Contains(effectiveModel))
+                            AvailableModels.Add(effectiveModel);
+                        chat.LastModelUsed = effectiveModel;
+                    }
+
+                    chat.LastReasoningEffortUsed = ModelSelectionHelper.NormalizeEffort(
+                        start.Data.ReasoningEffort,
+                        effectiveModel,
+                        _modelReasoningEfforts,
+                        _modelDefaultEfforts);
+
+                    if (!string.IsNullOrWhiteSpace(effectiveModel))
+                        ApplyModelSelection(effectiveModel, chat.LastReasoningEffortUsed);
+
+                    QueueModelSelectionSave(chat);
+                    });
+                    break;
+
                 case SessionTaskCompleteEvent taskComplete:
                     Dispatcher.UIThread.Post(() =>
                     {
@@ -1423,9 +1449,30 @@ public partial class ChatViewModel
                 case SessionResumeEvent resume:
                     Dispatcher.UIThread.Post(() =>
                     {
+                    var effectiveModel = !string.IsNullOrWhiteSpace(resume.Data.SelectedModel)
+                        ? resume.Data.SelectedModel
+                        : chat.LastModelUsed ?? SelectedModel;
+                    if (!string.IsNullOrWhiteSpace(effectiveModel))
+                    {
+                        if (!AvailableModels.Contains(effectiveModel))
+                            AvailableModels.Add(effectiveModel);
+                        chat.LastModelUsed = effectiveModel;
+                    }
+
+                    chat.LastReasoningEffortUsed = ModelSelectionHelper.NormalizeEffort(
+                        resume.Data.ReasoningEffort,
+                        effectiveModel,
+                        _modelReasoningEfforts,
+                        _modelDefaultEfforts);
+
+                    if (!string.IsNullOrWhiteSpace(effectiveModel))
+                        ApplyModelSelection(effectiveModel, chat.LastReasoningEffortUsed);
+
                     runtime.StatusText = "";
                     if (_activeSession == session)
                         StatusText = "";
+
+                    QueueModelSelectionSave(chat);
                     });
                     break;
 
@@ -1436,11 +1483,19 @@ public partial class ChatViewModel
                     {
                         if (!AvailableModels.Contains(modelChange.Data.NewModel))
                             AvailableModels.Add(modelChange.Data.NewModel);
-                        SelectedModel = modelChange.Data.NewModel;
+                        chat.LastModelUsed = modelChange.Data.NewModel;
+                        chat.LastReasoningEffortUsed = ModelSelectionHelper.NormalizeEffort(
+                            chat.LastReasoningEffortUsed ?? GetSelectedReasoningEffort(),
+                            modelChange.Data.NewModel,
+                            _modelReasoningEfforts,
+                            _modelDefaultEfforts);
+                        ApplyModelSelection(modelChange.Data.NewModel, chat.LastReasoningEffortUsed);
                         // Update in-flight streaming message with the actual model used
                         if (streamingMsg is not null)
                             streamingMsg.Model = modelChange.Data.NewModel;
                     }
+
+                    QueueModelSelectionSave(chat);
                     });
                     break;
 
@@ -1624,6 +1679,12 @@ public partial class ChatViewModel
             cts.Dispose();
         }
         _ctsSources.Clear();
+        _modelSelectionSaveCts?.Cancel();
+        _modelSelectionSaveCts?.Dispose();
+        _modelSelectionSaveCts = null;
+        _modelSelectionSyncCts?.Cancel();
+        _modelSelectionSyncCts?.Dispose();
+        _modelSelectionSyncCts = null;
 
         // Reset busy state on all runtimes
         foreach (var runtime in _runtimeStates.Values)

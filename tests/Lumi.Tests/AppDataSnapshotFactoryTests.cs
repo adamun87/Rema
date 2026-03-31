@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Collections.Generic;
+using System.Text.Json;
 using Lumi.Models;
 using Lumi.Services;
 using Xunit;
@@ -8,6 +9,69 @@ namespace Lumi.Tests;
 
 public class AppDataSnapshotFactoryTests
 {
+    [Fact]
+    public void CreateIndexSnapshot_PreservesSettingsReasoningEffort()
+    {
+        var source = new AppData
+        {
+            Settings = new UserSettings
+            {
+                PreferredModel = "gpt-5.4",
+                ReasoningEffort = "high"
+            }
+        };
+
+        var snapshot = InvokeCreateIndexSnapshot(source);
+
+        Assert.Equal("gpt-5.4", snapshot.Settings.PreferredModel);
+        Assert.Equal("high", snapshot.Settings.ReasoningEffort);
+    }
+
+    [Fact]
+    public void AppDataJsonContext_SerializesSettingsReasoningEffort()
+    {
+        var data = new AppData
+        {
+            Settings = new UserSettings
+            {
+                PreferredModel = "gpt-5.4",
+                ReasoningEffort = "medium"
+            }
+        };
+
+        var json = JsonSerializer.Serialize(data, AppDataJsonContext.Default.AppData);
+        using var document = JsonDocument.Parse(json);
+
+        Assert.Equal("medium", document.RootElement
+            .GetProperty("settings")
+            .GetProperty("reasoningEffort")
+            .GetString());
+    }
+
+    [Fact]
+    public void AppDataJsonContext_SerializesChatReasoningEffort()
+    {
+        var data = new AppData
+        {
+            Chats =
+            [
+                CreateChat(
+                    Guid.NewGuid(),
+                    title: "Serializer check",
+                    copilotSessionId: null,
+                    updatedAt: new DateTimeOffset(2026, 3, 31, 18, 30, 0, TimeSpan.Zero),
+                    lastModelUsed: "gpt-5.4",
+                    lastReasoningEffortUsed: "medium")
+            ]
+        };
+
+        var json = JsonSerializer.Serialize(data, AppDataJsonContext.Default.AppData);
+        using var document = JsonDocument.Parse(json);
+
+        var chat = document.RootElement.GetProperty("chats")[0];
+        Assert.Equal("medium", chat.GetProperty("lastReasoningEffortUsed").GetString());
+    }
+
     [Fact]
     public void MergeChatIndexChanges_PreservesPersistedChat_WhenLocalChatWasNotMarkedDirty()
     {
@@ -59,6 +123,7 @@ public class AppDataSnapshotFactoryTests
                     skillIds: [Guid.NewGuid()],
                     mcpServers: ["new-mcp"],
                     lastModelUsed: "gpt-5.4",
+                    lastReasoningEffortUsed: "high",
                     totalInputTokens: 100,
                     totalOutputTokens: 200,
                     planContent: "updated plan")
@@ -76,6 +141,7 @@ public class AppDataSnapshotFactoryTests
                     skillIds: [Guid.NewGuid()],
                     mcpServers: ["old-mcp"],
                     lastModelUsed: "claude-opus-4.6-1m",
+                    lastReasoningEffortUsed: "low",
                     totalInputTokens: 10,
                     totalOutputTokens: 20,
                     planContent: "stale plan")
@@ -91,6 +157,7 @@ public class AppDataSnapshotFactoryTests
         Assert.Equal(currentSnapshot.Chats[0].ActiveSkillIds, chat.ActiveSkillIds);
         Assert.Equal(currentSnapshot.Chats[0].ActiveMcpServerNames, chat.ActiveMcpServerNames);
         Assert.Equal("gpt-5.4", chat.LastModelUsed);
+        Assert.Equal("high", chat.LastReasoningEffortUsed);
         Assert.Equal(100, chat.TotalInputTokens);
         Assert.Equal(200, chat.TotalOutputTokens);
         Assert.Equal("updated plan", chat.PlanContent);
@@ -229,6 +296,7 @@ public class AppDataSnapshotFactoryTests
         List<Guid>? skillIds = null,
         List<string>? mcpServers = null,
         string? lastModelUsed = null,
+        string? lastReasoningEffortUsed = null,
         long totalInputTokens = 0,
         long totalOutputTokens = 0,
         string? planContent = null)
@@ -242,10 +310,24 @@ public class AppDataSnapshotFactoryTests
             ActiveSkillIds = skillIds ?? [],
             ActiveMcpServerNames = mcpServers ?? [],
             LastModelUsed = lastModelUsed,
+            LastReasoningEffortUsed = lastReasoningEffortUsed,
             TotalInputTokens = totalInputTokens,
             TotalOutputTokens = totalOutputTokens,
             PlanContent = planContent
         };
+    }
+
+    private static AppData InvokeCreateIndexSnapshot(AppData source)
+    {
+        var factoryType = typeof(DataStore).Assembly.GetType("Lumi.Services.AppDataSnapshotFactory")
+            ?? throw new InvalidOperationException("AppDataSnapshotFactory type was not found.");
+        var createMethod = factoryType.GetMethod(
+            "CreateIndexSnapshot",
+            BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)
+            ?? throw new InvalidOperationException("CreateIndexSnapshot method was not found.");
+
+        return (AppData)(createMethod.Invoke(null, [source])
+            ?? throw new InvalidOperationException("CreateIndexSnapshot returned null."));
     }
 
     private static AppData InvokeMergeChatIndexChanges(

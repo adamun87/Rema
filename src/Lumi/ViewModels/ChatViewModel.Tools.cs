@@ -384,36 +384,86 @@ public partial class ChatViewModel
     /// <summary>Hides the diff preview island.</summary>
     public void HideDiff() => DiffHideRequested?.Invoke();
 
+    private CancellationTokenSource? _modelSelectionSaveCts;
+    private CancellationTokenSource? _modelSelectionSyncCts;
+
     partial void OnSelectedModelChanged(string? value)
     {
         UpdateQualityLevels(value);
 
-        if (string.IsNullOrWhiteSpace(value)) return;
+        if (_suppressModelSelectionSideEffects || string.IsNullOrWhiteSpace(value))
+            return;
+
+        var reasoningEffort = GetPersistedReasoningEffortPreference();
 
         // New chats (no messages yet) update the global default model.
         // Existing chats only update their per-chat model.
         if (CurrentChat is null || CurrentChat.Messages.Count == 0)
         {
             _dataStore.Data.Settings.PreferredModel = value;
-            DefaultModelChanged?.Invoke(value);
+            _dataStore.Data.Settings.ReasoningEffort = reasoningEffort ?? string.Empty;
+            _dataStore.Save();
+            DefaultModelSelectionChanged?.Invoke(value, reasoningEffort);
         }
 
         if (CurrentChat is { } chat)
+        {
             chat.LastModelUsed = value;
+            chat.LastReasoningEffortUsed = reasoningEffort;
+        }
 
-        _ = SaveIndexAsync();
-
-        // Mid-session model switch via SDK API (avoids session invalidation)
-        if (_activeSession is not null)
-            _ = SwitchModelMidSessionAsync(value);
+        QueueModelSelectionSave();
+        QueueMidSessionModelSelectionSync();
     }
 
-    private async Task SwitchModelMidSessionAsync(string modelId)
+    private void QueueModelSelectionSave(Chat? chat = null)
     {
-        if (_activeSession is null) return;
+        _modelSelectionSaveCts?.Cancel();
+        _modelSelectionSaveCts?.Dispose();
+        _modelSelectionSaveCts = null;
+
+        var targetChat = chat ?? CurrentChat;
+        if (targetChat is not { Messages.Count: > 0 })
+            return;
+
+        _dataStore.MarkChatChanged(targetChat);
+        _modelSelectionSaveCts = new CancellationTokenSource();
+        var cts = _modelSelectionSaveCts;
+        _ = Task.Delay(500, cts.Token).ContinueWith(_ => SaveIndexAsync(),
+            cts.Token, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
+    }
+
+    private void QueueMidSessionModelSelectionSync()
+    {
+        _modelSelectionSyncCts?.Cancel();
+        _modelSelectionSyncCts?.Dispose();
+        _modelSelectionSyncCts = null;
+
+        if (_activeSession is null || string.IsNullOrWhiteSpace(SelectedModel))
+            return;
+
+        var modelId = SelectedModel;
+        var reasoningEffort = GetSelectedReasoningEffort();
+        _modelSelectionSyncCts = new CancellationTokenSource();
+        var cts = _modelSelectionSyncCts;
+        _ = Task.Delay(75, cts.Token).ContinueWith(
+            _ => SwitchModelMidSessionAsync(modelId, reasoningEffort),
+            cts.Token,
+            TaskContinuationOptions.OnlyOnRanToCompletion,
+            TaskScheduler.Default).Unwrap();
+    }
+
+    private async Task SwitchModelMidSessionAsync(string modelId, string? reasoningEffort)
+    {
+        if (_activeSession is null)
+            return;
+
         try
         {
-            await _activeSession.SetModelAsync(modelId);
+            if (string.IsNullOrWhiteSpace(reasoningEffort))
+                await _activeSession.SetModelAsync(modelId);
+            else
+                await _activeSession.SetModelAsync(modelId, reasoningEffort);
         }
         catch
         {

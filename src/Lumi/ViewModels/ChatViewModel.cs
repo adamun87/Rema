@@ -210,8 +210,8 @@ public partial class ChatViewModel : ObservableObject
     /// <summary>Raised when the user clicks the plan card to open it in the right panel.</summary>
     public event Action? PlanShowRequested;
 
-    /// <summary>Raised when a model change in a new chat updates the global default.</summary>
-    public event Action<string>? DefaultModelChanged;
+    /// <summary>Raised when a model/effort change in a new chat updates the global default selection.</summary>
+    public event Action<string, string?>? DefaultModelSelectionChanged;
     /// <summary>Raised to hide the plan preview island.</summary>
     public event Action? PlanHideRequested;
 
@@ -295,7 +295,9 @@ public partial class ChatViewModel : ObservableObject
 
     public void RestoreDefaultModelSelection()
     {
-        SetSelectedModelValue(_dataStore.Data.Settings.PreferredModel);
+        ApplyModelSelection(
+            _dataStore.Data.Settings.PreferredModel,
+            _dataStore.Data.Settings.ReasoningEffort);
     }
 
     partial void OnIsBusyChanged(bool value)
@@ -544,8 +546,11 @@ public partial class ChatViewModel : ObservableObject
             skillDirs.Add(dir);
 
         var mcpServers = await mcpServersTask;
-        var reasoningEffort = _dataStore.Data.Settings.ReasoningEffort;
-        var effort = string.IsNullOrWhiteSpace(reasoningEffort) ? null : reasoningEffort;
+        var persistedEffort = GetPersistedReasoningEffortPreference();
+        if (chat.LastReasoningEffortUsed != persistedEffort)
+            chat.LastReasoningEffortUsed = persistedEffort;
+
+        var effort = GetSelectedReasoningEffort() ?? persistedEffort;
         var agentName = ActiveAgent?.Name;
 
         // Native user input handler — wired to the existing question card UI.
@@ -902,10 +907,9 @@ public partial class ChatViewModel : ObservableObject
             SelectedSdkAgentName = chat.SdkAgentName;
 
             // Restore per-chat model selection (falls back to global preferred model)
-            if (!string.IsNullOrWhiteSpace(chat.LastModelUsed))
-                SetSelectedModelValue(chat.LastModelUsed);
-            else
-                RestoreDefaultModelSelection();
+            ApplyModelSelection(
+                chat.LastModelUsed ?? _dataStore.Data.Settings.PreferredModel,
+                chat.LastReasoningEffortUsed ?? _dataStore.Data.Settings.ReasoningEffort);
 
             // Git status can be slow in large repos/worktrees. Do not keep the chat
             // loading overlay up after the transcript is already interactive.
@@ -1089,6 +1093,7 @@ public partial class ChatViewModel : ObservableObject
         PromptText = "";
         _chatDrafts.Remove(CurrentChat?.Id ?? Guid.Empty);
         ClearSuggestions();
+        var selectedReasoningEffort = GetPersistedReasoningEffortPreference();
 
         // Expire any pending question cards — the user chose to type instead
         if (CurrentChat is not null)
@@ -1110,7 +1115,8 @@ public partial class ChatViewModel : ObservableObject
                 ActiveMcpServerNames = new List<string>(ActiveMcpServerNames),
                 SdkAgentName = SelectedSdkAgentName,
                 WorktreePath = IsWorktreeMode ? WorktreePath : null,
-                LastModelUsed = SelectedModel
+                LastModelUsed = SelectedModel,
+                LastReasoningEffortUsed = selectedReasoningEffort
             };
             _pendingProjectId = null;
             _dataStore.Data.Chats.Add(chat);
@@ -1123,6 +1129,8 @@ public partial class ChatViewModel : ObservableObject
 
         // Capture before any async operations — CurrentChat may change if the user switches chats
         var targetChat = CurrentChat!;
+        targetChat.LastModelUsed = SelectedModel;
+        targetChat.LastReasoningEffortUsed = selectedReasoningEffort;
 
         // Add user message immediately so it appears before async worktree creation
         var isSilentRetry = _silentRetryPrompt is not null && prompt == _silentRetryPrompt;
