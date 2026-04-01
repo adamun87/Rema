@@ -2040,7 +2040,7 @@ public partial class ChatViewModel : ObservableObject
 
     private async Task GenerateSuggestionsAsync(Chat chat, Guid assistantMessageId)
     {
-        var hasTargetAssistant = false;
+        var suggestionsApplied = false;
         try
         {
             await Dispatcher.UIThread.InvokeAsync(() =>
@@ -2057,8 +2057,6 @@ public partial class ChatViewModel : ObservableObject
             var assistantMessage = chat.Messages[assistantIndex];
             if (assistantMessage.Role != "assistant" || string.IsNullOrWhiteSpace(assistantMessage.Content))
                 return;
-
-            hasTargetAssistant = true;
 
             // Use the user message that led to this assistant reply for tighter context.
             var lastUser = chat.Messages
@@ -2081,11 +2079,12 @@ public partial class ChatViewModel : ObservableObject
                 SuggestionA = suggestions?.ElementAtOrDefault(0) ?? "";
                 SuggestionB = suggestions?.ElementAtOrDefault(1) ?? "";
                 SuggestionC = suggestions?.ElementAtOrDefault(2) ?? "";
+                suggestionsApplied = true;
             });
         }
-        catch
+        catch (Exception ex)
         {
-            // Silently fail — suggestions are non-critical
+            System.Diagnostics.Debug.WriteLine($"[Lumi] Suggestion generation failed: {ex.Message}");
         }
         finally
         {
@@ -2095,7 +2094,7 @@ public partial class ChatViewModel : ObservableObject
                     IsSuggestionsGenerating = false;
 
                 _suggestionGenerationInFlightChats.Remove(chat.Id);
-                if (hasTargetAssistant)
+                if (suggestionsApplied)
                     _lastSuggestedAssistantMessageByChat[chat.Id] = assistantMessageId;
             });
         }
