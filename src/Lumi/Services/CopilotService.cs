@@ -291,17 +291,30 @@ public class CopilotService : IAsyncDisposable
     }
 
     /// <summary>Returns the cheapest/fastest model ID from the cached model list.
-    /// Uses billing multiplier as a proxy for speed — lower cost ≈ faster/lighter.</summary>
+    /// Uses billing multiplier as a proxy for speed — lower cost ≈ faster/lighter.
+    /// Falls back to models whose name suggests a lightweight tier (e.g. "mini", "flash").</summary>
     public async Task<string?> GetFastestModelIdAsync(CancellationToken ct = default)
     {
         if (_fastestModelId is not null) return _fastestModelId;
         try
         {
             var models = await GetModelsAsync(ct);
+
+            // Primary: lowest billing multiplier
             _fastestModelId = models
                 .Where(m => m.Billing is not null)
                 .OrderBy(m => m.Billing!.Multiplier)
                 .FirstOrDefault()?.Id;
+
+            // Fallback: pick a model whose name hints at a lightweight tier
+            _fastestModelId ??= models
+                .FirstOrDefault(m =>
+                    m.Id.Contains("mini", StringComparison.OrdinalIgnoreCase) ||
+                    m.Id.Contains("flash", StringComparison.OrdinalIgnoreCase) ||
+                    m.Id.Contains("haiku", StringComparison.OrdinalIgnoreCase))?.Id;
+
+            // Last resort: just use the first available model
+            _fastestModelId ??= models.FirstOrDefault()?.Id;
         }
         catch { /* best effort — fall back to default model */ }
         return _fastestModelId;
