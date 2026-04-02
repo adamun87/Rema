@@ -637,7 +637,8 @@ public partial class ChatViewModel
                 }
             },
             "ask_question",
-            "Ask the user a question with predefined options to choose from. Use this when you need the user to pick from a set of choices (e.g. selecting a template, confirming a direction, choosing between alternatives). The answer will be returned as text. Only use this for genuinely useful choices — don't ask unnecessary questions.");
+            "Ask the user a question with predefined options to choose from. Use this when you need the user to pick from a set of choices (e.g. selecting a template, confirming a direction, choosing between alternatives). The answer will be returned as text. Only use this for genuinely useful choices — don't ask unnecessary questions.",
+            Lumi.Models.AppDataJsonContext.Default.Options);
     }
 
     /// <summary>Called by the View when the user selects an answer on a question card.</summary>

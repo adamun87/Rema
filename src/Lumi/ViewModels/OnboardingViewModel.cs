@@ -448,7 +448,8 @@ public partial class OnboardingViewModel : ObservableObject
                     return await AskUserQuestionAsync(question, optionsJson, ct);
                 },
                 "ask_user",
-                "Ask the user a question with clickable answer options. The user sees a visual card with buttons. Use this to learn about their preferences, work, and interests."),
+                "Ask the user a question with clickable answer options. The user sees a visual card with buttons. Use this to learn about their preferences, work, and interests.",
+                Lumi.Models.AppDataJsonContext.Default.Options),
 
             // Run a command to dig deeper
             AIFunctionFactory.Create(
