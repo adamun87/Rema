@@ -9,9 +9,11 @@ using System.Web;
 namespace Lumi.Services;
 
 /// <summary>
-/// Searches the web using DuckDuckGo's server-rendered HTML endpoints.
-/// No API key required — parses HTML results directly.
-/// Uses retry logic with fallback to the lite endpoint for reliability.
+/// [DEPRECATED] Custom web search using DuckDuckGo's server-rendered HTML endpoints.
+/// DuckDuckGo added aggressive bot/CAPTCHA detection (April 2026) that blocks automated
+/// requests after 1–2 queries, making this approach unreliable (~80% failure rate).
+/// Lumi now uses the Copilot SDK's built-in <c>web_search</c> tool (Bing-powered) instead.
+/// This code is kept as a fallback reference in case a custom search provider is needed.
 /// </summary>
 public static partial class WebSearchService
 {
