@@ -24,7 +24,7 @@ public static class SessionConfigBuilder
     private const string ClientName = "lumi";
 
     /// <summary>Tools that Lumi provides natively and should not be duplicated by the SDK.</summary>
-    private static readonly List<string> ExcludedBuiltInTools = ["web_fetch", "web_search"];
+    private static readonly List<string> ExcludedBuiltInTools = ["web_fetch"];
 
     /// <summary>
     /// Builds a <see cref="SessionConfig"/> for creating a new session.

@@ -22,8 +22,7 @@ public static partial class ToolDisplayHelper
             or "replace_string_in_file" or "multi_replace_string_in_file" or "str_replace_editor" => "📝",
         "view" or "read_file" or "read" => "📄",
         "browser" or "browser_navigate" or "browser_do" or "browser_look" or "browser_js" => "🌐",
-        "lumi_search" or "web_search" or "search" => "🔎",
-        "lumi_research" => "🔬",
+        "web_search" or "search" => "🔎",
         "web_fetch" or "lumi_fetch" => "📚",
         "ui_inspect" or "ui_find" or "ui_click" or "ui_type" or "ui_read" => "🖥",
         "save_memory" or "update_memory" or "recall_memory" or "delete_memory" => "🧠",
@@ -77,15 +76,10 @@ public static partial class ToolDisplayHelper
                     domain = uri.Host;
                 return (Loc.Tool_ReadingWebsite, domain ?? url);
             }
-            case "lumi_search":
+            case "web_search":
             {
                 var query = ExtractJsonField(argsJson, "query");
                 return (Loc.Tool_SearchingWeb, query);
-            }
-            case "lumi_research":
-            {
-                var query = ExtractJsonField(argsJson, "query");
-                return ("Researching", query);
             }
             case "view":
             {

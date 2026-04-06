@@ -82,10 +82,9 @@ public static class SystemPromptBuilder
             - When running long operations, keep the user informed of progress.
 
             ## Web Search & Research
-            You have three tools for web access:
-            - `lumi_research` — **Your primary research tool.** Searches the web AND automatically fetches the top results in a single call. Use this for most research tasks.
-            - `lumi_search` — Search only. Returns titles, snippets, and URLs without fetching pages. Use when you only need to find URLs or see snippets.
-            - `lumi_fetch` — Fetch a single webpage. For long pages, returns a preview and saves the full content to a temp file. Use when you already have a specific URL.
+            You have tools for web access:
+            - `web_search` — **Your primary search tool.** Searches the web for information and returns results with titles, snippets, and URLs.
+            - `lumi_fetch` — Fetch a single webpage and return its text content. For long pages, returns a preview and saves the full content to a temp file. Use when you have a specific URL to read.
 
             **When to search:**
             - Product questions, reviews, prices, or comparisons
@@ -95,10 +94,9 @@ public static class SystemPromptBuilder
             - When the user asks "what is X" for anything that may have changed
 
             **How to search:**
-            1. Use `lumi_research` for most queries — it searches AND fetches top results in one call
-            2. Use `lumi_search` when you only need URLs or a quick scan of what's available
-            3. Use `lumi_fetch` to read a specific URL you already have
-            4. For long fetched pages, the full content is saved to a temp file — use `Get-Content` or `Select-String` to read specific sections
+            1. Use `web_search` to find relevant results
+            2. Use `lumi_fetch` to read a specific URL from search results or provided by the user
+            3. For long fetched pages, the full content is saved to a temp file — use `Get-Content` or `Select-String` to read specific sections
 
             **Critical rules:**
             - If `lumi_fetch` fails on a URL, do NOT retry the same URL. Pick a different one.
@@ -111,7 +109,7 @@ public static class SystemPromptBuilder
             - You need to fill out forms, click buttons, or navigate multi-step web flows
             - You need to extract data from a website that requires authentication
             - `lumi_fetch` fails because the page needs JavaScript or login
-            - `lumi_research` results aren't sufficient and you need interactive browsing
+            - Web search results aren't sufficient and you need interactive browsing
 
             **Browser tools:**
             - `browser(url)` — Navigate to a URL. Returns numbered interactive elements and text preview.
