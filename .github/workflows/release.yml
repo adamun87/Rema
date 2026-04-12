@@ -48,7 +48,7 @@ jobs:
           az account get-access-token --resource https://codesigning.azure.net --query "{expiresOn:expiresOn, tokenLength:accessToken}" -o json 2>&1 || echo "Failed to get token for codesigning.azure.net"
 
       - name: Sign Lumi.exe
-        uses: azure/trusted-signing-action@v1.2.0
+        uses: azure/trusted-signing-action@v0.5.0
         with:
           endpoint: https://wus2.codesigning.azure.net/
           trusted-signing-account-name: acsfluentsearch
@@ -79,7 +79,7 @@ jobs:
           --icon src/Lumi/Assets/lumi-icon.ico
 
       - name: Sign Setup.exe
-        uses: azure/trusted-signing-action@v1.2.0
+        uses: azure/trusted-signing-action@v0.5.0
         with:
           endpoint: https://wus2.codesigning.azure.net/
           trusted-signing-account-name: acsfluentsearch
