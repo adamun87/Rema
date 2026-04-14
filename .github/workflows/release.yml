@@ -35,55 +35,6 @@ jobs:
           -o publish
           /p:Version=${{ inputs.version }}
 
-      - name: Azure login
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Install signing dependencies
-        shell: pwsh
-        run: |
-          $signingDir = "$env:LOCALAPPDATA\ArtifactSigning"
-          
-          # Download Microsoft.ArtifactSigning.Client
-          $clientDir = "$signingDir\Microsoft.ArtifactSigning.Client"
-          if (-not (Test-Path "$clientDir\bin\x64\Azure.CodeSigning.Dlib.dll")) {
-            nuget install Microsoft.ArtifactSigning.Client -Version 1.0.128 -OutputDirectory $signingDir -Source https://api.nuget.org/v3/index.json
-            $pkg = Get-ChildItem "$signingDir\Microsoft.ArtifactSigning.Client.*" -Directory | Select-Object -First 1
-            Rename-Item $pkg.FullName $clientDir
-          }
-          
-          # Download Windows SDK Build Tools (for signtool.exe)
-          $buildToolsDir = "$signingDir\BuildTools"
-          if (-not (Test-Path "$buildToolsDir\bin\*\x64\signtool.exe")) {
-            nuget install Microsoft.Windows.SDK.BuildTools -Version 10.0.26100.4188 -OutputDirectory $signingDir -Source https://api.nuget.org/v3/index.json
-            $pkg = Get-ChildItem "$signingDir\Microsoft.Windows.SDK.BuildTools.*" -Directory | Select-Object -First 1
-            Rename-Item $pkg.FullName $buildToolsDir
-          }
-
-      - name: Sign Lumi.exe
-        shell: pwsh
-        run: |
-          $signingDir = "$env:LOCALAPPDATA\ArtifactSigning"
-          $dlib = "$signingDir\Microsoft.ArtifactSigning.Client\bin\x64\Azure.CodeSigning.Dlib.dll"
-          $signtool = Get-ChildItem "$signingDir\BuildTools\bin\*\x64\signtool.exe" | Select-Object -First 1
-          
-          # Create metadata.json
-          $metadata = @{
-            Endpoint = "https://wus2.codesigning.azure.net/"
-            CodeSigningAccountName = "acsfluentsearch"
-            CertificateProfileName = "profileFluentSearch1"
-            ExcludeCredentials = @("InteractiveBrowserCredential", "ManagedIdentityCredential", "WorkloadIdentityCredential", "SharedTokenCacheCredential")
-          } | ConvertTo-Json
-          $metadataPath = "$signingDir\metadata.json"
-          $metadata | Out-File -FilePath $metadataPath -Encoding utf8
-          
-          # Sign
-          & $signtool.FullName sign /v /debug /fd SHA256 /tr http://timestamp.acs.microsoft.com /td SHA256 /dlib $dlib /dmdf $metadataPath "${{ github.workspace }}\publish\Lumi.exe"
-          if ($LASTEXITCODE -ne 0) { throw "Signing Lumi.exe failed with exit code $LASTEXITCODE" }
-
       - name: Install Velopack CLI
         run: dotnet tool install -g vpk
 
@@ -102,17 +53,6 @@ jobs:
           -p publish
           --mainExe Lumi.exe
           --icon src/Lumi/Assets/lumi-icon.ico
-
-      - name: Sign Setup.exe
-        shell: pwsh
-        run: |
-          $signingDir = "$env:LOCALAPPDATA\ArtifactSigning"
-          $dlib = "$signingDir\Microsoft.ArtifactSigning.Client\bin\x64\Azure.CodeSigning.Dlib.dll"
-          $signtool = Get-ChildItem "$signingDir\BuildTools\bin\*\x64\signtool.exe" | Select-Object -First 1
-          $metadataPath = "$signingDir\metadata.json"
-          
-          & $signtool.FullName sign /v /debug /fd SHA256 /tr http://timestamp.acs.microsoft.com /td SHA256 /dlib $dlib /dmdf $metadataPath "${{ github.workspace }}\Releases\Lumi-win-Setup.exe"
-          if ($LASTEXITCODE -ne 0) { throw "Signing Setup.exe failed with exit code $LASTEXITCODE" }
 
       - name: Upload to GitHub Releases
         run: >
