@@ -20,6 +20,8 @@
     <!-- .NET 11 Runtime Async -->
     <EnablePreviewFeatures>true</EnablePreviewFeatures>
     <Features>$(Features);runtime-async=on</Features>
+    <!-- Override the SDK's older default bundled CLI so new Copilot models are available while still using the bundled binary. -->
+    <CopilotCliVersion>1.0.29</CopilotCliVersion>
   </PropertyGroup>
 
   <ItemGroup>
