@@ -1,6 +1,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Threading;
@@ -133,6 +134,119 @@ public sealed class StrataThinkTests
 
             Assert.Contains(think, hitTestAncestors);
             Assert.All(hitTestAncestors, control => Assert.True(control.IsHitTestVisible));
+
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task ExpandedInsideNarrowHost_UsesAvailableHostWidth()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+
+        await session.Dispatch(async () =>
+        {
+            var think = new StrataThink
+            {
+                Label = "Reasoning",
+                MaxWidth = 760,
+                IsExpanded = true,
+                Content = new StrataMarkdown
+                {
+                    IsInline = true,
+                    Markdown = "This reasoning block should wrap inside the narrow host instead of being clipped when wider ancestors exist."
+                }
+            };
+
+            var host = new Border
+            {
+                Width = 240,
+                Child = think
+            };
+
+            var window = new Window
+            {
+                Width = 1000,
+                Height = 400,
+                Content = new StackPanel
+                {
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+                    Children =
+                    {
+                        host
+                    }
+                }
+            };
+
+            window.Show();
+            await PumpAsync();
+            await PumpAsync();
+
+            var pill = think.GetVisualDescendants()
+                .OfType<Border>()
+                .FirstOrDefault(candidate => candidate.Name == "PART_Pill");
+
+            Assert.NotNull(pill);
+            Assert.True(host.Bounds.Width > 0);
+            Assert.True(pill!.Bounds.Width <= host.Bounds.Width + 0.5,
+                $"Expanded think pill width {pill.Bounds.Width} should stay within host width {host.Bounds.Width}.");
+
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task ExpandedInsideStretchPresenter_RefreshesToPresenterWidth()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+
+        await session.Dispatch(async () =>
+        {
+            var think = new StrataThink
+            {
+                Label = "Reasoning",
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
+                MaxWidth = 760,
+                IsExpanded = true,
+                Content = new TextBlock
+                {
+                    Text = "This reasoning block should expand to the available presenter width instead of staying stuck at a narrower initial measure.",
+                    TextWrapping = Avalonia.Media.TextWrapping.Wrap
+                }
+            };
+
+            var presenter = new ContentPresenter
+            {
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+                Content = think
+            };
+
+            var window = new Window
+            {
+                Width = 640,
+                Height = 360,
+                Content = new Border
+                {
+                    Width = 520,
+                    Child = new StackPanel
+                    {
+                        Children =
+                        {
+                            presenter
+                        }
+                    }
+                }
+            };
+
+            window.Show();
+            await PumpAsync();
+            await PumpAsync();
+            await Task.Delay(50);
+            await PumpAsync();
+
+            Assert.True(presenter.Bounds.Width > 0);
+            Assert.True(think.Bounds.Width >= presenter.Bounds.Width - 1,
+                $"Expanded think width {think.Bounds.Width} should match presenter width {presenter.Bounds.Width}.");
 
             window.Close();
         }, CancellationToken.None);
