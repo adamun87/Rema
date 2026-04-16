@@ -20,7 +20,7 @@ A personal agentic desktop assistant powered by [GitHub Copilot SDK](https://git
 ## Tech Stack
 
 - **.NET 10** with C#
-- **Avalonia UI 11.3** — cross-platform desktop framework
+- **Avalonia UI 12.0.1** — cross-platform desktop framework
 - **CommunityToolkit.Mvvm 8.4** — MVVM source generators
 - **GitHub Copilot SDK** — agentic LLM backend
 - **[StrataTheme](https://github.com/adirh3/Strata)** — custom UI component library
