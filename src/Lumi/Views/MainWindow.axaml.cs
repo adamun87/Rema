@@ -11,6 +11,7 @@ using Avalonia.Automation;
 using Avalonia.Animation;
 using Avalonia.Animation.Easings;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -29,6 +30,9 @@ namespace Lumi.Views;
 
 public partial class MainWindow : Window
 {
+    private const double DefaultSidebarWidth = 280;
+    private const double MinSidebarWidth = 240;
+    private const double MaxSidebarWidth = 420;
     private static readonly Thickness NavButtonBasePadding = new(6, 0);
     private static readonly Thickness NavButtonCompactPadding = new(1, 0);
     private const double NavLabelGap = 3;
@@ -62,6 +66,7 @@ public partial class MainWindow : Window
     private GridSplitter? _browserSplitter;
     private Grid? _chatContentGrid;
     private Border? _sidebarBorder;
+    private Thumb? _sidebarResizeThumb;
     private Border? _navPill;
     private TextBlock?[] _navLabels = [];
     private Rect[] _navHitRegions = [];
@@ -82,6 +87,7 @@ public partial class MainWindow : Window
     private int _hoveredNavIndex = -1;
     private int _pendingNavHoverIndex = -1;
     private bool _isNavPillWidthLocked;
+    private double _expandedSidebarWidth = DefaultSidebarWidth;
 
     private double[] _navBaseButtonWidths = [];
     private double[] _navMinButtonWidths = [];
@@ -185,6 +191,7 @@ public partial class MainWindow : Window
         _chatIsland = this.FindControl<Border>("ChatIsland");
         _windowContentRoot = this.FindControl<Border>("WindowContentRoot");
         _sidebarBorder = this.FindControl<Border>("SidebarBorder");
+        _sidebarResizeThumb = this.FindControl<Thumb>("SidebarResizeThumb");
         _navPill = this.FindControl<Border>("NavPill");
 
         _pages =
@@ -255,6 +262,12 @@ public partial class MainWindow : Window
         _diffHost = this.FindControl<ContentControl>("DiffHost");
         _diffFileNameText = this.FindControl<TextBlock>("DiffFileNameText");
         _planIsland = this.FindControl<Border>("PlanIsland");
+
+        if (_sidebarResizeThumb is not null)
+        {
+            _sidebarResizeThumb.DragDelta += OnSidebarResizeThumbDragDelta;
+            _sidebarResizeThumb.DragCompleted += OnSidebarResizeThumbDragCompleted;
+        }
     }
 
     protected override void OnClosing(WindowClosingEventArgs e)
@@ -376,6 +389,59 @@ public partial class MainWindow : Window
             settings.WindowLeft = Position.X / scaling;
             settings.WindowTop = Position.Y / scaling;
         }
+
+        settings.SidebarWidth = _expandedSidebarWidth;
+    }
+
+    private static double ClampSidebarWidth(double width)
+    {
+        if (double.IsNaN(width) || double.IsInfinity(width))
+            return DefaultSidebarWidth;
+
+        return Math.Clamp(width, MinSidebarWidth, MaxSidebarWidth);
+    }
+
+    private void ApplySavedSidebarWidth(MainViewModel vm)
+    {
+        var savedWidth = vm.DataStore.Data.Settings.SidebarWidth ?? DefaultSidebarWidth;
+        _expandedSidebarWidth = ClampSidebarWidth(savedWidth);
+
+        if (_sidebarBorder is not null)
+            _sidebarBorder.Width = vm.IsSidebarCollapsed ? 0 : _expandedSidebarWidth;
+
+        if (_sidebarResizeThumb is not null)
+            _sidebarResizeThumb.IsVisible = !vm.IsSidebarCollapsed;
+    }
+
+    private double GetCurrentSidebarWidth()
+    {
+        var width = _sidebarBorder?.Width ?? _expandedSidebarWidth;
+        if (width <= 0)
+            width = _expandedSidebarWidth;
+
+        return ClampSidebarWidth(width);
+    }
+
+    private void ApplySidebarWidth(double width)
+    {
+        var clampedWidth = ClampSidebarWidth(width);
+        _expandedSidebarWidth = clampedWidth;
+
+        if (_sidebarBorder is not null)
+            _sidebarBorder.Width = clampedWidth;
+
+        if (DataContext is MainViewModel vm)
+            vm.DataStore.Data.Settings.SidebarWidth = clampedWidth;
+    }
+
+    private void PersistSidebarWidth()
+    {
+        if (DataContext is not MainViewModel vm)
+            return;
+
+        var clampedWidth = ClampSidebarWidth(_expandedSidebarWidth);
+        vm.DataStore.Data.Settings.SidebarWidth = clampedWidth;
+        _ = vm.DataStore.SaveAsync();
     }
 
     protected override void OnKeyDown(KeyEventArgs e)
@@ -521,6 +587,7 @@ public partial class MainWindow : Window
         if (DataContext is MainViewModel vm && !ReferenceEquals(vm, _wiredVm))
         {
             _wiredVm = vm;
+            ApplySavedSidebarWidth(vm);
             UpdateOnboarding(vm.IsOnboarded);
             ShowPage(vm.SelectedNavIndex);
             UpdateNavHighlight(vm.SelectedNavIndex);
@@ -865,9 +932,12 @@ public partial class MainWindow : Window
     {
         if (_sidebarBorder is null) return;
 
+        if (_sidebarResizeThumb is not null && !collapse)
+            _sidebarResizeThumb.IsVisible = true;
+
         var ct = ReplaceCancellationTokenSource(ref _sidebarAnimCts).Token;
-        var from = collapse ? 240.0 : 0.0;
-        var to = collapse ? 0.0 : 240.0;
+        var from = collapse ? GetCurrentSidebarWidth() : 0.0;
+        var to = collapse ? 0.0 : _expandedSidebarWidth;
 
         var anim = new Avalonia.Animation.Animation
         {
@@ -897,6 +967,25 @@ public partial class MainWindow : Window
         catch (ObjectDisposedException) { }
 
         _sidebarBorder.Width = to;
+
+        if (_sidebarResizeThumb is not null)
+            _sidebarResizeThumb.IsVisible = !collapse;
+    }
+
+    private void OnSidebarResizeThumbDragDelta(object? sender, VectorEventArgs e)
+    {
+        if (_sidebarBorder is null || DataContext is not MainViewModel vm || vm.IsSidebarCollapsed)
+            return;
+
+        ApplySidebarWidth(GetCurrentSidebarWidth() + e.Vector.X);
+    }
+
+    private void OnSidebarResizeThumbDragCompleted(object? sender, VectorEventArgs e)
+    {
+        if (DataContext is not MainViewModel vm || vm.IsSidebarCollapsed)
+            return;
+
+        PersistSidebarWidth();
     }
 
     private void UpdateNavHighlight(int index)

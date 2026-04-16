@@ -38,6 +38,12 @@ internal static class AppDataSnapshotFactory
                 ReasoningEffort = settings.ReasoningEffort,
                 EnableMemoryAutoSave = settings.EnableMemoryAutoSave,
                 AutoSaveChats = settings.AutoSaveChats,
+                WindowWidth = settings.WindowWidth,
+                WindowHeight = settings.WindowHeight,
+                WindowLeft = settings.WindowLeft,
+                WindowTop = settings.WindowTop,
+                SidebarWidth = settings.SidebarWidth,
+                IsMaximized = settings.IsMaximized,
                 HasImportedBrowserCookies = settings.HasImportedBrowserCookies,
             },
             Chats = source.Chats

@@ -3,6 +3,7 @@
         xmlns:vm="using:Lumi.ViewModels"
         xmlns:views="using:Lumi.Views"
         xmlns:sc="using:StrataTheme.Controls"
+        xmlns:primitives="using:Avalonia.Controls.Primitives"
         xmlns:models="using:Lumi.Models"
         xmlns:loc="using:Lumi.Localization"
         x:Class="Lumi.Views.MainWindow"
@@ -16,7 +17,7 @@
         Background="Transparent">
 
   <Window.Resources>
-    <Thickness x:Key="MainLayout.IslandOuterMargin">8,38,6,6</Thickness>
+    <Thickness x:Key="MainLayout.IslandOuterMargin">0,38,6,6</Thickness>
     <x:Double x:Key="MainLayout.SplitIslandMinWidth">220</x:Double>
 
     <!-- ── SVG Icon Paths ── -->
@@ -194,6 +195,17 @@
       <Setter Property="Opacity" Value="1" />
     </Style>
 
+    <Style Selector="primitives|Thumb.sidebar-resize">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Cursor" Value="SizeWestEast" />
+      <Setter Property="Focusable" Value="False" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Background="{TemplateBinding Background}" />
+        </ControlTemplate>
+      </Setter>
+    </Style>
+
   </Window.Styles>
 
   <Border x:Name="WindowContentRoot">
@@ -209,7 +221,7 @@
     <DockPanel x:Name="MainPanel" IsVisible="False">
 
       <!-- ═══ ALWAYS-VISIBLE LEFT SIDEBAR ═══ -->
-      <Border x:Name="SidebarBorder" DockPanel.Dock="Left" Width="240" ClipToBounds="True">
+      <Border x:Name="SidebarBorder" DockPanel.Dock="Left" Width="280" ClipToBounds="True">
         <DockPanel>
 
           <!-- ── Top: Title bar inset (respects window chrome) ── -->
@@ -802,6 +814,15 @@
           </Panel><!-- end sidebar content wrapper -->
         </DockPanel>
       </Border>
+
+      <primitives:Thumb x:Name="SidebarResizeThumb"
+                        Classes="sidebar-resize"
+                        DockPanel.Dock="Left"
+                        Width="8"
+                        Margin="0,0,-8,0"
+                        Background="Transparent"
+                        ZIndex="10"
+                        IsTabStop="False" />
 
       <!-- ═══ CONTENT AREA (full height, inset for title bar) ═══ -->
       <Border x:Name="ContentArea" Margin="0,0,6,6" Padding="{StaticResource MainLayout.IslandOuterMargin}">
