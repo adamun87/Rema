@@ -422,9 +422,9 @@ public partial class ChatViewModel : ObservableObject
         return mutation;
     }
 
-    internal TranscriptWindowMutation EnsureMountedTranscriptCoverage(double viewportHeight)
+    internal TranscriptWindowMutation EnsureMountedTranscriptCoverage(double viewportHeight, double? actualExtentHeight = null)
     {
-        var mutation = _transcriptWindow.EnsureViewportCoverage(viewportHeight, "viewport-fill");
+        var mutation = _transcriptWindow.EnsureViewportCoverage(viewportHeight, "viewport-fill", actualExtentHeight);
         if (ShowTranscriptDiagnostics)
             OnPropertyChanged(nameof(TranscriptDiagnosticsText));
         return mutation;

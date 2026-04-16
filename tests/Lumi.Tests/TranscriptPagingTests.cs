@@ -260,6 +260,39 @@ public sealed class TranscriptPagingTests
     }
 
     [Fact]
+    public void EnsureViewportCoverage_UsesActualExtentWhenEstimatedCoverageIsTooOptimistic()
+    {
+        var controller = new TranscriptWindowController(new TranscriptPagingOptions
+        {
+            MaxPageWeight = 4,
+            MaxTurnsPerPage = 2,
+            MinInitialPages = 2,
+            MaxMountedPages = 6,
+            MountedViewportFillMultiplier = 1.0,
+        });
+        var source = CreateTurns(12, measuredHeightFactory: _ => 20);
+
+        controller.BindTranscript(source, "actual-extent");
+        controller.ResetToLatest(300, "actual-extent");
+
+        var mountedPagesBefore = controller.CaptureSnapshot().MountedPageCount;
+        var actualExtentHeight = GetActualExtentHeight(controller.MountedTurns);
+        Assert.True(actualExtentHeight < 300);
+
+        var estimatedOnlyMutation = controller.EnsureViewportCoverage(300, "estimated-only");
+        Assert.Equal(TranscriptWindowMutationKind.None, estimatedOnlyMutation.Kind);
+
+        var mutation = controller.EnsureViewportCoverage(300, "actual-extent", actualExtentHeight);
+
+        Assert.Equal(TranscriptWindowMutationKind.EnsureCoverage, mutation.Kind);
+        Assert.True(mutation.RequiresAnchorRestore);
+        Assert.True(controller.CaptureSnapshot().MountedPageCount > mountedPagesBefore);
+        Assert.True(
+            GetActualExtentHeight(controller.MountedTurns) >= 300
+            || controller.CaptureSnapshot().MountedPageCount == 6);
+    }
+
+    [Fact]
     public void StreamingWhileReaderWindowShiftedOffTail_KeepsMountedWindowBounded()
     {
         var controller = new TranscriptWindowController(new TranscriptPagingOptions
@@ -501,6 +534,15 @@ public sealed class TranscriptPagingTests
             turn.MeasuredHeight = measuredHeight;
 
         return turn;
+    }
+
+    private static double GetActualExtentHeight(IReadOnlyCollection<TranscriptTurn> turns)
+    {
+        if (turns.Count == 0)
+            return 0;
+
+        return turns.Sum(static turn => turn.MeasuredHeight)
+            + Math.Max(0, turns.Count - 1) * TranscriptLayoutMetrics.TurnSpacing;
     }
 
     // ─────────────────────────────────────────────────────────────

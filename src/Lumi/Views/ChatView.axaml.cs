@@ -311,13 +311,22 @@ public partial class ChatView : UserControl
         if (Math.Abs(delta) < 0.5)
             return;
 
-        // During active streaming ScrollToEnd() manages positioning — skip
-        // compensation for all turns to avoid scroll-position fights.
+        // While streaming or pinned, use the live extent to decide whether older
+        // pages need to be mounted instead of compensating the reader offset.
         if (_subscribedVm is { IsBusy: true })
+        {
+            QueueTranscriptViewportEvaluation();
+            if (_chatShell.IsPinnedToBottom)
+                Dispatcher.UIThread.Post(() => _chatShell?.ScrollToEnd(), DispatcherPriority.Loaded);
             return;
+        }
 
         if (_chatShell.IsPinnedToBottom)
+        {
+            QueueTranscriptViewportEvaluation();
+            Dispatcher.UIThread.Post(() => _chatShell?.ScrollToEnd(), DispatcherPriority.Loaded);
             return;
+        }
 
         var control = FindRealizedTurnControl(turn.StableId);
         var point = control?.TranslatePoint(default, _transcriptScrollViewer);
@@ -405,12 +414,13 @@ public partial class ChatView : UserControl
         chatShell.EnterFollowTailMode();
         viewModel.InitializeMountedTranscript(chatShell.ViewportHeight);
         await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Loaded);
-        viewModel.EnsureMountedTranscriptCoverage(chatShell.ViewportHeight);
+        viewModel.EnsureMountedTranscriptCoverage(chatShell.ViewportHeight, chatShell.ExtentHeight);
         await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Loaded);
         chatShell.JumpToLatest();
         await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Loaded);
         SyncTranscriptPinnedState();
         FocusComposer();
+        QueueTranscriptViewportEvaluation();
 
         // Re-execute search if active (mounted turns changed)
         if (!string.IsNullOrWhiteSpace(_searchInput?.Text))
@@ -473,13 +483,20 @@ public partial class ChatView : UserControl
                 if (_isApplyingTranscriptMutation || _subscribedVm is null || _chatShell is null || _transcriptScrollViewer is null)
                     return;
 
-                var anchor = CaptureAnchor();
-                var mutation = _subscribedVm.UpdateTranscriptViewport(
-                    _chatShell.VerticalOffset,
+                var anchor = _chatShell.IsPinnedToBottom ? null : CaptureAnchor();
+                var mutation = _subscribedVm.EnsureMountedTranscriptCoverage(
                     _chatShell.ViewportHeight,
-                    _chatShell.ExtentHeight,
-                    _chatShell.IsPinnedToBottom,
-                    _chatShell.CurrentDistanceFromBottom);
+                    _chatShell.ExtentHeight);
+
+                if (!mutation.HasChanges)
+                {
+                    mutation = _subscribedVm.UpdateTranscriptViewport(
+                        _chatShell.VerticalOffset,
+                        _chatShell.ViewportHeight,
+                        _chatShell.ExtentHeight,
+                        _chatShell.IsPinnedToBottom,
+                        _chatShell.CurrentDistanceFromBottom);
+                }
 
                 if (!mutation.HasChanges)
                 {
@@ -492,7 +509,8 @@ public partial class ChatView : UserControl
 
                 await CompleteTranscriptMutationAsync(anchor, mutation);
 
-                if (mutation.Kind != TranscriptWindowMutationKind.Prepend && !_viewportEvaluationRequested)
+                if (mutation.Kind is not (TranscriptWindowMutationKind.Prepend or TranscriptWindowMutationKind.EnsureCoverage)
+                    && !_viewportEvaluationRequested)
                     return;
 
                 await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Loaded);
@@ -512,7 +530,7 @@ public partial class ChatView : UserControl
             return;
 
         var anchor = _chatShell.IsPinnedToBottom ? null : CaptureAnchor();
-        var mutation = _subscribedVm.EnsureMountedTranscriptCoverage(_chatShell.ViewportHeight);
+        var mutation = _subscribedVm.EnsureMountedTranscriptCoverage(_chatShell.ViewportHeight, _chatShell.ExtentHeight);
         if (mutation.HasChanges)
             await CompleteTranscriptMutationAsync(anchor, mutation);
 
@@ -572,11 +590,13 @@ public partial class ChatView : UserControl
                 RestoreAnchor(anchor, mutation.Kind == TranscriptWindowMutationKind.Prepend ? "prepend" : "cleanup");
 
             SyncTranscriptPinnedState();
+            if (_chatShell?.IsPinnedToBottom == true)
+                Dispatcher.UIThread.Post(() => _chatShell?.ScrollToEnd(), DispatcherPriority.Loaded);
         }
         finally
         {
             _isApplyingTranscriptMutation = false;
-            if (_viewportEvaluationRequested && _chatShell is { IsPinnedToBottom: false })
+            if (_viewportEvaluationRequested)
                 QueueTranscriptViewportEvaluation();
         }
     }

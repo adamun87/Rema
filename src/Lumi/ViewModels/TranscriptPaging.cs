@@ -324,14 +324,17 @@ internal sealed class TranscriptWindowController : ObservableObject, IDisposable
         return new TranscriptWindowMutation(TranscriptWindowMutationKind.Reset, reason, addedPages, 0, 0, false);
     }
 
-    public TranscriptWindowMutation EnsureViewportCoverage(double viewportHeight, string reason)
+    public TranscriptWindowMutation EnsureViewportCoverage(double viewportHeight, string reason, double? actualExtentHeight = null)
     {
         if (_pages.Count == 0 || _firstMountedPageIndex <= 0)
             return TranscriptWindowMutation.None;
 
         viewportHeight = SanitizeViewportHeight(viewportHeight);
         var targetHeight = viewportHeight * _options.MountedViewportFillMultiplier;
-        var currentHeight = GetMountedHeight();
+        var useActualExtentHeight = TrySanitizeExtentHeight(actualExtentHeight, out var currentHeight);
+        if (!useActualExtentHeight)
+            currentHeight = GetMountedHeight();
+
         if (currentHeight >= targetHeight)
             return TranscriptWindowMutation.None;
 
@@ -341,7 +344,10 @@ internal sealed class TranscriptWindowController : ObservableObject, IDisposable
         {
             _firstMountedPageIndex--;
             var page = _pages[_firstMountedPageIndex];
-            var addedHeight = GetEffectivePageHeight(page) + TranscriptLayoutMetrics.TurnSpacing;
+            var addedHeight = (useActualExtentHeight
+                ? GetConservativePageHeight(page)
+                : GetEffectivePageHeight(page))
+                + TranscriptLayoutMetrics.TurnSpacing;
             estimatedDelta += addedHeight;
             currentHeight += addedHeight;
             addedPages++;
@@ -353,7 +359,7 @@ internal sealed class TranscriptWindowController : ObservableObject, IDisposable
         _pageLoadCount += addedPages;
         ReconcileMountedTurns(BuildDesiredMountedTurns());
         UpdateDiagnostics("coverage", reason);
-        return new TranscriptWindowMutation(TranscriptWindowMutationKind.EnsureCoverage, reason, addedPages, 0, estimatedDelta, false);
+        return new TranscriptWindowMutation(TranscriptWindowMutationKind.EnsureCoverage, reason, addedPages, 0, estimatedDelta, true);
     }
 
     public TranscriptWindowMutation UpdateViewport(TranscriptViewportState state, string reason)
@@ -687,6 +693,20 @@ internal sealed class TranscriptWindowController : ObservableObject, IDisposable
         return GetMountedRangeHeight(_firstMountedPageIndex, _lastMountedPageIndex);
     }
 
+    private static double GetConservativePageHeight(TranscriptPage page)
+    {
+        var total = 0d;
+        for (var i = 0; i < page.Turns.Count; i++)
+            total += page.Turns[i].MeasuredHeight > 0
+                ? page.Turns[i].MeasuredHeight
+                : TranscriptLayoutMetrics.MinimumEstimatedTurnHeight;
+
+        if (page.TurnCount > 1)
+            total += (page.TurnCount - 1) * TranscriptLayoutMetrics.TurnSpacing;
+
+        return total;
+    }
+
     private double GetEffectivePageHeight(TranscriptPage page)
     {
         return Math.Max(
@@ -797,5 +817,20 @@ internal sealed class TranscriptWindowController : ObservableObject, IDisposable
             return DefaultInitialViewportHeight;
 
         return viewportHeight;
+    }
+
+    private static bool TrySanitizeExtentHeight(double? extentHeight, out double sanitizedExtentHeight)
+    {
+        if (extentHeight is double value
+            && !double.IsNaN(value)
+            && !double.IsInfinity(value)
+            && value > 0)
+        {
+            sanitizedExtentHeight = value;
+            return true;
+        }
+
+        sanitizedExtentHeight = 0d;
+        return false;
     }
 }
