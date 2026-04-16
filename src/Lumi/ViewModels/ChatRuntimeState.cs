@@ -48,8 +48,8 @@ internal sealed class ChatRuntimeState
 
     public CancellationTokenSource? PostToolReconciliationCts { get; set; }
 
-    /// <summary>True when the SDK reports pending background shells/agents.
-    /// Keeps the session alive without blocking the UI.</summary>
+    /// <summary>True while the SDK has background shells/agents in flight.
+    /// Keeps the session alive without blocking the UI until session.idle arrives.</summary>
     public bool HasPendingBackgroundWork { get; set; }
 
     /// <summary>True when the user explicitly clicked Stop for the current turn.

@@ -1365,11 +1365,11 @@ public class CopilotIntegrationTests : IAsyncLifetime
     // ───────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void SessionConfig_ExcludesWebTools()
+    public void SessionConfig_ExcludesFetchButKeepsSdkWebSearch()
     {
         var config = SimpleConfig();
         Assert.Contains("web_fetch", config.ExcludedTools!);
-        Assert.Contains("web_search", config.ExcludedTools!);
+        Assert.DoesNotContain("web_search", config.ExcludedTools!);
     }
 
     // ───────────────────────────────────────────────────────────────────────

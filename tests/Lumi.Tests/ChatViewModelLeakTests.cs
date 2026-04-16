@@ -142,6 +142,7 @@ public sealed class ChatViewModelLeakTests
             Chat = chat,
             IsBusy = true,
             IsStreaming = true,
+            HasPendingBackgroundWork = true,
             StatusText = "busy"
         };
 
@@ -160,10 +161,41 @@ public sealed class ChatViewModelLeakTests
         Assert.False(GetField<Dictionary<Guid, ChatMessage>>(vm, "_inProgressMessages").ContainsKey(chat.Id));
         Assert.False(runtime.IsBusy);
         Assert.False(runtime.IsStreaming);
+        Assert.False(runtime.HasPendingBackgroundWork);
         Assert.Equal("", runtime.StatusText);
         Assert.False(vm.IsBusy);
         Assert.False(vm.IsStreaming);
         Assert.Equal("", vm.StatusText);
+    }
+
+    [Fact]
+    public void ReleaseInactiveChatState_CleansUpChatAfterRemoteShutdownClearsBackgroundWork()
+    {
+        var dataStore = CreateDataStore();
+        var vm = new ChatViewModel(dataStore, new CopilotService());
+        var activeChat = new Chat { Title = "active" };
+        var detachedChat = new Chat { Title = "detached", CopilotSessionId = "session-456" };
+        detachedChat.Messages.Add(new ChatMessage { Role = "assistant", Content = "cached" });
+
+        dataStore.Data.Chats.Add(activeChat);
+        dataStore.Data.Chats.Add(detachedChat);
+        vm.CurrentChat = activeChat;
+
+        var runtime = new ChatRuntimeState
+        {
+            Chat = detachedChat,
+            HasPendingBackgroundWork = true
+        };
+        GetField<Dictionary<Guid, ChatRuntimeState>>(vm, "_runtimeStates")[detachedChat.Id] = runtime;
+        var subscription = new CountingDisposable();
+        GetField<Dictionary<Guid, IDisposable>>(vm, "_sessionSubs")[detachedChat.Id] = subscription;
+
+        InvokePrivate(vm, "DetachSessionAfterRemoteShutdown", detachedChat, false);
+        InvokePrivate(vm, "ReleaseInactiveChatState", detachedChat, true);
+
+        Assert.Equal(1, subscription.DisposeCount);
+        Assert.False(GetField<Dictionary<Guid, ChatRuntimeState>>(vm, "_runtimeStates").ContainsKey(detachedChat.Id));
+        Assert.Empty(detachedChat.Messages);
     }
 
     [Fact]
@@ -188,6 +220,7 @@ public sealed class ChatViewModelLeakTests
             Chat = chat,
             IsBusy = true,
             IsStreaming = true,
+            HasPendingBackgroundWork = true,
             StatusText = "busy"
         };
         GetField<Dictionary<Guid, ChatRuntimeState>>(vm, "_runtimeStates")[chat.Id] = runtime;
@@ -444,6 +477,7 @@ public sealed class ChatViewModelLeakTests
             Chat = chat,
             IsBusy = true,
             IsStreaming = true,
+            HasPendingBackgroundWork = true,
             StatusText = "busy"
         };
         GetField<Dictionary<Guid, ChatRuntimeState>>(vm, "_runtimeStates")[chat.Id] = runtime;
@@ -456,6 +490,7 @@ public sealed class ChatViewModelLeakTests
         Assert.False(GetField<Dictionary<Guid, IDisposable>>(vm, "_sessionSubs").ContainsKey(chat.Id));
         Assert.False(runtime.IsBusy);
         Assert.False(runtime.IsStreaming);
+        Assert.False(runtime.HasPendingBackgroundWork);
         Assert.Equal("Connection to Copilot was lost.", runtime.StatusText);
     }
 
@@ -477,6 +512,7 @@ public sealed class ChatViewModelLeakTests
             Chat = chat,
             IsBusy = true,
             IsStreaming = true,
+            HasPendingBackgroundWork = true,
             StatusText = "busy"
         };
         GetField<Dictionary<Guid, ChatRuntimeState>>(vm, "_runtimeStates")[chat.Id] = runtime;
@@ -485,10 +521,74 @@ public sealed class ChatViewModelLeakTests
 
         Assert.False(runtime.IsBusy);
         Assert.False(runtime.IsStreaming);
+        Assert.False(runtime.HasPendingBackgroundWork);
         Assert.Equal("Connection to Copilot was lost.", runtime.StatusText);
         Assert.True(vm.IsBusy);
         Assert.True(vm.IsStreaming);
         Assert.Equal("busy", vm.StatusText);
+    }
+
+    [Fact]
+    public void ShouldMarkBackgroundWorkPending_ReturnsTrueWhileTurnIsStillTracked()
+    {
+        var runtime = new ChatRuntimeState
+        {
+            PendingSessionUserMessageCount = 1
+        };
+
+        var shouldMark = InvokePrivateStatic<bool>(typeof(ChatViewModel), "ShouldMarkBackgroundWorkPending", runtime);
+
+        Assert.True(shouldMark);
+    }
+
+    [Fact]
+    public void ShouldMarkBackgroundWorkPending_ReturnsFalseAfterIdleCleanup()
+    {
+        var runtime = new ChatRuntimeState
+        {
+            PendingSessionUserMessageCount = 0,
+            ActiveToolCount = 0,
+            IsBusy = false,
+            IsStreaming = false
+        };
+
+        var shouldMark = InvokePrivateStatic<bool>(typeof(ChatViewModel), "ShouldMarkBackgroundWorkPending", runtime);
+
+        Assert.False(shouldMark);
+    }
+
+    [Fact]
+    public void BackgroundTasksChangedAfterIdleCleanup_DoesNotRestickPendingBackgroundWork()
+    {
+        var dataStore = CreateDataStore();
+        var vm = new ChatViewModel(dataStore, new CopilotService());
+        var chat = new Chat { Title = "background-chat" };
+
+        dataStore.Data.Chats.Add(chat);
+        GetField<Dictionary<Guid, ChatRuntimeState>>(vm, "_runtimeStates")[chat.Id] = new ChatRuntimeState
+        {
+            Chat = chat,
+            HasPendingBackgroundWork = true
+        };
+
+        InvokePrivate(vm, "PreparePendingTurnTracking", chat, 1, 0);
+
+        var runtime = GetField<Dictionary<Guid, ChatRuntimeState>>(vm, "_runtimeStates")[chat.Id];
+        runtime.IsBusy = false;
+        runtime.IsStreaming = false;
+
+        var shouldMarkBeforeIdle = InvokePrivateStatic<bool>(typeof(ChatViewModel), "ShouldMarkBackgroundWorkPending", runtime);
+        Assert.True(shouldMarkBeforeIdle);
+
+        InvokePrivate(vm, "ClearPendingTurnTracking", chat.Id);
+        InvokePrivateStatic(typeof(ChatViewModel), "MarkRuntimeTerminal", runtime, null!);
+
+        var shouldMarkAfterIdle = InvokePrivateStatic<bool>(typeof(ChatViewModel), "ShouldMarkBackgroundWorkPending", runtime);
+        if (shouldMarkAfterIdle)
+            runtime.HasPendingBackgroundWork = true;
+
+        Assert.False(shouldMarkAfterIdle);
+        Assert.False(runtime.HasPendingBackgroundWork);
     }
 
     private static DataStore CreateDataStore()
@@ -521,9 +621,16 @@ public sealed class ChatViewModelLeakTests
             ?? throw new InvalidOperationException($"Method {name} was not found."));
 
     private static T InvokePrivateStatic<T>(Type type, string name, params object[] args)
-        => (T)(type.GetMethod(name, BindingFlags.Static | BindingFlags.NonPublic)
+        => (T)(type
+            .GetMethod(name, BindingFlags.Static | BindingFlags.NonPublic)
             ?.Invoke(null, args)
             ?? throw new InvalidOperationException($"Static method {name} was not found."));
+
+    private static void InvokePrivateStatic(Type type, string name, params object?[] args)
+    {
+        type.GetMethod(name, BindingFlags.Static | BindingFlags.NonPublic)
+            ?.Invoke(null, args);
+    }
 
     private static UserMessageEvent CreateUserMessageEvent(string content)
         => new()

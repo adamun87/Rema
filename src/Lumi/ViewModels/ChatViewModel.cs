@@ -748,7 +748,7 @@ public partial class ChatViewModel : ObservableObject
                 // user's current selection (e.g. switching from gpt-5.4 to opus-4.6-1m).
                 if (!string.IsNullOrWhiteSpace(SelectedModel))
                 {
-                    try { await session.SetModelAsync(SelectedModel, effort, sessionCt); }
+                    try { await session.SetModelAsync(SelectedModel, effort, null, sessionCt); }
                     catch { /* best-effort — session works with original model if this fails */ }
                 }
 
@@ -1464,9 +1464,7 @@ public partial class ChatViewModel : ObservableObject
             // SDK cancelled internally (e.g. MCP server failure) — surface as error
             var errorText = string.Format(Loc.Status_Error, "Session cancelled unexpectedly. MCP servers may have failed to connect.");
             var runtime = GetOrCreateRuntimeState(targetChat.Id);
-            runtime.IsBusy = false;
-            runtime.IsStreaming = false;
-            runtime.StatusText = errorText;
+            MarkRuntimeTerminal(runtime, errorText);
             ClearPendingTurnTracking(targetChat.Id);
 
             if (CurrentChat?.Id == targetChat.Id)
@@ -1969,9 +1967,7 @@ public partial class ChatViewModel : ObservableObject
         if (chat is not null)
         {
             var runtime = GetOrCreateRuntimeState(chat.Id);
-            runtime.IsBusy = false;
-            runtime.IsStreaming = false;
-            runtime.StatusText = errorText;
+            MarkRuntimeTerminal(runtime, errorText);
 
             var errorMsg = new ChatMessage
             {
@@ -2029,9 +2025,7 @@ public partial class ChatViewModel : ObservableObject
         }
 
         var runtime = GetOrCreateRuntimeState(chatId);
-        runtime.IsBusy = false;
-        runtime.IsStreaming = false;
-        runtime.StatusText = Loc.Status_Stopped;
+        MarkRuntimeTerminal(runtime, Loc.Status_Stopped);
         ClearPendingTurnTracking(chatId);
 
         // Only update UI properties if this is still the displayed chat

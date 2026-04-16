@@ -108,9 +108,7 @@ public partial class ChatViewModel
                 }
                 reasoningStream?.Clear();
 
-                runtime.IsBusy = false;
-                runtime.IsStreaming = false;
-                runtime.StatusText = "";
+                MarkRuntimeTerminal(runtime);
                 var wasActive = _activeSession == session;
                 if (shouldUpdateDisplayedChatUi)
                 {
@@ -940,7 +938,15 @@ public partial class ChatViewModel
                     });
                     break;
 
-                case SessionIdleEvent idle:
+                case SessionBackgroundTasksChangedEvent:
+                    // SDK 0.2.2 emits this both when background work starts and again
+                    // after session.idle when the background queue drains. Treat it as
+                    // "pending" only while the current turn is still active locally.
+                    if (ShouldMarkBackgroundWorkPending(runtime))
+                        runtime.HasPendingBackgroundWork = true;
+                    break;
+
+                case SessionIdleEvent:
                     ClearManualStopRequested(chat.Id);
                     ClearPendingTurnTracking(chat.Id);
 
@@ -955,16 +961,8 @@ public partial class ChatViewModel
                     }
                     });
 
-                    // The SDK tells us if background tasks (shells/agents) are still running.
-                    var bg = idle.Data?.BackgroundTasks;
-                    var hasPendingBgWork = (bg?.Shells is { Length: > 0 }) || (bg?.Agents is { Length: > 0 });
-                    runtime.HasPendingBackgroundWork = hasPendingBgWork;
-
-                    if (hasPendingBgWork)
-                    {
-                        // Background tasks still running — keep session alive, skip cleanup.
-                        break;
-                    }
+                    // In SDK 0.2.2+, session.idle is only emitted once background work is drained.
+                    MarkRuntimeTerminal(runtime);
 
                     Dispatcher.UIThread.Post(() =>
                     {
@@ -1052,9 +1050,7 @@ public partial class ChatViewModel
                         }
                         reasoningStream.Clear();
 
-                        runtime.IsBusy = false;
-                        runtime.IsStreaming = false;
-                        runtime.StatusText = string.Format(Loc.Status_Error, err.Data.Message);
+                        MarkRuntimeTerminal(runtime, string.Format(Loc.Status_Error, err.Data.Message));
                         if (shouldUpdateDisplayedChatUi)
                         {
                             // Clean up typing indicator and tool groups
@@ -1185,8 +1181,7 @@ public partial class ChatViewModel
                             reasoningVm = null;
                         }
                         reasoningStream.Clear();
-                        runtime.IsBusy = false;
-                        runtime.IsStreaming = false;
+                        MarkRuntimeTerminal(runtime);
 
                         if (!wasUserStopRequested)
                         {
@@ -1617,9 +1612,7 @@ public partial class ChatViewModel
                 System.Diagnostics.Debug.WriteLine($"[Lumi] Session event handler error: {ex}");
                 Dispatcher.UIThread.Post(() =>
                 {
-                    runtime.IsBusy = false;
-                    runtime.IsStreaming = false;
-                    runtime.StatusText = string.Format(Loc.Status_Error, ex.Message);
+                    MarkRuntimeTerminal(runtime, string.Format(Loc.Status_Error, ex.Message));
                     if (_activeSession == session)
                     {
                         IsBusy = false;
@@ -1638,6 +1631,20 @@ public partial class ChatViewModel
             reasoningStream,
             new ActionDisposable(() => _copilotService.CliProcessExited -= OnCliProcessExited));
     }
+
+    private static void MarkRuntimeTerminal(ChatRuntimeState runtime, string? statusText = null)
+    {
+        runtime.IsBusy = false;
+        runtime.IsStreaming = false;
+        runtime.HasPendingBackgroundWork = false;
+        runtime.StatusText = statusText ?? string.Empty;
+    }
+
+    private static bool ShouldMarkBackgroundWorkPending(ChatRuntimeState runtime)
+        => runtime.PendingSessionUserMessageCount > 0
+           || runtime.ActiveToolCount > 0
+           || runtime.IsBusy
+           || runtime.IsStreaming;
 
     /// <summary>Cleans up session resources for a chat (e.g., on delete).</summary>
     public void CleanupSession(Guid chatId)
@@ -1661,9 +1668,7 @@ public partial class ChatViewModel
             _activeSession = null;
 
         var runtime = GetOrCreateRuntimeState(chat.Id);
-        runtime.IsBusy = false;
-        runtime.IsStreaming = false;
-        runtime.StatusText = string.Empty;
+        MarkRuntimeTerminal(runtime);
 
         if (CurrentChat?.Id == chat.Id)
         {
@@ -1739,9 +1744,7 @@ public partial class ChatViewModel
             runtime.PostToolReconciliationCts?.Cancel();
             runtime.PostToolReconciliationCts?.Dispose();
             runtime.PostToolReconciliationCts = null;
-            runtime.IsBusy = false;
-            runtime.IsStreaming = false;
-            runtime.StatusText = "";
+            MarkRuntimeTerminal(runtime);
         }
 
         _inProgressMessages.Clear();

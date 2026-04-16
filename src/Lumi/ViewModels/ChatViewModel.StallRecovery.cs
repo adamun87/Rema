@@ -115,9 +115,7 @@ public partial class ChatViewModel
         InvalidateLocalSessionCache(chat);
 
         var runtime = GetOrCreateRuntimeState(chat.Id);
-        runtime.IsBusy = false;
-        runtime.IsStreaming = false;
-        runtime.StatusText = message;
+        MarkRuntimeTerminal(runtime, message);
 
         if (updateDisplayedChatUi && CurrentChat?.Id == chat.Id)
         {
@@ -358,9 +356,7 @@ public partial class ChatViewModel
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             var runtime = GetOrCreateRuntimeState(chat.Id);
-            runtime.IsBusy = false;
-            runtime.IsStreaming = false;
-            runtime.StatusText = string.Empty;
+            MarkRuntimeTerminal(runtime);
 
             if (CurrentChat?.Id == chat.Id)
             {
@@ -386,9 +382,7 @@ public partial class ChatViewModel
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             var runtime = GetOrCreateRuntimeState(chat.Id);
-            runtime.IsBusy = false;
-            runtime.IsStreaming = false;
-            runtime.StatusText = string.Format(Loc.Status_Error, message);
+            MarkRuntimeTerminal(runtime, string.Format(Loc.Status_Error, message));
 
             if (CurrentChat?.Id == chat.Id)
             {
@@ -433,9 +427,7 @@ public partial class ChatViewModel
             }
 
             var runtime = GetOrCreateRuntimeState(chat.Id);
-            runtime.IsBusy = false;
-            runtime.IsStreaming = false;
-            runtime.StatusText = Loc.Status_Stopped;
+            MarkRuntimeTerminal(runtime, Loc.Status_Stopped);
 
             if (CurrentChat?.Id == chat.Id)
             {
