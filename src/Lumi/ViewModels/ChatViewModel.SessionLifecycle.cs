@@ -1655,14 +1655,7 @@ public partial class ChatViewModel
                 c => string.Equals(c.CopilotSessionId, sessionId, StringComparison.Ordinal));
             if (chat is null) return;
 
-            DisposeSessionSubscription(chat.Id);
-            _sessionCache.Remove(chat.Id);
-            if (string.Equals(_activeSession?.SessionId, sessionId, StringComparison.Ordinal))
-                _activeSession = null;
-
-            // Clear the persisted session ID so EnsureSessionAsync creates a new one.
-            chat.CopilotSessionId = null;
-            _dataStore.MarkChatChanged(chat);
+            DetachPersistedSession(chat, sessionId);
         });
     }
 

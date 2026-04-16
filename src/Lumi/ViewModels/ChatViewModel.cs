@@ -1295,6 +1295,10 @@ public partial class ChatViewModel : ObservableObject
         CancellationTokenSource? cts = null;
         MessageOptions? sendOptions = null;
         CopilotSession? sendSession = null;
+        var retainedContext = userMsg is null
+            ? targetChat.Messages.ToList()
+            : targetChat.Messages.Take(Math.Max(targetChat.Messages.Count - 1, 0)).ToList();
+        var promptAdditions = BuildSendPromptAdditions();
         var localUserMessageCount = 0;
         var localAssistantMessageCount = 0;
         try
@@ -1332,12 +1336,14 @@ public partial class ChatViewModel : ObservableObject
             var needsSessionSetup = _activeSession?.SessionId != targetChat.CopilotSessionId
                                     || targetChat.CopilotSessionId is null;
 
+            var needsReplayPrompt = false;
             if (needsSessionSetup)
             {
+                var previousSessionId = targetChat.CopilotSessionId;
                 var ok = await EnsureSessionAsync(
                     targetChat,
                     cts.Token,
-                    allowCreateFallback: AllowCreateSessionForSend(createdChat));
+                    allowCreateFallback: true);
                 if (!ok)
                 {
                     HandleSendError(
@@ -1347,6 +1353,12 @@ public partial class ChatViewModel : ObservableObject
                         chat: targetChat);
                     return;
                 }
+
+                needsReplayPrompt = ShouldReplayTranscriptAfterSessionReset(
+                    createdChat,
+                    previousSessionId,
+                    targetChat.CopilotSessionId,
+                    retainedContext.Count);
 
                 // Agent is pre-selected via SessionConfig.Agent in EnsureSessionAsync.
                 // Workspace agents (.github/agents/) are handled via system prompt injection.
@@ -1364,38 +1376,12 @@ public partial class ChatViewModel : ObservableObject
             sendSession = _activeSession!;
             RestoreActiveSessionIfSwitched(targetChat);
 
-            sendOptions = new MessageOptions { Prompt = prompt };
+            var basePrompt = needsReplayPrompt
+                ? BuildSessionRecoveryReplayPrompt(retainedContext, prompt)
+                : prompt;
+            sendOptions = new MessageOptions { Prompt = basePrompt + promptAdditions };
             localUserMessageCount = targetChat.Messages.Count(m => m.Role == "user");
             localAssistantMessageCount = CountCompletedAssistantMessages(targetChat);
-
-            // Inject newly activated skills as context in the message (explicit activation in existing chat)
-            if (_pendingSkillInjections.Count > 0)
-            {
-                var injectedSkills = ResolveSkillsByIds(_pendingSkillInjections);
-                _pendingSkillInjections.Clear();
-
-                if (injectedSkills.Count > 0)
-                {
-                    var skillContext = new StringBuilder("\n\n--- Activated Skills (apply these to help with the request) ---\n");
-                    foreach (var skill in injectedSkills)
-                    {
-                        skillContext.Append("\n### ")
-                            .Append(skill.Name)
-                            .Append('\n')
-                            .Append(skill.Content)
-                            .Append('\n');
-                    }
-                    sendOptions.Prompt += skillContext.ToString();
-                }
-            }
-
-            // Inject workspace skill references (from .github/skills/) — instruct LLM to use fetch_skill
-            if (_activeWorkspaceSkillNames.Count > 0)
-            {
-                var skillNames = string.Join(", ", _activeWorkspaceSkillNames.Select(n => $"\"{n}\""));
-                sendOptions.Prompt += $"\n\n[Use the following skills to help with this request: {skillNames}. " +
-                                      "Retrieve each skill's content using the fetch_skill tool before proceeding.]";
-            }
 
             if (attachments is { Count: > 0 })
                 sendOptions.Attachments = attachments.Cast<UserMessageDataAttachmentsItem>().ToList();
@@ -1416,8 +1402,8 @@ public partial class ChatViewModel : ObservableObject
             try
             {
                 StatusText = Loc.Status_Reconnecting;
-                InvalidateLocalSessionCache(targetChat);
-                var ok = await EnsureSessionAsync(targetChat, cts.Token, allowCreateFallback: false);
+                DetachPersistedSession(targetChat);
+                var ok = await EnsureSessionAsync(targetChat, cts.Token, allowCreateFallback: true);
                 if (!ok)
                 {
                     ClearPendingTurnTracking(targetChat.Id);
@@ -1430,6 +1416,7 @@ public partial class ChatViewModel : ObservableObject
                 }
                 sendSession = _activeSession!;
                 RestoreActiveSessionIfSwitched(targetChat);
+                sendOptions.Prompt = BuildSessionRecoveryReplayPrompt(retainedContext, prompt) + promptAdditions;
                 var expectedSessionUserMessageCount = await CaptureExpectedSessionUserMessageCountAsync(
                     sendSession,
                     localUserMessageCount,
@@ -1543,9 +1530,6 @@ public partial class ChatViewModel : ObservableObject
 
     /// <summary>When set, SendMessage skips adding the user message bubble.</summary>
     private string? _silentRetryPrompt;
-
-    private static bool AllowCreateSessionForSend(bool chatWasCreatedThisTurn)
-        => chatWasCreatedThisTurn;
 
     private async Task<(CancellationTokenSource? TurnCts, string? FailureMessage)> TryRecoverTransportConnectionAsync(Chat chat)
     {
@@ -1899,6 +1883,68 @@ public partial class ChatViewModel : ObservableObject
             _sessionSubs.Remove(chat.Id);
         }
         _activeSession = null;
+    }
+
+    private void DetachPersistedSession(Chat chat, string? sessionId = null)
+    {
+        var detachedSessionId = sessionId ?? chat.CopilotSessionId;
+        DisposeSessionSubscription(chat.Id);
+        _sessionCache.Remove(chat.Id);
+        if (!string.IsNullOrWhiteSpace(detachedSessionId)
+            && string.Equals(_activeSession?.SessionId, detachedSessionId, StringComparison.Ordinal))
+        {
+            _activeSession = null;
+        }
+
+        chat.CopilotSessionId = null;
+        _dataStore.MarkChatChanged(chat);
+    }
+
+    private string BuildSendPromptAdditions()
+    {
+        var builder = new StringBuilder();
+
+        if (_pendingSkillInjections.Count > 0)
+        {
+            var injectedSkills = ResolveSkillsByIds(_pendingSkillInjections);
+            _pendingSkillInjections.Clear();
+
+            if (injectedSkills.Count > 0)
+            {
+                builder.Append("\n\n--- Activated Skills (apply these to help with the request) ---\n");
+                foreach (var skill in injectedSkills)
+                {
+                    builder.Append("\n### ")
+                        .Append(skill.Name)
+                        .Append('\n')
+                        .Append(skill.Content)
+                        .Append('\n');
+                }
+            }
+        }
+
+        if (_activeWorkspaceSkillNames.Count > 0)
+        {
+            var skillNames = string.Join(", ", _activeWorkspaceSkillNames.Select(n => $"\"{n}\""));
+            builder.Append("\n\n[Use the following skills to help with this request: ")
+                .Append(skillNames)
+                .Append(". Retrieve each skill's content using the fetch_skill tool before proceeding.]");
+        }
+
+        return builder.ToString();
+    }
+
+    private static bool ShouldReplayTranscriptAfterSessionReset(
+        bool chatWasCreatedThisTurn,
+        string? previousSessionId,
+        string? currentSessionId,
+        int retainedContextCount)
+    {
+        if (chatWasCreatedThisTurn || retainedContextCount == 0)
+            return false;
+
+        return string.IsNullOrWhiteSpace(previousSessionId)
+               || !string.Equals(previousSessionId, currentSessionId, StringComparison.Ordinal);
     }
 
     /// <summary>Handles a send error by surfacing it as a status + error message in the transcript.</summary>
@@ -2468,6 +2514,7 @@ public partial class ChatViewModel : ObservableObject
         }
 
         MessageOptions? resendOptions = null;
+        var promptAdditions = BuildSendPromptAdditions();
         var localUserMessageCount = 0;
         var localAssistantMessageCount = 0;
         try
@@ -2493,6 +2540,8 @@ public partial class ChatViewModel : ObservableObject
             // Editing must not keep old server-side context. Recreate session first.
             // Must happen BEFORE creating the new CTS, because InvalidateCurrentSession
             // calls ReleaseSessionResources which disposes any CTS still in _ctsSources.
+            var shouldReplayPrompt = wasEdited;
+            var previousSessionId = CurrentChat.CopilotSessionId;
             if (wasEdited)
             {
                 InvalidateCurrentSession();
@@ -2502,11 +2551,9 @@ public partial class ChatViewModel : ObservableObject
             var cts = new CancellationTokenSource();
             _ctsSources[chatId] = cts;
 
-        if (needsSessionSetup)
-        {
-            var ok = wasEdited
-                ? await EnsureSessionAsync(CurrentChat, cts.Token, allowCreateFallback: true)
-                : await EnsureSessionAsync(CurrentChat, cts.Token, allowCreateFallback: false);
+            if (needsSessionSetup)
+            {
+                var ok = await EnsureSessionAsync(CurrentChat, cts.Token, allowCreateFallback: true);
 
                 if (!ok)
                 {
@@ -2524,6 +2571,15 @@ public partial class ChatViewModel : ObservableObject
                     ScrollToEndRequested?.Invoke();
                     return;
                 }
+
+                if (!wasEdited)
+                {
+                    shouldReplayPrompt = ShouldReplayTranscriptAfterSessionReset(
+                        chatWasCreatedThisTurn: false,
+                        previousSessionId,
+                        CurrentChat.CopilotSessionId,
+                        retainedContext.Count);
+                }
             }
 
             var runtime = GetOrCreateRuntimeState(CurrentChat.Id);
@@ -2534,9 +2590,12 @@ public partial class ChatViewModel : ObservableObject
             IsStreaming = runtime.IsStreaming;
             StatusText = runtime.StatusText;
 
-            var resendPrompt = wasEdited
-                ? BuildEditedReplayPrompt(retainedContext, prompt)
-                : prompt;
+            var resendPrompt = BuildResendPrompt(
+                retainedContext,
+                prompt,
+                wasEdited,
+                shouldReplayPrompt,
+                promptAdditions);
 
             resendOptions = new MessageOptions { Prompt = resendPrompt };
             localUserMessageCount = CurrentChat.Messages.Count(m => m.Role == "user");
@@ -2559,8 +2618,8 @@ public partial class ChatViewModel : ObservableObject
                 var cts = _ctsSources.GetValueOrDefault(CurrentChat.Id);
                 if (cts is null) return;
                 StatusText = Loc.Status_Reconnecting;
-                InvalidateLocalSessionCache(CurrentChat);
-                var ok = await EnsureSessionAsync(CurrentChat, cts.Token, allowCreateFallback: wasEdited);
+                DetachPersistedSession(CurrentChat);
+                var ok = await EnsureSessionAsync(CurrentChat, cts.Token, allowCreateFallback: true);
                 if (!ok)
                 {
                     ClearPendingTurnTracking(CurrentChat.Id);
@@ -2570,9 +2629,12 @@ public partial class ChatViewModel : ObservableObject
                         overrideMessage: Loc.Status_OriginalSessionUnavailable);
                     return;
                 }
-                var resendPrompt2 = wasEdited
-                    ? BuildEditedReplayPrompt(retainedContext, prompt)
-                    : prompt;
+                var resendPrompt2 = BuildResendPrompt(
+                    retainedContext,
+                    prompt,
+                    wasEdited,
+                    shouldReplayPrompt: !wasEdited,
+                    promptAdditions);
                 resendOptions = new MessageOptions { Prompt = resendPrompt2 };
                 var expectedSessionUserMessageCount = await CaptureExpectedSessionUserMessageCountAsync(
                     _activeSession!,
@@ -2624,15 +2686,52 @@ public partial class ChatViewModel : ObservableObject
         }
     }
 
+    private static string BuildSessionRecoveryReplayPrompt(List<ChatMessage> retainedContext, string latestPrompt)
+        => BuildReplayPrompt(
+            retainedContext,
+            latestPrompt,
+            "The previous backend chat session is unavailable. Continue using ONLY the conversation context below.",
+            "Treat the transcript as the complete conversation history so far.",
+            "Latest user message:");
+
+    private static string BuildResendPrompt(
+        List<ChatMessage> retainedContext,
+        string prompt,
+        bool wasEdited,
+        bool shouldReplayPrompt,
+        string promptAdditions)
+    {
+        var resendPrompt = wasEdited
+            ? BuildEditedReplayPrompt(retainedContext, prompt)
+            : shouldReplayPrompt
+                ? BuildSessionRecoveryReplayPrompt(retainedContext, prompt)
+                : prompt;
+
+        return resendPrompt + promptAdditions;
+    }
+
     private static string BuildEditedReplayPrompt(List<ChatMessage> retainedContext, string editedPrompt)
+        => BuildReplayPrompt(
+            retainedContext,
+            editedPrompt,
+            "The user edited an earlier message. Use ONLY the corrected conversation context below.",
+            "Ignore any previous conversation state not included here.",
+            "Latest user message (edited):");
+
+    private static string BuildReplayPrompt(
+        List<ChatMessage> retainedContext,
+        string latestPrompt,
+        string instruction,
+        string followUpInstruction,
+        string latestLabel)
     {
         if (retainedContext.Count == 0)
-            return editedPrompt;
+            return latestPrompt;
 
         var lines = new List<string>
         {
-            "The user edited an earlier message. Use ONLY the corrected conversation context below.",
-            "Ignore any previous conversation state not included here.",
+            instruction,
+            followUpInstruction,
             "",
             "Conversation so far:"
         };
@@ -2654,8 +2753,8 @@ public partial class ChatViewModel : ObservableObject
         }
 
         lines.Add("");
-        lines.Add("Latest user message (edited):");
-        lines.Add(editedPrompt);
+        lines.Add(latestLabel);
+        lines.Add(latestPrompt);
 
         return string.Join("\n", lines);
     }

@@ -293,19 +293,103 @@ public sealed class ChatViewModelLeakTests
     }
 
     [Fact]
-    public void AllowCreateSessionForSend_WhenChatWasCreatedThisTurn_ReturnsTrue()
+    public void BuildSessionRecoveryReplayPrompt_IncludesRetainedTranscriptAndLatestMessage()
     {
-        var result = InvokePrivateStatic<bool>(typeof(ChatViewModel), "AllowCreateSessionForSend", true);
+        var retainedContext = new List<ChatMessage>
+        {
+            new() { Role = "system", Content = "System context" },
+            new() { Role = "user", Content = "Earlier question" },
+            new() { Role = "assistant", Content = "Earlier answer" },
+            new() { Role = "tool", Content = "Ignored tool output" }
+        };
+
+        var prompt = InvokePrivateStatic<string>(
+            typeof(ChatViewModel),
+            "BuildSessionRecoveryReplayPrompt",
+            retainedContext,
+            "Latest question");
+
+        Assert.Contains("The previous backend chat session is unavailable.", prompt);
+        Assert.Contains("System: System context", prompt);
+        Assert.Contains("User: Earlier question", prompt);
+        Assert.Contains("Assistant: Earlier answer", prompt);
+        Assert.DoesNotContain("Ignored tool output", prompt);
+        Assert.Contains("Latest user message:", prompt);
+        Assert.Contains("Latest question", prompt);
+    }
+
+    [Fact]
+    public void ShouldReplayTranscriptAfterSessionReset_WhenSessionIsRecreated_ReturnsTrue()
+    {
+        var result = InvokePrivateStatic<bool>(
+            typeof(ChatViewModel),
+            "ShouldReplayTranscriptAfterSessionReset",
+            false,
+            "session-1",
+            "session-2",
+            2);
 
         Assert.True(result);
     }
 
     [Fact]
-    public void AllowCreateSessionForSend_WhenChatAlreadyExisted_ReturnsFalse()
+    public void ShouldReplayTranscriptAfterSessionReset_WhenSessionIsReused_ReturnsFalse()
     {
-        var result = InvokePrivateStatic<bool>(typeof(ChatViewModel), "AllowCreateSessionForSend", false);
+        var result = InvokePrivateStatic<bool>(
+            typeof(ChatViewModel),
+            "ShouldReplayTranscriptAfterSessionReset",
+            false,
+            "session-1",
+            "session-1",
+            2);
 
         Assert.False(result);
+    }
+
+    [Fact]
+    public void BuildResendPrompt_AppendsPromptAdditions_ForEditedResend()
+    {
+        var retainedContext = new List<ChatMessage>
+        {
+            new() { Role = "user", Content = "Earlier question" }
+        };
+        const string promptAdditions = "\n\n[Activated skill context]";
+
+        var prompt = InvokePrivateStatic<string>(
+            typeof(ChatViewModel),
+            "BuildResendPrompt",
+            retainedContext,
+            "Edited question",
+            true,
+            false,
+            promptAdditions);
+
+        Assert.Contains("Latest user message (edited):", prompt);
+        Assert.Contains("Edited question", prompt);
+        Assert.EndsWith(promptAdditions, prompt, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildResendPrompt_AppendsPromptAdditions_ForRecoveredResend()
+    {
+        var retainedContext = new List<ChatMessage>
+        {
+            new() { Role = "assistant", Content = "Earlier answer" }
+        };
+        const string promptAdditions = "\n\n[Workspace skill instructions]";
+
+        var prompt = InvokePrivateStatic<string>(
+            typeof(ChatViewModel),
+            "BuildResendPrompt",
+            retainedContext,
+            "Retry question",
+            false,
+            true,
+            promptAdditions);
+
+        Assert.Contains("The previous backend chat session is unavailable.", prompt);
+        Assert.Contains("Retry question", prompt);
+        Assert.EndsWith(promptAdditions, prompt, StringComparison.Ordinal);
     }
 
     private static DataStore CreateDataStore()
