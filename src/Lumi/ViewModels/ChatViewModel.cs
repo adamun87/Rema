@@ -1882,7 +1882,12 @@ public partial class ChatViewModel : ObservableObject
             sub.Dispose();
             _sessionSubs.Remove(chat.Id);
         }
-        _activeSession = null;
+
+        if (CurrentChat?.Id == chat.Id
+            || string.Equals(_activeSession?.SessionId, chat.CopilotSessionId, StringComparison.Ordinal))
+        {
+            _activeSession = null;
+        }
     }
 
     private void DetachPersistedSession(Chat chat, string? sessionId = null)
@@ -2008,6 +2013,7 @@ public partial class ChatViewModel : ObservableObject
         if (CurrentChat is null) return;
 
         var chatId = CurrentChat.Id;
+        SetManualStopRequested(chatId, true);
         if (_ctsSources.TryGetValue(chatId, out var cts))
         {
             cts.Cancel();

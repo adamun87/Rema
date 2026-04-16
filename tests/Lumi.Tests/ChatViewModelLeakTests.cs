@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Threading;
+using System.Threading.Tasks;
 using GitHub.Copilot.SDK;
 using Lumi.Models;
 using Lumi.Services;
@@ -392,6 +393,104 @@ public sealed class ChatViewModelLeakTests
         Assert.EndsWith(promptAdditions, prompt, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void PreparePendingTurnTracking_ClearsManualStopRequested()
+    {
+        var dataStore = CreateDataStore();
+        var vm = new ChatViewModel(dataStore, new CopilotService());
+        var chat = new Chat { Title = "tracked-chat" };
+
+        dataStore.Data.Chats.Add(chat);
+        var runtime = new ChatRuntimeState
+        {
+            Chat = chat,
+            ManualStopRequested = true
+        };
+        GetField<Dictionary<Guid, ChatRuntimeState>>(vm, "_runtimeStates")[chat.Id] = runtime;
+
+        InvokePrivate(vm, "PreparePendingTurnTracking", chat, 1, 0);
+
+        Assert.False(runtime.ManualStopRequested);
+    }
+
+    [Fact]
+    public void ConsumeManualStopRequested_ReturnsTrueOnlyOnce()
+    {
+        var dataStore = CreateDataStore();
+        var vm = new ChatViewModel(dataStore, new CopilotService());
+        var chat = new Chat { Title = "tracked-chat" };
+
+        dataStore.Data.Chats.Add(chat);
+
+        InvokePrivate(vm, "SetManualStopRequested", chat.Id, true);
+
+        var first = InvokePrivate<bool>(vm, "ConsumeManualStopRequested", chat.Id);
+        var second = InvokePrivate<bool>(vm, "ConsumeManualStopRequested", chat.Id);
+
+        Assert.True(first);
+        Assert.False(second);
+    }
+
+    [Fact]
+    public void ApplyUnexpectedAbortState_ResetsRuntimeAndDetachesCachedSession()
+    {
+        var dataStore = CreateDataStore();
+        var vm = new ChatViewModel(dataStore, new CopilotService());
+        var chat = new Chat { Title = "abort-chat" };
+
+        dataStore.Data.Chats.Add(chat);
+        var runtime = new ChatRuntimeState
+        {
+            Chat = chat,
+            IsBusy = true,
+            IsStreaming = true,
+            StatusText = "busy"
+        };
+        GetField<Dictionary<Guid, ChatRuntimeState>>(vm, "_runtimeStates")[chat.Id] = runtime;
+        var subscription = new CountingDisposable();
+        GetField<Dictionary<Guid, IDisposable>>(vm, "_sessionSubs")[chat.Id] = subscription;
+
+        InvokePrivate(vm, "ApplyUnexpectedAbortState", chat, "Connection to Copilot was lost.", true);
+
+        Assert.Equal(1, subscription.DisposeCount);
+        Assert.False(GetField<Dictionary<Guid, IDisposable>>(vm, "_sessionSubs").ContainsKey(chat.Id));
+        Assert.False(runtime.IsBusy);
+        Assert.False(runtime.IsStreaming);
+        Assert.Equal("Connection to Copilot was lost.", runtime.StatusText);
+    }
+
+    [Fact]
+    public void ApplyUnexpectedAbortState_CanSkipDisplayedChatUiCleanup()
+    {
+        var dataStore = CreateDataStore();
+        var vm = new ChatViewModel(dataStore, new CopilotService());
+        var chat = new Chat { Title = "abort-chat" };
+
+        dataStore.Data.Chats.Add(chat);
+        vm.CurrentChat = chat;
+        vm.IsBusy = true;
+        vm.IsStreaming = true;
+        vm.StatusText = "busy";
+
+        var runtime = new ChatRuntimeState
+        {
+            Chat = chat,
+            IsBusy = true,
+            IsStreaming = true,
+            StatusText = "busy"
+        };
+        GetField<Dictionary<Guid, ChatRuntimeState>>(vm, "_runtimeStates")[chat.Id] = runtime;
+
+        InvokePrivate(vm, "ApplyUnexpectedAbortState", chat, "Connection to Copilot was lost.", false);
+
+        Assert.False(runtime.IsBusy);
+        Assert.False(runtime.IsStreaming);
+        Assert.Equal("Connection to Copilot was lost.", runtime.StatusText);
+        Assert.True(vm.IsBusy);
+        Assert.True(vm.IsStreaming);
+        Assert.Equal("busy", vm.StatusText);
+    }
+
     private static DataStore CreateDataStore()
         => new(new AppData
         {
@@ -414,6 +513,12 @@ public sealed class ChatViewModelLeakTests
             .GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic)
             ?.Invoke(instance, args);
     }
+
+    private static T InvokePrivate<T>(object instance, string name, params object[] args)
+        => (T)(instance.GetType()
+            .GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic)
+            ?.Invoke(instance, args)
+            ?? throw new InvalidOperationException($"Method {name} was not found."));
 
     private static T InvokePrivateStatic<T>(Type type, string name, params object[] args)
         => (T)(type.GetMethod(name, BindingFlags.Static | BindingFlags.NonPublic)

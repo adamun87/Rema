@@ -65,17 +65,34 @@ public partial class ChatViewModel
 
             Dispatcher.UIThread.Post(() =>
             {
-                if (!runtime.IsBusy) return;
+                if (!runtime.IsBusy && streamingMsg is null && reasoningMsg is null)
+                    return;
+
+                var shouldUpdateDisplayedChatUi = CurrentChat?.Id == chat.Id
+                    && (!_sessionCache.TryGetValue(chat.Id, out var cachedSession)
+                        || ReferenceEquals(cachedSession, session));
 
                 ClearPendingTurnTracking(chat.Id);
+                ClearManualStopRequested(chat.Id);
                 assistantStream?.CancelPending();
                 reasoningStream?.CancelPending();
+                FlushAssistantDelta();
 
                 if (streamingMsg is not null)
                 {
+                    streamingMsg.IsStreaming = false;
                     _inProgressMessages.Remove(chat.Id);
-                    if (_activeSession == session && streamingVm is not null)
+                    if (!string.IsNullOrWhiteSpace(streamingMsg.Content))
+                    {
+                        chat.Messages.Add(streamingMsg);
+                        if (shouldUpdateDisplayedChatUi)
+                            streamingVm?.NotifyStreamingEnded();
+                    }
+                    else if (shouldUpdateDisplayedChatUi && streamingVm is not null)
+                    {
                         Messages.Remove(streamingVm);
+                    }
+
                     streamingMsg = null;
                     streamingVm = null;
                 }
@@ -84,7 +101,7 @@ public partial class ChatViewModel
                 if (reasoningMsg is not null)
                 {
                     reasoningMsg.IsStreaming = false;
-                    if (_activeSession == session)
+                    if (shouldUpdateDisplayedChatUi)
                         reasoningVm?.NotifyStreamingEnded();
                     reasoningMsg = null;
                     reasoningVm = null;
@@ -95,7 +112,7 @@ public partial class ChatViewModel
                 runtime.IsStreaming = false;
                 runtime.StatusText = "";
                 var wasActive = _activeSession == session;
-                if (wasActive)
+                if (shouldUpdateDisplayedChatUi)
                 {
                     IsBusy = false;
                     IsStreaming = false;
@@ -901,6 +918,7 @@ public partial class ChatViewModel
                     break;
 
                 case AssistantTurnEndEvent:
+                    ClearManualStopRequested(chat.Id);
                     assistantStream.CancelPending();
                     reasoningStream.CancelPending();
                     ResetSubagentOutputState();
@@ -923,6 +941,7 @@ public partial class ChatViewModel
                     break;
 
                 case SessionIdleEvent idle:
+                    ClearManualStopRequested(chat.Id);
                     ClearPendingTurnTracking(chat.Id);
 
                     // Show model label once at the very end of the assistant turn
@@ -993,70 +1012,74 @@ public partial class ChatViewModel
                     break;
 
                 case SessionErrorEvent err:
+                    ClearManualStopRequested(chat.Id);
                     ClearPendingTurnTracking(chat.Id);
                     assistantStream.CancelPending();
                     reasoningStream.CancelPending();
                     ResetSubagentOutputState();
                     Dispatcher.UIThread.Post(() =>
                     {
-                    // Skip if CLI crash handler already claimed cleanup
-                    if (Volatile.Read(ref cliExitHandled) == 1)
-                    {
+                        var shouldUpdateDisplayedChatUi = CurrentChat?.Id == chat.Id
+                            && (!_sessionCache.TryGetValue(chat.Id, out var cachedSession)
+                                || ReferenceEquals(cachedSession, session));
+                        // Skip if CLI crash handler already claimed cleanup
+                        if (Volatile.Read(ref cliExitHandled) == 1)
+                        {
+                            QueueSaveChat(chat, saveIndex: false, releaseIfInactive: CurrentChat?.Id != chat.Id);
+                            return;
+                        }
+                        // Clean up any in-progress streaming message
+                        if (streamingMsg is not null)
+                        {
+                            _inProgressMessages.Remove(chat.Id);
+                            if (shouldUpdateDisplayedChatUi)
+                            {
+                                if (streamingVm is not null) Messages.Remove(streamingVm);
+                            }
+                            streamingMsg = null;
+                            streamingVm = null;
+                        }
+                        assistantStream.Clear();
+                        if (reasoningMsg is not null)
+                        {
+                            reasoningMsg.IsStreaming = false;
+                            if (shouldUpdateDisplayedChatUi)
+                            {
+                                reasoningVm?.NotifyStreamingEnded();
+                            }
+                            reasoningMsg = null;
+                            reasoningVm = null;
+                        }
+                        reasoningStream.Clear();
+
+                        runtime.IsBusy = false;
+                        runtime.IsStreaming = false;
+                        runtime.StatusText = string.Format(Loc.Status_Error, err.Data.Message);
+                        if (shouldUpdateDisplayedChatUi)
+                        {
+                            // Clean up typing indicator and tool groups
+                            _transcriptBuilder.HideTypingIndicator();
+                            _transcriptBuilder.CloseCurrentToolGroup();
+                            _transcriptBuilder.CollapseCompletedBlocksInCurrentTurn();
+                            _transcriptBuilder.FlushPendingFileEdits();
+
+                            StatusText = runtime.StatusText;
+                            IsBusy = runtime.IsBusy;
+                            IsStreaming = runtime.IsStreaming;
+
+                            // Surface the error as a visible chat message
+                            var errorMsg = new ChatMessage
+                            {
+                                Role = "error",
+                                Author = Loc.Author_Lumi,
+                                Content = string.Format(Loc.Status_Error, err.Data.Message)
+                            };
+                            chat.Messages.Add(errorMsg);
+                            Messages.Add(new ChatMessageViewModel(errorMsg));
+                            _transcriptBuilder.ProcessMessageToTranscript(Messages[^1]);
+                            ScrollToEndRequested?.Invoke();
+                        }
                         QueueSaveChat(chat, saveIndex: false, releaseIfInactive: CurrentChat?.Id != chat.Id);
-                        return;
-                    }
-                    // Clean up any in-progress streaming message
-                    if (streamingMsg is not null)
-                    {
-                        _inProgressMessages.Remove(chat.Id);
-                        if (_activeSession == session)
-                        {
-                            if (streamingVm is not null) Messages.Remove(streamingVm);
-                        }
-                        streamingMsg = null;
-                        streamingVm = null;
-                    }
-                    assistantStream.Clear();
-                    if (reasoningMsg is not null)
-                    {
-                        reasoningMsg.IsStreaming = false;
-                        if (_activeSession == session)
-                        {
-                            reasoningVm?.NotifyStreamingEnded();
-                        }
-                        reasoningMsg = null;
-                        reasoningVm = null;
-                    }
-                    reasoningStream.Clear();
-
-                    runtime.IsBusy = false;
-                    runtime.IsStreaming = false;
-                    runtime.StatusText = string.Format(Loc.Status_Error, err.Data.Message);
-                    if (_activeSession == session)
-                    {
-                        // Clean up typing indicator and tool groups
-                        _transcriptBuilder.HideTypingIndicator();
-                        _transcriptBuilder.CloseCurrentToolGroup();
-                        _transcriptBuilder.CollapseCompletedBlocksInCurrentTurn();
-                        _transcriptBuilder.FlushPendingFileEdits();
-
-                        StatusText = runtime.StatusText;
-                        IsBusy = runtime.IsBusy;
-                        IsStreaming = runtime.IsStreaming;
-
-                        // Surface the error as a visible chat message
-                        var errorMsg = new ChatMessage
-                        {
-                            Role = "error",
-                            Author = Loc.Author_Lumi,
-                            Content = string.Format(Loc.Status_Error, err.Data.Message)
-                        };
-                        chat.Messages.Add(errorMsg);
-                        Messages.Add(new ChatMessageViewModel(errorMsg));
-                        _transcriptBuilder.ProcessMessageToTranscript(Messages[^1]);
-                        ScrollToEndRequested?.Invoke();
-                    }
-                    QueueSaveChat(chat, saveIndex: false, releaseIfInactive: CurrentChat?.Id != chat.Id);
                     });
                     break;
 
@@ -1110,77 +1133,99 @@ public partial class ChatViewModel
                     break;
 
                 case AbortEvent abort:
+                    var wasUserStopRequested = ConsumeManualStopRequested(chat.Id);
                     ClearPendingTurnTracking(chat.Id);
                     assistantStream.CancelPending();
                     reasoningStream.CancelPending();
                     ResetSubagentOutputState();
                     Dispatcher.UIThread.Post(() =>
                     {
-                    // SDK-initiated abort — clean up streaming state
-                    if (streamingMsg is not null)
-                    {
-                        streamingMsg.IsStreaming = false;
-                        if (!string.IsNullOrWhiteSpace(streamingMsg.Content))
+                        var shouldUpdateDisplayedChatUi = CurrentChat?.Id == chat.Id
+                            && (!_sessionCache.TryGetValue(chat.Id, out var cachedSession)
+                                || ReferenceEquals(cachedSession, session));
+                        if (Volatile.Read(ref cliExitHandled) == 1)
                         {
-                            chat.Messages.Add(streamingMsg);
-                            if (_activeSession == session)
-                            {
-                                streamingVm?.NotifyStreamingEnded();
-                            }
+                            QueueSaveChat(chat, saveIndex: false, releaseIfInactive: CurrentChat?.Id != chat.Id);
+                            return;
                         }
-                        else
+
+                        FlushAssistantDelta();
+                        // Finalize any partial assistant content before classifying the abort.
+                        if (streamingMsg is not null)
                         {
                             _inProgressMessages.Remove(chat.Id);
-                            if (_activeSession == session)
+                            streamingMsg.IsStreaming = false;
+                            if (!string.IsNullOrWhiteSpace(streamingMsg.Content))
                             {
-                                if (streamingVm is not null) Messages.Remove(streamingVm);
+                                chat.Messages.Add(streamingMsg);
+                                if (shouldUpdateDisplayedChatUi)
+                                {
+                                    streamingVm?.NotifyStreamingEnded();
+                                }
                             }
+                            else
+                            {
+                                if (shouldUpdateDisplayedChatUi)
+                                {
+                                    if (streamingVm is not null) Messages.Remove(streamingVm);
+                                }
+                            }
+                            streamingMsg = null;
+                            streamingVm = null;
                         }
-                        streamingMsg = null;
-                        streamingVm = null;
-                    }
-                    assistantStream.Clear();
-                    if (reasoningMsg is not null)
-                    {
-                        reasoningMsg.IsStreaming = false;
-                        if (_activeSession == session)
+                        assistantStream.Clear();
+                        if (reasoningMsg is not null)
                         {
-                            reasoningVm?.NotifyStreamingEnded();
+                            reasoningMsg.IsStreaming = false;
+                            if (shouldUpdateDisplayedChatUi)
+                            {
+                                reasoningVm?.NotifyStreamingEnded();
+                            }
+                            reasoningMsg = null;
+                            reasoningVm = null;
                         }
-                        reasoningMsg = null;
-                        reasoningVm = null;
-                    }
-                    reasoningStream.Clear();
-                    runtime.IsBusy = false;
-                    runtime.IsStreaming = false;
-                    runtime.StatusText = Loc.Status_Stopped;
-                    if (_activeSession == session)
-                    {
-                        _transcriptBuilder.HideTypingIndicator();
-                        _transcriptBuilder.CloseCurrentToolGroup();
-                        _transcriptBuilder.CollapseCompletedBlocksInCurrentTurn();
-                        IsBusy = false;
-                        IsStreaming = false;
-                        StatusText = runtime.StatusText;
-                    }
-                    // SDK session already records the aborted turn in its event log,
-                    // so the LLM will see the partial content on the next turn automatically.
-                    QueueSaveChat(chat, saveIndex: false, releaseIfInactive: CurrentChat?.Id != chat.Id);
+                        reasoningStream.Clear();
+                        runtime.IsBusy = false;
+                        runtime.IsStreaming = false;
+
+                        if (!wasUserStopRequested)
+                        {
+                            ApplyUnexpectedAbortState(chat, GetUnexpectedAbortMessage(), updateDisplayedChatUi: shouldUpdateDisplayedChatUi);
+                            return;
+                        }
+
+                        runtime.StatusText = Loc.Status_Stopped;
+                        if (shouldUpdateDisplayedChatUi)
+                        {
+                            _transcriptBuilder.HideTypingIndicator();
+                            _transcriptBuilder.CloseCurrentToolGroup();
+                            _transcriptBuilder.CollapseCompletedBlocksInCurrentTurn();
+                            IsBusy = false;
+                            IsStreaming = false;
+                            StatusText = runtime.StatusText;
+                        }
+                        // SDK session already records the aborted turn in its event log,
+                        // so the LLM will see the partial content on the next turn automatically.
+                        QueueSaveChat(chat, saveIndex: false, releaseIfInactive: CurrentChat?.Id != chat.Id);
                     });
                     break;
 
                 case SessionShutdownEvent shutdown:
+                    ClearManualStopRequested(chat.Id);
                     ClearPendingTurnTracking(chat.Id);
                     assistantStream.CancelPending();
                     reasoningStream.CancelPending();
                     ResetSubagentOutputState();
                     Dispatcher.UIThread.Post(() =>
                     {
+                        var shouldUpdateDisplayedChatUi = CurrentChat?.Id == chat.Id
+                            && (!_sessionCache.TryGetValue(chat.Id, out var cachedSession)
+                                || ReferenceEquals(cachedSession, session));
                         // Clean up any in-progress streaming state
                         if (streamingMsg is not null)
                         {
                             _inProgressMessages.Remove(chat.Id);
-                            if (_activeSession == session && streamingVm is not null)
+                            if (shouldUpdateDisplayedChatUi && streamingVm is not null)
                                 Messages.Remove(streamingVm);
                             streamingMsg = null;
                             streamingVm = null;
@@ -1189,7 +1234,7 @@ public partial class ChatViewModel
                         if (reasoningMsg is not null)
                         {
                             reasoningMsg.IsStreaming = false;
-                            if (_activeSession == session)
+                            if (shouldUpdateDisplayedChatUi)
                                 reasoningVm?.NotifyStreamingEnded();
                             reasoningMsg = null;
                             reasoningVm = null;
@@ -1197,7 +1242,7 @@ public partial class ChatViewModel
                         reasoningStream.Clear();
 
                         var isError = shutdown.Data.ShutdownType == SessionShutdownDataShutdownType.Error;
-                        if (isError && _activeSession == session)
+                        if (isError && shouldUpdateDisplayedChatUi)
                         {
                             _transcriptBuilder.HideTypingIndicator();
                             _transcriptBuilder.CloseCurrentToolGroup();

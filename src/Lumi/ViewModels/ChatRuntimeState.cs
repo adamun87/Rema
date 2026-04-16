@@ -52,4 +52,8 @@ internal sealed class ChatRuntimeState
     /// Keeps the session alive without blocking the UI.</summary>
     public bool HasPendingBackgroundWork { get; set; }
 
+    /// <summary>True when the user explicitly clicked Stop for the current turn.
+    /// Unexpected SDK aborts must not be mistaken for this state.</summary>
+    public bool ManualStopRequested { get; set; }
+
 }

@@ -3,6 +3,8 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Threading;
+using CommunityToolkit.Mvvm.Input;
+using GitHub.Copilot.SDK;
 using Lumi.Localization;
 using Lumi.Models;
 
@@ -30,6 +32,7 @@ public partial class ChatViewModel
             runtime.PendingSessionUserMessageCount = expectedSessionUserMessageCount;
             runtime.PendingAssistantMessageCount = localAssistantMessageCount;
             runtime.ActiveToolCount = 0;
+            runtime.ManualStopRequested = false;
         }
 
         oldPostToolReconciliationCts?.Cancel();
@@ -69,6 +72,69 @@ public partial class ChatViewModel
             runtime.ActiveToolCount = Math.Max(0, runtime.ActiveToolCount + delta);
             return delta < 0 && runtime.ActiveToolCount == 0;
         }
+    }
+
+    private void SetManualStopRequested(Guid chatId, bool requested)
+    {
+        var runtime = GetOrCreateRuntimeState(chatId);
+        lock (runtime)
+            runtime.ManualStopRequested = requested;
+    }
+
+    private void ClearManualStopRequested(Guid chatId)
+    {
+        if (!_runtimeStates.TryGetValue(chatId, out var runtime))
+            return;
+
+        lock (runtime)
+            runtime.ManualStopRequested = false;
+    }
+
+    private bool ConsumeManualStopRequested(Guid chatId)
+    {
+        if (!_runtimeStates.TryGetValue(chatId, out var runtime))
+            return false;
+
+        lock (runtime)
+        {
+            var requested = runtime.ManualStopRequested;
+            runtime.ManualStopRequested = false;
+            return requested;
+        }
+    }
+
+    private string GetUnexpectedAbortMessage()
+        => _copilotService.State is ConnectionState.Disconnected or ConnectionState.Error
+            ? "Connection to Copilot was lost."
+            : Loc.Status_CopilotStoppedResponding;
+
+    /// <summary>Surfaces an unexpected mid-turn abort as a retryable connection-loss style failure.
+    /// Call only on the UI thread.</summary>
+    private void ApplyUnexpectedAbortState(Chat chat, string message, bool updateDisplayedChatUi = true)
+    {
+        InvalidateLocalSessionCache(chat);
+
+        var runtime = GetOrCreateRuntimeState(chat.Id);
+        runtime.IsBusy = false;
+        runtime.IsStreaming = false;
+        runtime.StatusText = message;
+
+        if (updateDisplayedChatUi && CurrentChat?.Id == chat.Id)
+        {
+            _transcriptBuilder.HideTypingIndicator();
+            _transcriptBuilder.CloseCurrentToolGroup();
+            _transcriptBuilder.CollapseCompletedBlocksInCurrentTurn();
+            _transcriptBuilder.FlushPendingFileEdits();
+            IsBusy = false;
+            IsStreaming = false;
+            StatusText = runtime.StatusText;
+            _transcriptBuilder.AddConnectionLostError(
+                message,
+                new RelayCommand(() => _ = RetryAfterConnectionLossAsync()));
+            ScrollToEndRequested?.Invoke();
+        }
+
+        QueueSaveChat(chat, saveIndex: false, releaseIfInactive: CurrentChat?.Id != chat.Id);
     }
 
     private void SetPendingToolCount(Guid chatId, int count)
@@ -287,6 +353,7 @@ public partial class ChatViewModel
 
     private async Task ApplyRecoveredIdleAsync(Chat chat)
     {
+        ClearManualStopRequested(chat.Id);
         ClearPendingTurnTracking(chat.Id);
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
@@ -314,6 +381,7 @@ public partial class ChatViewModel
 
     private async Task ApplyRecoveredErrorAsync(Chat chat, string message)
     {
+        ClearManualStopRequested(chat.Id);
         ClearPendingTurnTracking(chat.Id);
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
@@ -354,9 +422,16 @@ public partial class ChatViewModel
 
     private async Task ApplyRecoveredAbortAsync(Chat chat)
     {
+        var wasUserStopRequested = ConsumeManualStopRequested(chat.Id);
         ClearPendingTurnTracking(chat.Id);
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
+            if (!wasUserStopRequested)
+            {
+                ApplyUnexpectedAbortState(chat, GetUnexpectedAbortMessage());
+                return;
+            }
+
             var runtime = GetOrCreateRuntimeState(chat.Id);
             runtime.IsBusy = false;
             runtime.IsStreaming = false;
@@ -378,6 +453,7 @@ public partial class ChatViewModel
 
     private async Task ApplyRecoveredShutdownAsync(Chat chat)
     {
+        ClearManualStopRequested(chat.Id);
         ClearPendingTurnTracking(chat.Id);
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
