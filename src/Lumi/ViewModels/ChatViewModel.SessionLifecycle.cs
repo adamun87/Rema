@@ -802,6 +802,17 @@ public partial class ChatViewModel
                         {
                             // fetch_skill tracking is handled by TranscriptBuilder.ProcessToolMessage()
 
+                            if (ToolDisplayHelper.IsSearchTool(toolName))
+                            {
+                                foreach (var source in ToolDisplayHelper.ExtractSearchSources(toolEnd.Data.Result))
+                                {
+                                    if (_pendingSearchSources.Any(existing => string.Equals(existing.Url, source.Url, StringComparison.OrdinalIgnoreCase)))
+                                        continue;
+
+                                    _pendingSearchSources.Add(source);
+                                }
+                            }
+
                             if((ToolDisplayHelper.IsFileCreationTool(toolName) || toolName == "powershell")
                                 && toolEnd.Data.Result?.Contents is { Length: > 0 } contents)
                             {

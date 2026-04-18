@@ -1,3 +1,4 @@
+using GitHub.Copilot.SDK;
 using Lumi.Services;
 using Xunit;
 
@@ -100,5 +101,69 @@ public class ToolDisplayHelperTests
         var label = ToolDisplayHelper.TruncateInlineLabel("  Reading    a very long file name.txt  ", 18);
 
         Assert.Equal("Reading a very lo…", label);
+    }
+
+    [Fact]
+    public void IsSearchTool_RecognizesBuiltInWebSearch()
+    {
+        Assert.True(ToolDisplayHelper.IsSearchTool("web_search"));
+        Assert.True(ToolDisplayHelper.IsSearchTool("search"));
+        Assert.False(ToolDisplayHelper.IsSearchTool("lumi_fetch"));
+    }
+
+    [Fact]
+    public void ExtractSearchSources_UsesResourceLinksAndDeduplicatesByUrl()
+    {
+        var result = new ToolExecutionCompleteDataResult
+        {
+            Content = "ok",
+            Contents =
+            [
+                new ToolExecutionCompleteDataResultContentsItemResourceLink
+                {
+                    Name = "Example",
+                    Title = "Example title",
+                    Description = "Example snippet",
+                    Uri = "https://example.com/article"
+                },
+                new ToolExecutionCompleteDataResultContentsItemResourceLink
+                {
+                    Name = "Fallback title",
+                    Uri = "https://contoso.com/post"
+                },
+                new ToolExecutionCompleteDataResultContentsItemResourceLink
+                {
+                    Name = "Duplicate",
+                    Title = "Ignored duplicate",
+                    Uri = "https://example.com/article"
+                },
+                new ToolExecutionCompleteDataResultContentsItemResourceLink
+                {
+                    Name = "Local file",
+                    Uri = "file:///C:/temp/result.txt"
+                },
+                new ToolExecutionCompleteDataResultContentsItemText
+                {
+                    Text = "plain text"
+                }
+            ]
+        };
+
+        var sources = ToolDisplayHelper.ExtractSearchSources(result);
+
+        Assert.Collection(
+            sources,
+            first =>
+            {
+                Assert.Equal("Example title", first.Title);
+                Assert.Equal("Example snippet", first.Snippet);
+                Assert.Equal("https://example.com/article", first.Url);
+            },
+            second =>
+            {
+                Assert.Equal("Fallback title", second.Title);
+                Assert.Equal(string.Empty, second.Snippet);
+                Assert.Equal("https://contoso.com/post", second.Url);
+            });
     }
 }

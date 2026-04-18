@@ -150,6 +150,46 @@ public static partial class ToolDisplayHelper
         return toolName is "powershell" or "read_powershell" or "write_powershell" or "stop_powershell";
     }
 
+    public static bool IsSearchTool(string? toolName)
+    {
+        return toolName is "web_search" or "search" or "lumi_search";
+    }
+
+    /// <summary>Extracts web search citations from resource-link tool results.</summary>
+    public static List<SearchSource> ExtractSearchSources(ToolExecutionCompleteDataResult? result)
+    {
+        if (result?.Contents is not { Length: > 0 } contents)
+            return [];
+
+        var sources = new List<SearchSource>();
+        var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var item in contents)
+        {
+            if (item is not ToolExecutionCompleteDataResultContentsItemResourceLink resource
+                || string.IsNullOrWhiteSpace(resource.Uri)
+                || !Uri.TryCreate(resource.Uri, UriKind.Absolute, out var uri)
+                || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+                || !seenUrls.Add(uri.AbsoluteUri))
+            {
+                continue;
+            }
+
+            var title = string.IsNullOrWhiteSpace(resource.Title) ? resource.Name : resource.Title;
+            if (string.IsNullOrWhiteSpace(title))
+                title = uri.Host;
+
+            sources.Add(new SearchSource
+            {
+                Title = title,
+                Snippet = resource.Description?.Trim() ?? string.Empty,
+                Url = uri.AbsoluteUri
+            });
+        }
+
+        return sources;
+    }
+
     /// <summary>Returns true if the file looks like a user-facing deliverable, not a temp script.</summary>
     public static bool IsUserFacingFile(string filePath)
     {
