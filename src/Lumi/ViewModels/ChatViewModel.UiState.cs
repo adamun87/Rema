@@ -22,6 +22,7 @@ public partial class ChatViewModel
 {
     private bool _suppressComposerAgentSync;
     private bool _suppressComposerProjectSync;
+    private bool _suppressActiveMcpCollectionSync;
     private CancellationTokenSource? _fileSearchCts;
     private readonly VoiceInputService _voiceService = new();
     private string _textBeforeVoice = "";
@@ -258,7 +259,7 @@ public partial class ChatViewModel
         _ = RefreshCodingProjectState();
     }
 
-    public void RefreshComposerCatalogs()
+    public void RefreshComposerCatalogs(bool syncWorkspaceMcpSelections = true)
     {
         // Start with Lumi agents
         var agentChips = _dataStore.Data.Agents
@@ -289,25 +290,37 @@ public partial class ChatViewModel
         ReplaceCollection(AvailableMcpChips, mcpChips);
 
         // Remove stale workspace MCPs from the previous project, then add current ones
-        var staleWorkspaceMcps = ActiveMcpChips.OfType<StrataComposerChip>().Where(c => c.Glyph == "🔌").ToList();
-        foreach (var stale in staleWorkspaceMcps)
-        {
-            ActiveMcpServerNames.Remove(stale.Name);
-            ActiveMcpChips.Remove(stale);
-        }
+        List<StrataComposerChip> staleWorkspaceMcps;
         var addedWorkspaceMcps = false;
-        foreach (var name in workspaceMcpNames)
+        _suppressActiveMcpCollectionSync = true;
+        try
         {
-            if (!ActiveMcpServerNames.Contains(name))
+            staleWorkspaceMcps = ActiveMcpChips.OfType<StrataComposerChip>().Where(c => c.Glyph == "🔌").ToList();
+            foreach (var stale in staleWorkspaceMcps)
             {
-                ActiveMcpServerNames.Add(name);
-                ActiveMcpChips.Add(new StrataComposerChip(name, "🔌"));
-                addedWorkspaceMcps = true;
+                ActiveMcpServerNames.Remove(stale.Name);
+                ActiveMcpChips.Remove(stale);
             }
+
+            foreach (var name in workspaceMcpNames)
+            {
+                if (!ActiveMcpServerNames.Contains(name))
+                {
+                    ActiveMcpServerNames.Add(name);
+                    ActiveMcpChips.Add(new StrataComposerChip(name, "🔌"));
+                    addedWorkspaceMcps = true;
+                }
+            }
+        }
+        finally
+        {
+            _suppressActiveMcpCollectionSync = false;
         }
 
         // Persist workspace MCPs to the chat so they survive reload
-        if ((addedWorkspaceMcps || staleWorkspaceMcps.Count > 0) && !IsLoadingChat)
+        if (syncWorkspaceMcpSelections
+            && (addedWorkspaceMcps || staleWorkspaceMcps.Count > 0)
+            && !IsLoadingChat)
             SyncActiveMcpsToChat();
 
         ReplaceCollection(AvailableProjectChips,
@@ -694,7 +707,7 @@ public partial class ChatViewModel
 
     private void OnActiveMcpChipsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs args)
     {
-        if (IsLoadingChat)
+        if (IsLoadingChat || _suppressActiveMcpCollectionSync)
             return;
 
         if (args.Action == NotifyCollectionChangedAction.Add && args.NewItems is not null)

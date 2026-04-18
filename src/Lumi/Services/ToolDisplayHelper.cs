@@ -27,6 +27,11 @@ public static partial class ToolDisplayHelper
         "ui_inspect" or "ui_find" or "ui_click" or "ui_type" or "ui_read" => "🖥",
         "save_memory" or "update_memory" or "recall_memory" or "delete_memory" => "🧠",
         "fetch_skill" => "⚡",
+        "manage_projects" => "📁",
+        "manage_skills" => "⚡",
+        "manage_lumis" => "✦",
+        "manage_mcps" => "🔌",
+        "manage_memories" => "🧠",
         "code_review" => "🔍",
         "generate_tests" => "🧪",
         "explain_code" => "📖",
@@ -137,6 +142,16 @@ public static partial class ToolDisplayHelper
                     ? (string.Format(Loc.Tool_UsingNamedSkill, skillName), null)
                     : (Loc.Tool_FetchingSkill, null);
             }
+            case "manage_projects":
+                return ("Managing Lumi projects", ExtractJsonField(argsJson, "action"));
+            case "manage_skills":
+                return ("Managing Lumi skills", ExtractJsonField(argsJson, "action"));
+            case "manage_lumis":
+                return ("Managing Lumis", ExtractJsonField(argsJson, "action"));
+            case "manage_mcps":
+                return ("Managing MCP servers", ExtractJsonField(argsJson, "action"));
+            case "manage_memories":
+                return ("Managing memories", ExtractJsonField(argsJson, "action"));
             case "ask_question":
                 return (Loc.Tool_AskingQuestion, null);
             case "ui_inspect":

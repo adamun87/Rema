@@ -25,9 +25,6 @@ public partial class ChatViewModel
         var agents = new List<CustomAgentConfig>();
         foreach (var agent in _dataStore.Data.Agents)
         {
-            // Skip the currently active agent (already in main system prompt)
-            if (ActiveAgent?.Id == agent.Id) continue;
-
             var agentConfig = new CustomAgentConfig
             {
                 Name = agent.Name,
@@ -47,6 +44,9 @@ public partial class ChatViewModel
     private static readonly HashSet<string> CodingToolNames = ["code_review", "generate_tests", "explain_code", "analyze_project"];
     private static readonly HashSet<string> BrowserToolNames = ["browser", "browser_look", "browser_find", "browser_do", "browser_js"];
     private static readonly HashSet<string> UIToolNames = ["ui_list_windows", "ui_inspect", "ui_find", "ui_click", "ui_type", "ui_press_keys", "ui_read"];
+    private LumiFeatureManager? _lumiFeatureManager;
+    private readonly HashSet<Guid> _pendingSessionInvalidations = [];
+    private LumiFeatureManager FeatureManager => _lumiFeatureManager ??= new LumiFeatureManager(_dataStore);
 
     private CancellationToken GetCurrentCancellationToken()
     {
@@ -69,6 +69,7 @@ public partial class ChatViewModel
         tools.Add(BuildAnnounceFileTool());
         tools.Add(BuildFetchSkillTool());
         tools.Add(BuildAskQuestionTool(chatId));
+        tools.AddRange(BuildLumiManagementTools());
         tools.AddRange(BuildWebTools());
         if (ActiveAgentAllows(BrowserToolNames))
             tools.AddRange(BuildBrowserTools(chatId));
@@ -609,6 +610,254 @@ public partial class ChatViewModel
     {
         if (_pendingQuestions.TryGetValue(questionId, out var tcs))
             tcs.TrySetResult(answer);
+    }
+
+    private List<AIFunction> BuildLumiManagementTools()
+    {
+        return
+        [
+            AIFunctionFactory.Create(
+                async (
+                    [Description("Action: list, create, update, or delete")] string action,
+                    [Description("Project ID or exact name for update/delete. Omit for create/list.")] string? identifier = null,
+                    [Description("Project name for create, or the new name for update.")] string? name = null,
+                    [Description("Project instructions or custom prompt text.")] string? instructions = null,
+                    [Description("Working directory path for the project.")] string? workingDirectory = null,
+                    [Description("Set to true to clear the project's working directory during update.")] bool? clearWorkingDirectory = null,
+                    [Description("Optional text query for list filtering.")] string? query = null) =>
+                {
+                    var result = FeatureManager.ManageProjects(action, identifier, name, instructions, workingDirectory, clearWorkingDirectory, query);
+                    return await ApplyFeatureChangeAsync(result);
+                },
+                "manage_projects",
+                "List, create, update, or delete Lumi projects. Use this only when the user explicitly asks to manage Lumi's internal projects.",
+                Lumi.Models.AppDataJsonContext.Default.Options),
+
+            AIFunctionFactory.Create(
+                async (
+                    [Description("Action: list, create, update, or delete")] string action,
+                    [Description("Skill ID or exact name for update/delete. Omit for create/list.")] string? identifier = null,
+                    [Description("Skill name for create, or the new name for update.")] string? name = null,
+                    [Description("Short skill description shown in the Available Skills list.")] string? description = null,
+                    [Description("Full markdown content for the skill. Required when creating a skill.")] string? content = null,
+                    [Description("Optional icon glyph, e.g. ⚡ or 📄.")] string? iconGlyph = null,
+                    [Description("Optional text query for list filtering.")] string? query = null) =>
+                {
+                    var result = FeatureManager.ManageSkills(action, identifier, name, description, content, iconGlyph, query);
+                    return await ApplyFeatureChangeAsync(result);
+                },
+                "manage_skills",
+                "List, create, update, or delete Lumi skills. Use this only when the user explicitly asks to manage Lumi's internal skills.",
+                Lumi.Models.AppDataJsonContext.Default.Options),
+
+            AIFunctionFactory.Create(
+                async (
+                    [Description("Action: list, create, update, or delete")] string action,
+                    [Description("Lumi ID or exact name for update/delete. Omit for create/list.")] string? identifier = null,
+                    [Description("Lumi name for create, or the new name for update.")] string? name = null,
+                    [Description("Short Lumi description.")] string? description = null,
+                    [Description("System prompt for the Lumi agent.")] string? systemPrompt = null,
+                    [Description("Optional icon glyph, e.g. ✦ or 📋.")] string? iconGlyph = null,
+                    [Description("Skill names or IDs to link to the Lumi. Pass an empty array to clear linked skills on update.")] string[]? skillIdentifiers = null,
+                    [Description("Tool names to restrict the Lumi to. Pass an empty array to allow all tools.")] string[]? toolNames = null,
+                    [Description("MCP server names or IDs to link to the Lumi. Pass an empty array to clear linked MCP servers on update.")] string[]? mcpServerIdentifiers = null,
+                    [Description("Optional text query for list filtering.")] string? query = null) =>
+                {
+                    var result = FeatureManager.ManageLumis(action, identifier, name, description, systemPrompt, iconGlyph, skillIdentifiers, toolNames, mcpServerIdentifiers, query);
+                    return await ApplyFeatureChangeAsync(result);
+                },
+                "manage_lumis",
+                "List, create, update, or delete Lumi agents. Use this only when the user explicitly asks to manage Lumi's internal Lumis.",
+                Lumi.Models.AppDataJsonContext.Default.Options),
+
+            AIFunctionFactory.Create(
+                async (
+                    [Description("Action: list, create, update, or delete")] string action,
+                    [Description("MCP server ID or exact name for update/delete. Omit for create/list.")] string? identifier = null,
+                    [Description("MCP server name for create, or the new name for update.")] string? name = null,
+                    [Description("Short MCP server description.")] string? description = null,
+                    [Description("Server type: local or remote.")] string? serverType = null,
+                    [Description("Command for a local/stdIO MCP server.")] string? command = null,
+                    [Description("Command arguments for a local MCP server.")] string[]? args = null,
+                    [Description("URL for a remote MCP server.")] string? url = null,
+                    [Description("Environment variables for local MCP servers in KEY=VALUE format.")] string[]? envEntries = null,
+                    [Description("Headers for remote MCP servers in KEY=VALUE format.")] string[]? headerEntries = null,
+                    [Description("Tool names exposed by this MCP server. Pass an empty array to allow all tools.")] string[]? toolNames = null,
+                    [Description("Optional timeout in milliseconds.")] int? timeout = null,
+                    [Description("Set to true to clear a previously configured timeout during update.")] bool? clearTimeout = null,
+                    [Description("Whether the MCP server should be enabled.")] bool? isEnabled = null,
+                    [Description("Optional text query for list filtering.")] string? query = null) =>
+                {
+                    var result = FeatureManager.ManageMcps(action, identifier, name, description, serverType, command, args, url, envEntries, headerEntries, toolNames, timeout, clearTimeout, isEnabled, query);
+                    return await ApplyFeatureChangeAsync(result);
+                },
+                "manage_mcps",
+                "List, create, update, or delete Lumi MCP servers. Use this only when the user explicitly asks to manage Lumi's internal MCP configuration.",
+                Lumi.Models.AppDataJsonContext.Default.Options),
+
+            AIFunctionFactory.Create(
+                async (
+                    [Description("Action: list, create, update, or delete")] string action,
+                    [Description("Memory ID or exact key for update/delete. Omit for create/list.")] string? identifier = null,
+                    [Description("Memory key for create, or the new key for update.")] string? key = null,
+                    [Description("Full memory content. Required when creating a memory.")] string? content = null,
+                    [Description("Memory category, e.g. Personal, Preferences, or Work.")] string? category = null,
+                    [Description("Optional text query for list filtering.")] string? query = null) =>
+                {
+                    var result = FeatureManager.ManageMemories(action, identifier, key, content, category, query);
+                    return await ApplyFeatureChangeAsync(result);
+                },
+                "manage_memories",
+                "List, create, update, or delete Lumi memories. Use this only when the user explicitly asks to manage memories directly.",
+                Lumi.Models.AppDataJsonContext.Default.Options),
+        ];
+    }
+
+    private async Task<string> ApplyFeatureChangeAsync(FeatureChangeResult result)
+    {
+        if (!result.DataChanged)
+            return result.Message;
+
+        if (result.SyncSkillFiles)
+            _dataStore.SyncSkillFiles();
+
+        _ = SaveIndexAsync();
+
+         Dispatcher.UIThread.Post(() =>
+         {
+             RefreshComposerCatalogs(syncWorkspaceMcpSelections: false);
+             var chatMetadataChanged = RefreshCurrentChatFeatureState(result);
+             if (chatMetadataChanged)
+                _ = SaveIndexAsync();
+
+            if (CurrentChat?.CopilotSessionId is not null)
+            {
+                _pendingSessionInvalidations.Add(CurrentChat.Id);
+                _pendingSkillInjections.Clear();
+                _activeWorkspaceSkillNames.Clear();
+            }
+            else
+            {
+                PrunePendingSkillInjections();
+            }
+
+            FeatureManagementStateChanged?.Invoke();
+        });
+
+        return result.Message;
+    }
+
+    private bool RefreshCurrentChatFeatureState(FeatureChangeResult result)
+    {
+        var chatMetadataChanged = false;
+        if (CurrentChat is not null)
+        {
+            ActiveAgent = CurrentChat.AgentId.HasValue
+                ? _dataStore.Data.Agents.FirstOrDefault(agent => agent.Id == CurrentChat.AgentId.Value)
+                : null;
+
+            chatMetadataChanged |= RefreshActiveSkillChipsFromState();
+            chatMetadataChanged |= RefreshActiveMcpSelections(result);
+            OnPropertyChanged(nameof(CurrentChat));
+        }
+
+        SyncComposerProjectSelectionFromState();
+        SyncComposerAgentSelectionFromState();
+        RefreshProjectBadge();
+        RefreshAgentBadge();
+        return chatMetadataChanged;
+    }
+
+    private bool RefreshActiveSkillChipsFromState()
+    {
+        var skillsById = _dataStore.Data.Skills.ToDictionary(skill => skill.Id);
+        var filteredIds = new List<Guid>();
+        var chips = new List<StrataTheme.Controls.StrataComposerChip>();
+
+        foreach (var skillId in ActiveSkillIds.ToList())
+        {
+            if (!skillsById.TryGetValue(skillId, out var skill))
+                continue;
+
+            filteredIds.Add(skillId);
+            chips.Add(new StrataTheme.Controls.StrataComposerChip(skill.Name, skill.IconGlyph));
+        }
+
+        ActiveSkillIds.Clear();
+        ActiveSkillChips.Clear();
+        foreach (var skillId in filteredIds)
+            ActiveSkillIds.Add(skillId);
+        foreach (var chip in chips)
+            ActiveSkillChips.Add(chip);
+
+        var changed = false;
+        if (CurrentChat is not null && !CurrentChat.ActiveSkillIds.SequenceEqual(filteredIds))
+        {
+            CurrentChat.ActiveSkillIds = new List<Guid>(filteredIds);
+            _dataStore.MarkChatChanged(CurrentChat);
+            changed = true;
+        }
+
+        PrunePendingSkillInjections();
+        return changed;
+    }
+
+    private void PrunePendingSkillInjections()
+    {
+        var validSkillIds = ActiveSkillIds.ToHashSet();
+        _pendingSkillInjections.RemoveAll(skillId => !validSkillIds.Contains(skillId));
+    }
+
+    private bool RefreshActiveMcpSelections(FeatureChangeResult result)
+    {
+        var activeNames = ActiveMcpServerNames.ToList();
+
+        if (result.RenamedMcpOldName is { } oldName && result.RenamedMcpNewName is { } newName)
+        {
+            for (var i = 0; i < activeNames.Count; i++)
+            {
+                if (string.Equals(activeNames[i], oldName, StringComparison.Ordinal))
+                    activeNames[i] = newName;
+            }
+        }
+
+        if (result.DeletedMcpName is { } deletedName)
+            activeNames.RemoveAll(name => string.Equals(name, deletedName, StringComparison.Ordinal));
+
+        var availableGlyphs = AvailableMcpChips
+            .OfType<StrataTheme.Controls.StrataComposerChip>()
+            .ToDictionary(chip => chip.Name, chip => chip.Glyph, StringComparer.OrdinalIgnoreCase);
+
+        activeNames = activeNames
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(name => availableGlyphs.ContainsKey(name))
+            .ToList();
+
+        _suppressActiveMcpCollectionSync = true;
+        try
+        {
+            ActiveMcpServerNames.Clear();
+            ActiveMcpChips.Clear();
+            foreach (var name in activeNames)
+            {
+                ActiveMcpServerNames.Add(name);
+                ActiveMcpChips.Add(new StrataTheme.Controls.StrataComposerChip(name, availableGlyphs[name]));
+            }
+        }
+        finally
+        {
+            _suppressActiveMcpCollectionSync = false;
+        }
+
+        if (CurrentChat is not null
+            && !CurrentChat.ActiveMcpServerNames.SequenceEqual(activeNames, StringComparer.OrdinalIgnoreCase))
+        {
+            CurrentChat.ActiveMcpServerNames = new List<string>(activeNames);
+            _dataStore.MarkChatChanged(CurrentChat);
+            return true;
+        }
+
+        return false;
     }
 
     private List<AIFunction> BuildMemoryTools()

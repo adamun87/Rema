@@ -1,0 +1,180 @@
+using Lumi.Models;
+using Lumi.Services;
+using Xunit;
+
+namespace Lumi.Tests;
+
+public sealed class LumiFeatureManagerTests
+{
+    [Fact]
+    public void ManageSkills_Delete_RemovesLinkedReferences()
+    {
+        var skill = new Skill
+        {
+            Id = Guid.NewGuid(),
+            Name = "Conversation Skill",
+            Description = "Created from a chat",
+            Content = "# Skill"
+        };
+        var agent = new LumiAgent
+        {
+            Id = Guid.NewGuid(),
+            Name = "Skillful Lumi",
+            SkillIds = [skill.Id]
+        };
+        var chat = new Chat
+        {
+            Id = Guid.NewGuid(),
+            Title = "Skill Chat",
+            ActiveSkillIds = [skill.Id]
+        };
+
+        var data = new AppData();
+        data.Skills.Add(skill);
+        data.Agents.Add(agent);
+        data.Chats.Add(chat);
+
+        var store = new DataStore(data);
+        var manager = new LumiFeatureManager(store);
+
+        var result = manager.ManageSkills("delete", identifier: skill.Name);
+
+        Assert.True(result.DataChanged);
+        Assert.Empty(data.Skills);
+        Assert.Empty(agent.SkillIds);
+        Assert.Empty(chat.ActiveSkillIds);
+    }
+
+    [Fact]
+    public void ManageLumis_Delete_ClearsChatAssignments()
+    {
+        var agent = new LumiAgent
+        {
+            Id = Guid.NewGuid(),
+            Name = "Daily Planner"
+        };
+        var chat = new Chat
+        {
+            Id = Guid.NewGuid(),
+            Title = "Agent Chat",
+            AgentId = agent.Id
+        };
+
+        var data = new AppData();
+        data.Agents.Add(agent);
+        data.Chats.Add(chat);
+
+        var store = new DataStore(data);
+        var manager = new LumiFeatureManager(store);
+
+        var result = manager.ManageLumis("delete", identifier: agent.Name);
+
+        Assert.True(result.DataChanged);
+        Assert.Empty(data.Agents);
+        Assert.Null(chat.AgentId);
+    }
+
+    [Fact]
+    public void ManageProjects_Delete_ClearsChatAssignments()
+    {
+        var project = new Project
+        {
+            Id = Guid.NewGuid(),
+            Name = "Cleanup Project"
+        };
+        var chat = new Chat
+        {
+            Id = Guid.NewGuid(),
+            Title = "Project Chat",
+            ProjectId = project.Id
+        };
+
+        var data = new AppData();
+        data.Projects.Add(project);
+        data.Chats.Add(chat);
+
+        var store = new DataStore(data);
+        var manager = new LumiFeatureManager(store);
+
+        var result = manager.ManageProjects("delete", identifier: project.Name);
+
+        Assert.True(result.DataChanged);
+        Assert.Empty(data.Projects);
+        Assert.Null(chat.ProjectId);
+    }
+
+    [Fact]
+    public void ManageMcps_Update_RenamesChatSelections()
+    {
+        var server = new McpServer
+        {
+            Id = Guid.NewGuid(),
+            Name = "filesystem",
+            ServerType = "local",
+            Command = "npx.cmd",
+            Args = ["-y", "@modelcontextprotocol/server-filesystem"]
+        };
+        var chat = new Chat
+        {
+            Id = Guid.NewGuid(),
+            Title = "MCP Chat",
+            ActiveMcpServerNames = ["filesystem"]
+        };
+
+        var data = new AppData();
+        data.McpServers.Add(server);
+        data.Chats.Add(chat);
+
+        var store = new DataStore(data);
+        var manager = new LumiFeatureManager(store);
+
+        var result = manager.ManageMcps("update", identifier: server.Name, name: "local-filesystem");
+
+        Assert.True(result.DataChanged);
+        Assert.Equal("filesystem", result.RenamedMcpOldName);
+        Assert.Equal("local-filesystem", result.RenamedMcpNewName);
+        Assert.Equal("local-filesystem", server.Name);
+        Assert.Equal(["local-filesystem"], chat.ActiveMcpServerNames);
+    }
+
+    [Fact]
+    public void ManageMcps_Delete_RemovesLinkedReferences()
+    {
+        var server = new McpServer
+        {
+            Id = Guid.NewGuid(),
+            Name = "filesystem",
+            ServerType = "local",
+            Command = "npx.cmd",
+            Args = ["-y", "@modelcontextprotocol/server-filesystem"]
+        };
+        var agent = new LumiAgent
+        {
+            Id = Guid.NewGuid(),
+            Name = "Mcp Lumi",
+            McpServerIds = [server.Id]
+        };
+        var chat = new Chat
+        {
+            Id = Guid.NewGuid(),
+            Title = "MCP Chat",
+            ActiveMcpServerNames = ["filesystem"]
+        };
+
+        var data = new AppData();
+        data.McpServers.Add(server);
+        data.Agents.Add(agent);
+        data.Chats.Add(chat);
+
+        var store = new DataStore(data);
+        var manager = new LumiFeatureManager(store);
+
+        var result = manager.ManageMcps("delete", identifier: server.Name);
+
+        Assert.True(result.DataChanged);
+        Assert.Equal("filesystem", result.DeletedMcpName);
+        Assert.Empty(data.McpServers);
+        Assert.Empty(agent.McpServerIds);
+        Assert.Empty(chat.ActiveMcpServerNames);
+    }
+}

@@ -24,11 +24,35 @@ public partial class MemoriesViewModel : ObservableObject
 
     public ObservableCollection<Memory> Memories { get; } = [];
 
-    public MemoriesViewModel(DataStore dataStore)
-    {
-        _dataStore = dataStore;
-        RefreshList();
-    }
+     public MemoriesViewModel(DataStore dataStore)
+     {
+         _dataStore = dataStore;
+         RefreshList();
+     }
+
+     public void RefreshFromStore()
+     {
+         RefreshList();
+
+         if (SelectedMemory is null)
+             return;
+
+         var selectedMemory = _dataStore.Data.Memories.FirstOrDefault(memory => memory.Id == SelectedMemory.Id);
+         if (selectedMemory is null)
+         {
+             SelectedMemory = null;
+             IsEditing = false;
+             return;
+         }
+
+         if (!ReferenceEquals(SelectedMemory, selectedMemory))
+         {
+             SelectedMemory = selectedMemory;
+             return;
+         }
+
+         SyncEditorFromMemory(selectedMemory);
+     }
 
     private void RefreshList()
     {
@@ -60,14 +84,19 @@ public partial class MemoriesViewModel : ObservableObject
         SelectedMemory = memory;
     }
 
-    partial void OnSelectedMemoryChanged(Memory? value)
-    {
-        if (value is null) return;
-        EditKey = value.Key;
-        EditContent = value.Content;
-        EditCategory = value.Category;
-        IsEditing = true;
-    }
+     partial void OnSelectedMemoryChanged(Memory? value)
+     {
+         if (value is null) return;
+         SyncEditorFromMemory(value);
+         IsEditing = true;
+     }
+
+     private void SyncEditorFromMemory(Memory memory)
+     {
+         EditKey = memory.Key;
+         EditContent = memory.Content;
+         EditCategory = memory.Category;
+     }
 
     [RelayCommand]
     private void SaveMemory()

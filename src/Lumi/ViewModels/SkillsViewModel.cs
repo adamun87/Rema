@@ -27,11 +27,35 @@ public partial class SkillsViewModel : ObservableObject
 
     public ObservableCollection<Skill> Skills { get; } = [];
 
-    public SkillsViewModel(DataStore dataStore)
-    {
-        _dataStore = dataStore;
-        RefreshList();
-    }
+     public SkillsViewModel(DataStore dataStore)
+     {
+         _dataStore = dataStore;
+         RefreshList();
+     }
+
+     public void RefreshFromStore()
+     {
+         RefreshList();
+
+         if (SelectedSkill is null)
+             return;
+
+         var selectedSkill = _dataStore.Data.Skills.FirstOrDefault(skill => skill.Id == SelectedSkill.Id);
+         if (selectedSkill is null)
+         {
+             SelectedSkill = null;
+             IsEditing = false;
+             return;
+         }
+
+         if (!ReferenceEquals(SelectedSkill, selectedSkill))
+         {
+             SelectedSkill = selectedSkill;
+             return;
+         }
+
+         SyncEditorFromSkill(selectedSkill);
+     }
 
     private void RefreshList()
     {
@@ -63,15 +87,20 @@ public partial class SkillsViewModel : ObservableObject
         SelectedSkill = skill;
     }
 
-    partial void OnSelectedSkillChanged(Skill? value)
-    {
-        if (value is null) return;
-        EditName = value.Name;
-        EditDescription = value.Description;
-        EditContent = value.Content;
-        EditIconGlyph = value.IconGlyph;
-        IsEditing = true;
-    }
+     partial void OnSelectedSkillChanged(Skill? value)
+     {
+         if (value is null) return;
+         SyncEditorFromSkill(value);
+         IsEditing = true;
+     }
+
+     private void SyncEditorFromSkill(Skill skill)
+     {
+         EditName = skill.Name;
+         EditDescription = skill.Description;
+         EditContent = skill.Content;
+         EditIconGlyph = skill.IconGlyph;
+     }
 
     [RelayCommand]
     private void SaveSkill()
@@ -113,7 +142,10 @@ public partial class SkillsViewModel : ObservableObject
     [RelayCommand]
     private void DeleteSkill(Skill skill)
     {
-        _dataStore.Data.Skills.Remove(skill);
+        var result = new LumiFeatureManager(_dataStore).ManageSkills("delete", identifier: skill.Id.ToString());
+        if (!result.DataChanged)
+            return;
+
         _ = _dataStore.SaveAsync();
         _dataStore.SyncSkillFiles();
         if (SelectedSkill == skill)

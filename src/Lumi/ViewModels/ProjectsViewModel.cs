@@ -30,11 +30,37 @@ public partial class ProjectsViewModel : ObservableObject
     /// <summary>Fired when a chat is clicked in the project detail view. MainViewModel navigates to it.</summary>
     public event Action<Chat>? ChatOpenRequested;
 
-    public ProjectsViewModel(DataStore dataStore)
-    {
-        _dataStore = dataStore;
-        RefreshList();
-    }
+     public ProjectsViewModel(DataStore dataStore)
+     {
+         _dataStore = dataStore;
+         RefreshList();
+     }
+
+     public void RefreshFromStore()
+     {
+         RefreshList();
+
+         if (SelectedProject is null)
+             return;
+
+         var selectedProject = _dataStore.Data.Projects.FirstOrDefault(project => project.Id == SelectedProject.Id);
+         if (selectedProject is null)
+         {
+             SelectedProject = null;
+             IsEditing = false;
+             ProjectChats.Clear();
+             return;
+         }
+
+         if (!ReferenceEquals(SelectedProject, selectedProject))
+         {
+             SelectedProject = selectedProject;
+             return;
+         }
+
+         SyncEditorFromProject(selectedProject);
+         RefreshProjectChats(selectedProject.Id);
+     }
 
     private void RefreshList()
     {
@@ -65,20 +91,25 @@ public partial class ProjectsViewModel : ObservableObject
         SelectedProject = project;
     }
 
-    partial void OnSelectedProjectChanged(Project? value)
-    {
-        if (value is null)
-        {
-            ProjectChats.Clear();
-            return;
-        }
-        EditName = value.Name;
-        EditInstructions = value.Instructions;
-        EditWorkingDirectory = value.WorkingDirectory ?? "";
-        IsCodingProject = SystemPromptBuilder.IsCodingProject(value.WorkingDirectory);
-        IsEditing = true;
-        RefreshProjectChats(value.Id);
-    }
+     partial void OnSelectedProjectChanged(Project? value)
+     {
+         if (value is null)
+         {
+             ProjectChats.Clear();
+             return;
+         }
+         SyncEditorFromProject(value);
+         IsEditing = true;
+         RefreshProjectChats(value.Id);
+     }
+
+     private void SyncEditorFromProject(Project project)
+     {
+         EditName = project.Name;
+         EditInstructions = project.Instructions;
+         EditWorkingDirectory = project.WorkingDirectory ?? "";
+         IsCodingProject = SystemPromptBuilder.IsCodingProject(project.WorkingDirectory);
+     }
 
     /// <summary>Refreshes the chat list for the currently selected project. Called on tab navigation.</summary>
     public void RefreshSelectedProjectChats()

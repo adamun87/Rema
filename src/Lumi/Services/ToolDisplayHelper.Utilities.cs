@@ -60,6 +60,11 @@ public static partial class ToolDisplayHelper
             "fetch_skill" => ExtractJsonField(argsJson, "name") is { Length: > 0 } skillName
                 ? string.Format(Loc.Tool_UsingNamedSkill, skillName)
                 : Loc.Tool_FetchingSkill,
+            "manage_projects" => "Managing Lumi projects",
+            "manage_skills" => "Managing Lumi skills",
+            "manage_lumis" => "Managing Lumis",
+            "manage_mcps" => "Managing MCP servers",
+            "manage_memories" => "Managing memories",
             "ask_question" => Loc.Tool_AskingQuestion,
             "code_review" => Loc.Tool_ReviewingCode,
             "generate_tests" => Loc.Tool_GeneratingTests,

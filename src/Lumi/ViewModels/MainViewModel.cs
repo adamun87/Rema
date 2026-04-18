@@ -168,8 +168,16 @@ public partial class MainViewModel : ObservableObject
                 UserName = SettingsVM.UserName;
         };
 
-        SkillsVM.SkillsChanged += () => ChatVM.RefreshComposerCatalogs();
-        AgentsVM.AgentsChanged += () => ChatVM.RefreshComposerCatalogs();
+        SkillsVM.SkillsChanged += () =>
+        {
+            ChatVM.RefreshComposerCatalogs();
+            RefreshFeatureManagementUi();
+        };
+        AgentsVM.AgentsChanged += () =>
+        {
+            ChatVM.RefreshComposerCatalogs();
+            RefreshFeatureManagementUi();
+        };
 
         SettingsVM.SettingsChanged += () =>
         {
@@ -188,9 +196,8 @@ public partial class MainViewModel : ObservableObject
 
         ProjectsVM.ProjectsChanged += () =>
         {
-            LoadProjects();
-            RefreshChatList();
             ChatVM.RefreshComposerCatalogs();
+            RefreshFeatureManagementUi();
         };
 
         McpServersVM.McpConfigChanged += () =>
@@ -198,7 +205,9 @@ public partial class MainViewModel : ObservableObject
             ChatVM.InvalidateMcpSession();
             ChatVM.PopulateDefaultMcps();
             ChatVM.RefreshComposerCatalogs();
+            RefreshFeatureManagementUi();
         };
+        ChatVM.FeatureManagementStateChanged += RefreshFeatureManagementUi;
 
         ChatVM.ComposerProjectFilterRequested += projectId =>
         {
@@ -292,6 +301,23 @@ public partial class MainViewModel : ObservableObject
         Projects.Clear();
         foreach (var p in _dataStore.Data.Projects.OrderBy(p => p.Name))
             Projects.Add(p);
+    }
+
+    private void RefreshFeatureManagementUi()
+    {
+        LoadProjects();
+        ProjectsVM.RefreshFromStore();
+        SkillsVM.RefreshFromStore();
+        AgentsVM.RefreshFromStore();
+        MemoriesVM.RefreshFromStore();
+        McpServersVM.RefreshFromStore();
+
+        if (SelectedProjectFilter.HasValue
+            && !_dataStore.Data.Projects.Any(project => project.Id == SelectedProjectFilter.Value))
+            SelectedProjectFilter = null;
+
+        RefreshChatList();
+        RefreshProjectRunningState();
     }
 
     private void SubscribeChatRunningState()

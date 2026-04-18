@@ -69,8 +69,9 @@ public partial class ChatViewModel
             if (runtime.PendingSessionUserMessageCount <= 0)
                 return false;
 
+            var previousCount = runtime.ActiveToolCount;
             runtime.ActiveToolCount = Math.Max(0, runtime.ActiveToolCount + delta);
-            return delta < 0 && runtime.ActiveToolCount == 0;
+            return delta < 0 && previousCount > 0 && runtime.ActiveToolCount == 0;
         }
     }
 

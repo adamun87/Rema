@@ -246,15 +246,18 @@ public partial class ChatViewModel : ObservableObject
     partial void OnSuggestionCChanged(string value) => OnPropertyChanged(nameof(HasSuggestions));
     partial void OnIsSuggestionsGeneratingChanged(bool value) => OnPropertyChanged(nameof(HasSuggestions));
 
-    // Events for the view to react to
-    public event Action? ScrollToEndRequested;
-    public event Action? UserMessageSent;
-    public event Action? ChatUpdated;
+     // Events for the view to react to
+     public event Action? ScrollToEndRequested;
+     public event Action? UserMessageSent;
+     public event Action? ChatUpdated;
+    public event Action? FeatureManagementStateChanged;
 
-    /// <summary>Test-only helper to raise ChatUpdated without sending a real message.</summary>
-    internal void RaiseChatUpdatedForTest() => ChatUpdated?.Invoke();
-    public event Action<Guid, string>? ChatTitleChanged;
-    public event Action? BrowserHideRequested;
+     /// <summary>Test-only helper to raise ChatUpdated without sending a real message.</summary>
+     internal void RaiseChatUpdatedForTest() => ChatUpdated?.Invoke();
+     /// <summary>Test-only helper to raise feature-management UI refresh notifications.</summary>
+     internal void RaiseFeatureManagementStateChangedForTest() => FeatureManagementStateChanged?.Invoke();
+     public event Action<Guid, string>? ChatTitleChanged;
+     public event Action? BrowserHideRequested;
     /// <summary>Raised when a file-edit tool wants to show a diff in the preview island.</summary>
     public event Action<FileChangeItem>? DiffShowRequested;
     /// <summary>Raised to hide the diff preview island.</summary>
@@ -1150,6 +1153,27 @@ public partial class ChatViewModel : ObservableObject
         _activeSession = null;
     }
 
+    private bool ConsumePendingSessionInvalidation(Chat chat)
+    {
+        if (!_pendingSessionInvalidations.Remove(chat.Id))
+            return false;
+
+        if (CurrentChat?.Id == chat.Id)
+        {
+            InvalidateCurrentSession();
+        }
+        else if (!string.IsNullOrWhiteSpace(chat.CopilotSessionId))
+        {
+            CancelPendingQuestions(chat);
+            ReleaseSessionResources(chat.Id, cancelActiveRequest: true, deleteServerSession: true);
+            RemoveSuggestionTracking(chat.Id);
+            chat.CopilotSessionId = null;
+            _dataStore.MarkChatChanged(chat);
+        }
+
+        return true;
+    }
+
     [RelayCommand]
     private async Task SelectSuggestion(string suggestion)
     {
@@ -1309,6 +1333,7 @@ public partial class ChatViewModel : ObservableObject
             {
                 oldCts.Cancel();
                 oldCts.Dispose();
+                _ctsSources.Remove(chatId);
 
                 // Abort the session so the SDK fully stops the old turn before
                 // we send a new one. Without this, two concurrent SendAsync calls
@@ -1319,9 +1344,6 @@ public partial class ChatViewModel : ObservableObject
                     catch { /* best-effort */ }
                 }
             }
-            cts = new CancellationTokenSource();
-            _ctsSources[chatId] = cts;
-
             var runtime = GetOrCreateRuntimeState(targetChat.Id);
             runtime.IsBusy = true;
             runtime.IsStreaming = true;
@@ -1335,6 +1357,13 @@ public partial class ChatViewModel : ObservableObject
 
             var needsSessionSetup = _activeSession?.SessionId != targetChat.CopilotSessionId
                                     || targetChat.CopilotSessionId is null;
+            if (ConsumePendingSessionInvalidation(targetChat))
+                needsSessionSetup = true;
+
+            // Deferred invalidation releases the current chat's session resources, including
+            // any CTS tracked in _ctsSources. Create the new turn CTS only after that work.
+            cts = new CancellationTokenSource();
+            _ctsSources[chatId] = cts;
 
             var needsReplayPrompt = false;
             if (needsSessionSetup)
@@ -2536,6 +2565,8 @@ public partial class ChatViewModel : ObservableObject
 
             var needsSessionSetup = _activeSession?.SessionId != CurrentChat.CopilotSessionId
                                     || CurrentChat.CopilotSessionId is null;
+            if (ConsumePendingSessionInvalidation(CurrentChat))
+                needsSessionSetup = true;
 
             // Editing must not keep old server-side context. Recreate session first.
             // Must happen BEFORE creating the new CTS, because InvalidateCurrentSession

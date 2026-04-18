@@ -300,17 +300,26 @@ public static class SystemPromptBuilder
             - `allowFreeText`: Whether to show a free-text input (default true). Set to false for strict choices.
             Don't overuse this — only ask when the choice genuinely affects the outcome. For simple yes/no or when the user's intent is clear, just proceed.
 
+            ## Managing Lumi Itself
+            You also have dedicated management tools for Lumi's own data: projects, skills, Lumis, MCP servers, and memories.
+            These are only for explicit user requests about Lumi itself — for example: "create a skill from this conversation", "show my projects", "edit that Lumi", "add an MCP server", or "delete this memory".
+            The relevant tools are `manage_projects`, `manage_skills`, `manage_lumis`, `manage_mcps`, and `manage_memories`.
+            Do NOT use these tools for normal task work, vague requests, or automatic saving.
+            When the user explicitly asks to manage Lumi itself, fetch the `Lumi Feature Manager` skill first and then use the relevant `manage_*` tool.
+
             ## Memory
             Lumi keeps persistent memories about the user across conversations.
             Memory updates are handled by a background memory sync agent after assistant turns (when auto-save is enabled in settings).
 
-            **Tool available in this chat:**
+            **Tools available in this chat:**
             - `recall_memory(key)` — Fetch the full details for a memory key when needed.
+            - `manage_memories(...)` — Explicitly list, create, update, or delete memories when the user directly asks to manage memories.
 
             **Guidelines:**
-            - Do not manually persist or delete memories from the main conversation flow.
+            - Do not manually persist or delete memories from the normal conversation flow.
             - If the user asks to remember, correct, or forget something and auto-save is enabled, respond naturally — background sync will handle persistence.
             - If auto-save is disabled, explicitly tell the user that automatic memory saving is off and suggest enabling it in Settings or editing memories from the Memories page.
+            - Use `manage_memories` only when the user explicitly asks to manage memories directly.
             - Use `recall_memory` only when a memory key is relevant and you need its full content.
             """;
         var promptBuilder = new StringBuilder(prompt);

@@ -447,6 +447,60 @@ public sealed class ChatViewModelLeakTests
     }
 
     [Fact]
+    public void AdjustPendingToolCount_ReconcilesWhenLastTrackedToolCompletes()
+    {
+        var dataStore = CreateDataStore();
+        var vm = new ChatViewModel(dataStore, new CopilotService());
+        var chat = new Chat { Title = "tracked-chat" };
+
+        dataStore.Data.Chats.Add(chat);
+
+        InvokePrivate(vm, "PreparePendingTurnTracking", chat, 1, 0);
+
+        var started = InvokePrivate<bool>(vm, "AdjustPendingToolCount", chat.Id, 1);
+        var completed = InvokePrivate<bool>(vm, "AdjustPendingToolCount", chat.Id, -1);
+        var runtime = GetField<Dictionary<Guid, ChatRuntimeState>>(vm, "_runtimeStates")[chat.Id];
+
+        Assert.False(started);
+        Assert.True(completed);
+        Assert.Equal(0, runtime.ActiveToolCount);
+    }
+
+    [Fact]
+    public void RefreshActiveMcpSelections_RebuildsFromRenameAndDeleteWithoutStaleEntries()
+    {
+        var dataStore = CreateDataStore();
+        var vm = new ChatViewModel(dataStore, new CopilotService());
+        var chat = new Chat
+        {
+            Title = "mcp-chat",
+            ActiveMcpServerNames = ["filesystem", "filesystem", "legacy", "missing"]
+        };
+
+        dataStore.Data.Chats.Add(chat);
+        vm.CurrentChat = chat;
+        vm.ActiveMcpServerNames.AddRange(chat.ActiveMcpServerNames);
+        vm.AvailableMcpChips.Add(new StrataTheme.Controls.StrataComposerChip("local-filesystem", "📁"));
+        vm.AvailableMcpChips.Add(new StrataTheme.Controls.StrataComposerChip("workspace", "🧰"));
+
+        var changed = InvokePrivate<bool>(
+            vm,
+            "RefreshActiveMcpSelections",
+            new FeatureChangeResult(
+                "updated",
+                DataChanged: true,
+                RenamedMcpOldName: "filesystem",
+                RenamedMcpNewName: "local-filesystem",
+                DeletedMcpName: "legacy"));
+
+        Assert.True(changed);
+        Assert.Equal(["local-filesystem"], vm.ActiveMcpServerNames);
+        var chip = Assert.Single(vm.ActiveMcpChips.OfType<StrataTheme.Controls.StrataComposerChip>());
+        Assert.Equal("local-filesystem", chip.Name);
+        Assert.Equal(["local-filesystem"], chat.ActiveMcpServerNames);
+    }
+
+    [Fact]
     public void ConsumeManualStopRequested_ReturnsTrueOnlyOnce()
     {
         var dataStore = CreateDataStore();
@@ -462,6 +516,35 @@ public sealed class ChatViewModelLeakTests
 
         Assert.True(first);
         Assert.False(second);
+    }
+
+    [Fact]
+    public void BuildCustomAgents_IncludesActiveAgentForSessionRegistration()
+    {
+        var dataStore = CreateDataStore();
+        var activeAgent = new LumiAgent
+        {
+            Name = "Active agent",
+            Description = "Selected before send",
+            SystemPrompt = "You are active."
+        };
+        var otherAgent = new LumiAgent
+        {
+            Name = "Other agent",
+            Description = "Available in catalog",
+            SystemPrompt = "You are other."
+        };
+
+        dataStore.Data.Agents.Add(activeAgent);
+        dataStore.Data.Agents.Add(otherAgent);
+
+        var vm = new ChatViewModel(dataStore, new CopilotService());
+        vm.SetActiveAgent(activeAgent);
+
+        var configs = InvokePrivate<List<CustomAgentConfig>>(vm, "BuildCustomAgents");
+
+        Assert.Contains(configs, cfg => cfg.Name == activeAgent.Name);
+        Assert.Contains(configs, cfg => cfg.Name == otherAgent.Name);
     }
 
     [Fact]

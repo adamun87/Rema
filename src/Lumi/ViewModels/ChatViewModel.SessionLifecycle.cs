@@ -44,6 +44,7 @@ public partial class ChatViewModel
         var toolParentById = new Dictionary<string, string?>(StringComparer.Ordinal);
         var terminalRootByToolCallId = new Dictionary<string, string>(StringComparer.Ordinal);
         var externalToolCallIdByRequestId = new Dictionary<string, string>(StringComparer.Ordinal);
+        var completedToolStatusesByCallId = new Dictionary<string, string>(StringComparer.Ordinal);
         StreamingTextAccumulator? assistantStream = null;
         StreamingTextAccumulator? reasoningStream = null;
         var activeSubagentSelectionDepth = 0;
@@ -687,6 +688,7 @@ public partial class ChatViewModel
                     var displayName = ToolDisplayHelper.FormatToolStatusName(toolStart.Data.ToolName, toolStart.Data.Arguments?.ToString());
                     runtime.StatusText = ToolDisplayHelper.FormatProgressLabel(displayName);
                     var toolMsg = chat.Messages.LastOrDefault(m => m.ToolCallId == startToolCallId);
+                    var toolStatus = completedToolStatusesByCallId.GetValueOrDefault(startToolCallId) ?? "InProgress";
                     if (toolMsg is null)
                     {
                         toolMsg = new ChatMessage
@@ -695,7 +697,7 @@ public partial class ChatViewModel
                             ToolCallId = startToolCallId,
                             ParentToolCallId = toolStart.Data.ParentToolCallId,
                             ToolName = toolStart.Data.ToolName,
-                            ToolStatus = "InProgress",
+                            ToolStatus = toolStatus,
                             Content = toolStart.Data.Arguments?.ToString() ?? "",
                             Author = displayName
                         };
@@ -705,7 +707,7 @@ public partial class ChatViewModel
                     {
                         toolMsg.ParentToolCallId = toolStart.Data.ParentToolCallId;
                         toolMsg.ToolName = toolStart.Data.ToolName;
-                        toolMsg.ToolStatus = "InProgress";
+                        toolMsg.ToolStatus = toolStatus;
                         toolMsg.Content = toolStart.Data.Arguments?.ToString() ?? "";
                         toolMsg.Author = displayName;
                     }
@@ -777,6 +779,8 @@ public partial class ChatViewModel
                     var shouldReconcileAfterTool = AdjustPendingToolCount(chat.Id, -1);
                     if (shouldReconcileAfterTool)
                         SchedulePostToolReconciliation(chat.Id);
+                    var completedToolStatus = toolEnd.Data.Success == true ? "Completed" : "Failed";
+                    completedToolStatusesByCallId[toolEnd.Data.ToolCallId] = completedToolStatus;
                     Dispatcher.UIThread.Post(() =>
                     {
                     toolParentById[toolEnd.Data.ToolCallId] = toolEnd.Data.ParentToolCallId;
@@ -834,16 +838,18 @@ public partial class ChatViewModel
 
 
                 case ExternalToolRequestedEvent externalToolRequest:
+                    // Client-side external tools have their own request/completion lifecycle
+                    // and may not emit tool.execution_start/tool.execution_complete events.
+                    externalToolCallIdByRequestId[externalToolRequest.Data.RequestId] = externalToolRequest.Data.ToolCallId;
                     AdjustPendingToolCount(chat.Id, 1);
                     Dispatcher.UIThread.Post(() =>
                     {
-                    externalToolCallIdByRequestId[externalToolRequest.Data.RequestId] = externalToolRequest.Data.ToolCallId;
-
                     var arguments = externalToolRequest.Data.Arguments?.ToString();
                     var displayName = ToolDisplayHelper.FormatToolStatusName(externalToolRequest.Data.ToolName, arguments);
                     runtime.StatusText = ToolDisplayHelper.FormatProgressLabel(displayName);
 
                     var toolMsg = chat.Messages.LastOrDefault(m => m.ToolCallId == externalToolRequest.Data.ToolCallId);
+                    var toolStatus = completedToolStatusesByCallId.GetValueOrDefault(externalToolRequest.Data.ToolCallId) ?? "InProgress";
                     if (toolMsg is null)
                     {
                         toolMsg = new ChatMessage
@@ -851,7 +857,7 @@ public partial class ChatViewModel
                             Role = "tool",
                             ToolCallId = externalToolRequest.Data.ToolCallId,
                             ToolName = externalToolRequest.Data.ToolName,
-                            ToolStatus = "InProgress",
+                            ToolStatus = toolStatus,
                             Content = arguments ?? "",
                             Author = displayName
                         };
@@ -860,7 +866,7 @@ public partial class ChatViewModel
                     else
                     {
                         toolMsg.ToolName = externalToolRequest.Data.ToolName;
-                        toolMsg.ToolStatus = "InProgress";
+                        toolMsg.ToolStatus = toolStatus;
                         toolMsg.Content = arguments ?? "";
                         toolMsg.Author = displayName;
                     }
@@ -888,6 +894,8 @@ public partial class ChatViewModel
                     var shouldReconcileAfterExternalTool = AdjustPendingToolCount(chat.Id, -1);
                     if (shouldReconcileAfterExternalTool)
                         SchedulePostToolReconciliation(chat.Id);
+                    if (externalToolCallIdByRequestId.TryGetValue(externalToolComplete.Data.RequestId, out var completedExternalToolCallId))
+                        completedToolStatusesByCallId[completedExternalToolCallId] = "Completed";
                     Dispatcher.UIThread.Post(() =>
                     {
                     if (!externalToolCallIdByRequestId.TryGetValue(externalToolComplete.Data.RequestId, out var externalToolCallId))

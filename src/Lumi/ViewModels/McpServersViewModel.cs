@@ -55,12 +55,37 @@ public partial class McpServersViewModel : ObservableObject
     public ObservableCollection<McpServer> Servers { get; } = [];
     public ObservableCollection<McpCatalogEntry> CatalogEntries { get; } = [];
 
-    public McpServersViewModel(DataStore dataStore)
-    {
-        _dataStore = dataStore;
-        RefreshList();
-        ShowFeaturedCatalog();
-    }
+     public McpServersViewModel(DataStore dataStore)
+     {
+         _dataStore = dataStore;
+         RefreshList();
+         ShowFeaturedCatalog();
+     }
+
+     public void RefreshFromStore()
+     {
+         RefreshList();
+         RefreshCatalogInstallState();
+
+         if (SelectedServer is null)
+             return;
+
+         var selectedServer = _dataStore.Data.McpServers.FirstOrDefault(server => server.Id == SelectedServer.Id);
+         if (selectedServer is null)
+         {
+             SelectedServer = null;
+             IsEditing = false;
+             return;
+         }
+
+         if (!ReferenceEquals(SelectedServer, selectedServer))
+         {
+             SelectedServer = selectedServer;
+             return;
+         }
+
+         SyncEditorFromServer(selectedServer);
+     }
 
     private void RefreshList()
     {
@@ -101,45 +126,58 @@ public partial class McpServersViewModel : ObservableObject
         SelectedServer = server;
     }
 
-    partial void OnSelectedServerChanged(McpServer? value)
-    {
-        if (value is null) return;
-        EditName = value.Name;
-        EditDescription = value.Description;
-        EditServerTypeIndex = value.ServerType == "remote" ? 1 : 0;
-        EditCommand = value.Command;
-        EditArgs = string.Join("\n", value.Args);
-        EditUrl = value.Url;
-        EditEnvVars = string.Join("\n", value.Env.Select(kv => $"{kv.Key}={kv.Value}"));
-        EditHeaders = string.Join("\n", value.Headers.Select(kv => $"{kv.Key}={kv.Value}"));
-        EditIsEnabled = value.IsEnabled;
+     partial void OnSelectedServerChanged(McpServer? value)
+     {
+         if (value is null) return;
+         SyncEditorFromServer(value);
 
-        // Split args into package vs server-config for npx-based servers
-        IsNpxCommand = value.Command is "npx" or "npx.cmd";
-        if (IsNpxCommand)
-        {
-            // Find the package name (first arg that doesn't start with -)
-            var pkgIdx = value.Args.FindIndex(a => !a.StartsWith('-'));
-            if (pkgIdx >= 0)
-            {
-                EditNpxPackage = value.Args[pkgIdx];
-                EditServerArgs = string.Join("\n", value.Args.Skip(pkgIdx + 1));
-            }
-            else
-            {
-                EditNpxPackage = "";
-                EditServerArgs = "";
-            }
-        }
-        else
-        {
-            EditNpxPackage = "";
-            EditServerArgs = "";
-        }
+         IsBrowsing = false;
+         IsEditing = true;
+     }
 
-        IsBrowsing = false;
-        IsEditing = true;
-    }
+     private void SyncEditorFromServer(McpServer server)
+     {
+         EditName = server.Name;
+         EditDescription = server.Description;
+         EditServerTypeIndex = server.ServerType == "remote" ? 1 : 0;
+         EditCommand = server.Command;
+         EditArgs = string.Join("\n", server.Args);
+         EditUrl = server.Url;
+         EditEnvVars = string.Join("\n", server.Env.Select(kv => $"{kv.Key}={kv.Value}"));
+         EditHeaders = string.Join("\n", server.Headers.Select(kv => $"{kv.Key}={kv.Value}"));
+         EditIsEnabled = server.IsEnabled;
+
+         IsNpxCommand = server.Command is "npx" or "npx.cmd";
+         if (IsNpxCommand)
+         {
+             var packageIndex = server.Args.FindIndex(arg => !arg.StartsWith('-'));
+             if (packageIndex >= 0)
+             {
+                 EditNpxPackage = server.Args[packageIndex];
+                 EditServerArgs = string.Join("\n", server.Args.Skip(packageIndex + 1));
+             }
+             else
+             {
+                 EditNpxPackage = "";
+                 EditServerArgs = "";
+             }
+         }
+         else
+         {
+             EditNpxPackage = "";
+             EditServerArgs = "";
+         }
+     }
+
+     private void RefreshCatalogInstallState()
+     {
+         var installedPackages = _dataStore.Data.McpServers
+             .SelectMany(server => server.Args)
+             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+         foreach (var entry in CatalogEntries)
+             entry.IsInstalled = installedPackages.Contains(entry.NpmPackage);
+     }
 
     partial void OnEditCommandChanged(string value)
     {
@@ -166,37 +204,22 @@ public partial class McpServersViewModel : ObservableObject
         {
             args = EditArgs.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
         }
-        var env = ParseKeyValueLines(EditEnvVars);
-        var headers = ParseKeyValueLines(EditHeaders);
-
-        if (SelectedServer is not null)
-        {
-            SelectedServer.Name = EditName.Trim();
-            SelectedServer.Description = EditDescription.Trim();
-            SelectedServer.ServerType = isLocal ? "local" : "remote";
-            SelectedServer.Command = isLocal ? EditCommand.Trim() : "";
-            SelectedServer.Args = isLocal ? args : [];
-            SelectedServer.Url = isLocal ? "" : EditUrl.Trim();
-            SelectedServer.Env = isLocal ? env : [];
-            SelectedServer.Headers = isLocal ? [] : headers;
-            SelectedServer.IsEnabled = EditIsEnabled;
-        }
-        else
-        {
-            var server = new McpServer
-            {
-                Name = EditName.Trim(),
-                Description = EditDescription.Trim(),
-                ServerType = isLocal ? "local" : "remote",
-                Command = isLocal ? EditCommand.Trim() : "",
-                Args = isLocal ? args : [],
-                Url = isLocal ? "" : EditUrl.Trim(),
-                Env = isLocal ? env : [],
-                Headers = isLocal ? [] : headers,
-                IsEnabled = EditIsEnabled
-            };
-            _dataStore.Data.McpServers.Add(server);
-        }
+        var envEntries = EditEnvVars.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var headerEntries = EditHeaders.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var result = new LumiFeatureManager(_dataStore).ManageMcps(
+            action: SelectedServer is null ? "create" : "update",
+            identifier: SelectedServer?.Id.ToString(),
+            name: EditName.Trim(),
+            description: EditDescription.Trim(),
+            serverType: isLocal ? "local" : "remote",
+            command: isLocal ? EditCommand.Trim() : null,
+            args: isLocal ? [..args] : [],
+            url: isLocal ? null : EditUrl.Trim(),
+            envEntries: isLocal ? envEntries : [],
+            headerEntries: isLocal ? [] : headerEntries,
+            isEnabled: EditIsEnabled);
+        if (!result.DataChanged)
+            return;
 
         _ = _dataStore.SaveAsync();
         IsEditing = false;
@@ -225,7 +248,10 @@ public partial class McpServersViewModel : ObservableObject
     [RelayCommand]
     private void DeleteServer(McpServer server)
     {
-        _dataStore.Data.McpServers.Remove(server);
+        var result = new LumiFeatureManager(_dataStore).ManageMcps("delete", identifier: server.Id.ToString());
+        if (!result.DataChanged)
+            return;
+
         _ = _dataStore.SaveAsync();
         if (SelectedServer == server)
         {

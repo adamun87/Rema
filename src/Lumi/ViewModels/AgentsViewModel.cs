@@ -36,11 +36,45 @@ public partial class AgentsViewModel : ObservableObject
     /// <summary>All tools available for assignment to agents.</summary>
     public ObservableCollection<ToolToggle> AvailableTools { get; } = [];
 
-    public AgentsViewModel(DataStore dataStore)
-    {
-        _dataStore = dataStore;
-        RefreshList();
-    }
+     public AgentsViewModel(DataStore dataStore)
+     {
+         _dataStore = dataStore;
+         RefreshList();
+     }
+
+     public void RefreshFromStore()
+     {
+         RefreshList();
+
+         var selectedAgent = SelectedAgent is null
+             ? null
+             : _dataStore.Data.Agents.FirstOrDefault(agent => agent.Id == SelectedAgent.Id);
+
+         if (SelectedAgent is not null && selectedAgent is null)
+         {
+             SelectedAgent = null;
+             IsEditing = false;
+             RefreshAvailableSkills(null);
+             RefreshAvailableMcpServers(null);
+             RefreshAvailableTools(null);
+             return;
+         }
+
+         if (selectedAgent is not null)
+         {
+             if (!ReferenceEquals(SelectedAgent, selectedAgent))
+             {
+                 SelectedAgent = selectedAgent;
+                 return;
+             }
+
+             SyncEditorFromAgent(selectedAgent);
+         }
+
+         RefreshAvailableSkills(selectedAgent);
+         RefreshAvailableMcpServers(selectedAgent);
+         RefreshAvailableTools(selectedAgent);
+     }
 
     private void RefreshList()
     {
@@ -95,6 +129,11 @@ public partial class AgentsViewModel : ObservableObject
         ("fetch_skill", "Fetch Skill", "Utility", "Retrieve the full content of a skill by name."),
         ("ask_question", "Ask Question", "Utility", "Ask the user a question with predefined options."),
         ("recall_memory", "Recall Memory", "Utility", "Search and recall stored memories about the user."),
+        ("manage_projects", "Manage Projects", "Utility", "List, create, update, or delete Lumi projects on explicit request."),
+        ("manage_skills", "Manage Skills", "Utility", "List, create, update, or delete Lumi skills on explicit request."),
+        ("manage_lumis", "Manage Lumis", "Utility", "List, create, update, or delete Lumi agents on explicit request."),
+        ("manage_mcps", "Manage MCPs", "Utility", "List, create, update, or delete Lumi MCP servers on explicit request."),
+        ("manage_memories", "Manage Memories", "Utility", "List, create, update, or delete Lumi memories on explicit request."),
         ("code_review", "Code Review", "Coding", "Expert code review for bugs, security, performance, and best practices."),
         ("generate_tests", "Generate Tests", "Coding", "Generate comprehensive unit tests for source code."),
         ("explain_code", "Explain Code", "Coding", "Deep code explanation with call flow and pattern identification."),
@@ -133,18 +172,23 @@ public partial class AgentsViewModel : ObservableObject
         SelectedAgent = agent;
     }
 
-    partial void OnSelectedAgentChanged(LumiAgent? value)
-    {
-        if (value is null) return;
-        EditName = value.Name;
-        EditDescription = value.Description;
-        EditSystemPrompt = value.SystemPrompt;
-        EditIconGlyph = value.IconGlyph;
-        RefreshAvailableSkills(value);
-        RefreshAvailableMcpServers(value);
-        RefreshAvailableTools(value);
-        IsEditing = true;
-    }
+     partial void OnSelectedAgentChanged(LumiAgent? value)
+     {
+         if (value is null) return;
+         SyncEditorFromAgent(value);
+         RefreshAvailableSkills(value);
+         RefreshAvailableMcpServers(value);
+         RefreshAvailableTools(value);
+         IsEditing = true;
+     }
+
+     private void SyncEditorFromAgent(LumiAgent agent)
+     {
+         EditName = agent.Name;
+         EditDescription = agent.Description;
+         EditSystemPrompt = agent.SystemPrompt;
+         EditIconGlyph = agent.IconGlyph;
+     }
 
     [RelayCommand]
     private void SaveAgent()
@@ -207,7 +251,10 @@ public partial class AgentsViewModel : ObservableObject
     [RelayCommand]
     private void DeleteAgent(LumiAgent agent)
     {
-        _dataStore.Data.Agents.Remove(agent);
+        var result = new LumiFeatureManager(_dataStore).ManageLumis("delete", identifier: agent.Id.ToString());
+        if (!result.DataChanged)
+            return;
+
         _ = _dataStore.SaveAsync();
         if (SelectedAgent == agent)
         {
