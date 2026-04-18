@@ -47,4 +47,55 @@ public sealed class SystemPromptBuilderTests
         Assert.Contains("manage_skills", prompt);
         Assert.Contains("Lumi Feature Manager", prompt);
     }
+
+    [Fact]
+    public void Build_IncludesWritingStyleGuidance()
+    {
+        var prompt = SystemPromptBuilder.Build(
+            new UserSettings { Language = "en" },
+            agent: null,
+            project: null,
+            allSkills: [],
+            activeSkills: [],
+            memories: []);
+
+        Assert.Contains("## Writing Style", prompt);
+        Assert.Contains("Write like a knowledgeable friend", prompt);
+        Assert.Contains("Lead with the answer, not the preamble", prompt);
+        Assert.Contains("Emoji are welcome when they fit the moment naturally", prompt);
+        Assert.Contains("respond as a person first", prompt);
+        Assert.Contains("show genuine curiosity about what they built or achieved", prompt);
+        Assert.Contains("Match the shape of your response to the moment", prompt);
+        Assert.Contains("Use the full formatting palette available to you", prompt);
+        Assert.Contains("`comparison`, `card`, `chart`, `confidence`, `mermaid`", prompt);
+        Assert.Contains("Use markdown links instead of raw URLs", prompt);
+        Assert.Contains("Use visualization blocks proactively", prompt);
+        Assert.Contains("offer to do it — don't just describe the steps when you could run them", prompt);
+        Assert.Contains("weave that context in naturally so the answer feels personal", prompt);
+        Assert.Contains("clarity with warmth, not decoration", prompt);
+    }
+
+    [Fact]
+    public void Build_DoesNotContainModelSpecificCalibration()
+    {
+        var gptPrompt = SystemPromptBuilder.Build(
+            new UserSettings { Language = "en", PreferredModel = "gpt-5.4" },
+            agent: null,
+            project: null,
+            allSkills: [],
+            activeSkills: [],
+            memories: []);
+
+        var claudePrompt = SystemPromptBuilder.Build(
+            new UserSettings { Language = "en", PreferredModel = "claude-opus-4.6" },
+            agent: null,
+            project: null,
+            allSkills: [],
+            activeSkills: [],
+            memories: []);
+
+        // Same writing guidance regardless of model
+        Assert.DoesNotContain("Extra Writing Calibration", gptPrompt);
+        Assert.DoesNotContain("Extra Writing Calibration", claudePrompt);
+    }
 }
