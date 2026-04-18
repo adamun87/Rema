@@ -26,6 +26,7 @@ public partial class MainViewModel : ObservableObject
     private readonly BrowserService _settingsBrowserService;
     private bool _isRefreshingCopilotState;
     private bool _isSyncingDefaultModelSelectionFromChat;
+    private readonly ChatNavigationHistory _chatNavigationHistory = new();
 
     private const int ChatPageSize = 50;
     private int _chatLoadLimit = ChatPageSize;
@@ -229,6 +230,7 @@ public partial class MainViewModel : ObservableObject
         SubscribeChatRunningState();
         RefreshChatList();
         ChatVM.RefreshComposerCatalogs();
+        _chatNavigationHistory.Record(ChatVM.CurrentChat?.Id, SelectedProjectFilter);
         _ = InitializeAsync();
     }
 
@@ -404,6 +406,61 @@ public partial class MainViewModel : ObservableObject
         ChatTitleChanged?.Invoke(chatId, newTitle);
     }
 
+    private void SetDraftChatProjectContext(Guid? projectId)
+    {
+        if (projectId.HasValue)
+            ChatVM.SetProjectId(projectId.Value);
+        else
+            ChatVM.ClearProjectId();
+    }
+
+    private async Task<bool> LoadChatAndShowAsync(Chat chat)
+    {
+        await ChatVM.LoadChatAsync(chat);
+        if (ChatVM.CurrentChat?.Id != chat.Id)
+            return false;
+
+        SelectedNavIndex = 0;
+        return true;
+    }
+
+    private async Task<bool> ApplyChatNavigationEntryAsync(ChatNavigationState entry)
+    {
+        if (SelectedProjectFilter != entry.ProjectFilterId)
+            SelectedProjectFilter = entry.ProjectFilterId;
+        else
+            ChatVM.ActiveProjectFilterId = entry.ProjectFilterId;
+
+        if (entry.ChatId is not Guid chatId)
+        {
+            ChatVM.ClearChat();
+            SetDraftChatProjectContext(entry.ProjectFilterId);
+            SelectedNavIndex = 0;
+            return true;
+        }
+
+        var chat = _dataStore.Data.Chats.FirstOrDefault(candidate => candidate.Id == chatId);
+        if (chat is null)
+            return false;
+
+        return await LoadChatAndShowAsync(chat);
+    }
+
+    public async Task<bool> TryNavigateChatHistoryAsync(int direction)
+    {
+        try
+        {
+            return await _chatNavigationHistory.TryNavigateAsync(
+                direction,
+                _dataStore.Data.Chats.Select(chat => chat.Id),
+                ApplyChatNavigationEntryAsync);
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
     [RelayCommand]
     private void NewChat()
     {
@@ -411,11 +468,7 @@ public partial class MainViewModel : ObservableObject
         if (ChatVM.CurrentChat is not null && ChatVM.CurrentChat.Messages.Count == 0)
         {
             // Still update the project assignment if a filter is active
-            if (SelectedProjectFilter.HasValue)
-                ChatVM.SetProjectId(SelectedProjectFilter.Value);
-            else if (ChatVM.CurrentChat.ProjectId.HasValue)
-                ChatVM.ClearProjectId();
-
+            SetDraftChatProjectContext(SelectedProjectFilter);
             SelectedNavIndex = 0;
             return;
         }
@@ -423,11 +476,7 @@ public partial class MainViewModel : ObservableObject
         ChatVM.ClearChat();
 
         // Auto-assign the active project filter to new chats
-        if (SelectedProjectFilter.HasValue)
-        {
-            ChatVM.SetProjectId(SelectedProjectFilter.Value);
-        }
-
+        SetDraftChatProjectContext(SelectedProjectFilter);
         SelectedNavIndex = 0;
     }
 
@@ -436,9 +485,7 @@ public partial class MainViewModel : ObservableObject
     {
         try
         {
-            await ChatVM.LoadChatAsync(chat);
-            if (ChatVM.CurrentChat?.Id == chat.Id)
-                SelectedNavIndex = 0;
+            await LoadChatAndShowAsync(chat);
         }
         catch (OperationCanceledException)
         {
@@ -506,14 +553,17 @@ public partial class MainViewModel : ObservableObject
 
     private void PerformDeleteChat(Chat chat, bool removeWorktree)
     {
+        var deletedActiveChat = ChatVM.CurrentChat?.Id == chat.Id;
+
         ChatVM.CleanupSession(chat.Id);
         _dataStore.Data.Chats.Remove(chat);
+        _chatNavigationHistory.RemoveChat(chat.Id);
         _dataStore.MarkChatDeleted(chat.Id);
         _dataStore.DeleteChatFile(chat.Id);
         _ = _dataStore.SaveAsync();
         RefreshChatList();
 
-        if (ChatVM.CurrentChat?.Id == chat.Id)
+        if (deletedActiveChat)
             ChatVM.ClearChat();
     }
 
@@ -578,7 +628,7 @@ public partial class MainViewModel : ObservableObject
         // Also clear draft/new-chat project context immediately, even if
         // SelectedProjectFilter was already null (no PropertyChanged event).
         if (ChatVM.CurrentChat is null || ChatVM.CurrentChat.Messages.Count == 0)
-            ChatVM.ClearProjectId();
+            SetDraftChatProjectContext(null);
     }
 
     [RelayCommand]
@@ -616,9 +666,7 @@ public partial class MainViewModel : ObservableObject
     {
         try
         {
-            await ChatVM.LoadChatAsync(chat);
-            if (ChatVM.CurrentChat?.Id == chat.Id)
-                SelectedNavIndex = 0;
+            await LoadChatAndShowAsync(chat);
         }
         catch (OperationCanceledException)
         {
@@ -678,6 +726,13 @@ public partial class MainViewModel : ObservableObject
         RefreshChatList();
         ChatVM.ActiveProjectFilterId = value;
 
+        if (_chatNavigationHistory.IsRestoring)
+        {
+            if (ChatVM.CurrentChat is null || ChatVM.CurrentChat.Messages.Count == 0)
+                SetDraftChatProjectContext(value);
+            return;
+        }
+
         // If the current chat already belongs to the target project, keep it.
         if (ChatVM.CurrentChat is not null
             && ChatVM.CurrentChat.Messages.Count > 0
@@ -688,10 +743,8 @@ public partial class MainViewModel : ObservableObject
         // just update the project assignment without navigating away.
         if (ChatVM.CurrentChat is null || ChatVM.CurrentChat.Messages.Count == 0)
         {
-            if (value.HasValue)
-                ChatVM.SetProjectId(value.Value);
-            else
-                ChatVM.ClearProjectId();
+            SetDraftChatProjectContext(value);
+            _chatNavigationHistory.Record(ChatVM.CurrentChat?.Id, value);
             return;
         }
 
@@ -711,6 +764,14 @@ public partial class MainViewModel : ObservableObject
 
         // No existing chat for this project (or clearing filter) — start a new chat.
         NewChat();
+    }
+
+    partial void OnActiveChatIdChanged(Guid? value)
+    {
+        if (_chatNavigationHistory.IsRestoring)
+            return;
+
+        _chatNavigationHistory.Record(value, SelectedProjectFilter);
     }
 
     partial void OnIsDarkThemeChanged(bool value)

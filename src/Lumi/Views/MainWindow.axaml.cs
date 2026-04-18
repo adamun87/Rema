@@ -227,6 +227,8 @@ public partial class MainWindow : Window
             this.FindControl<Button>("NavSettings"),
         ];
 
+        AddHandler(PointerPressedEvent, OnWindowPointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
+
         WireNavHoverEvents();
         Dispatcher.UIThread.Post(InitializeNavHoverVisuals, DispatcherPriority.Loaded);
 
@@ -454,6 +456,9 @@ public partial class MainWindow : Window
         var settingsPage = _settingsView;
         if (settingsPage?.IsRecordingHotkey == true) return;
 
+        if (TryHandleChatHistoryNavigationKey(vm, e))
+            return;
+
         var ctrl = (e.KeyModifiers & KeyModifiers.Control) != 0;
         var shift = (e.KeyModifiers & KeyModifiers.Shift) != 0;
         var noMods = e.KeyModifiers == KeyModifiers.None;
@@ -553,6 +558,64 @@ public partial class MainWindow : Window
             }
         }
 
+    }
+
+    private bool CanHandleChatHistoryNavigationInput(MainViewModel vm, object? source)
+    {
+        if (_renameOverlay?.IsVisible == true || vm.SearchOverlayVM.IsOpen)
+            return false;
+
+        if (source is Visual visual && visual.FindAncestorOfType<BrowserView>() is not null)
+            return false;
+
+        return true;
+    }
+
+    private void BeginChatHistoryNavigation(MainViewModel vm, int direction)
+    {
+        _ = vm.TryNavigateChatHistoryAsync(direction);
+    }
+
+    private bool TryHandleChatHistoryNavigationKey(MainViewModel vm, KeyEventArgs e)
+    {
+        if (!CanHandleChatHistoryNavigationInput(vm, e.Source))
+            return false;
+
+        var altOnly = e.KeyModifiers == KeyModifiers.Alt;
+        var direction = e.Key switch
+        {
+            Key.BrowserBack => -1,
+            Key.BrowserForward => 1,
+            Key.Left when altOnly => -1,
+            Key.Right when altOnly => 1,
+            _ => 0
+        };
+
+        if (direction == 0)
+            return false;
+
+        BeginChatHistoryNavigation(vm, direction);
+        e.Handled = true;
+        return true;
+    }
+
+    private void OnWindowPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.Handled || DataContext is not MainViewModel vm || !CanHandleChatHistoryNavigationInput(vm, e.Source))
+            return;
+
+        var point = e.GetCurrentPoint(this);
+        var direction = point.Properties.IsXButton1Pressed
+            ? -1
+            : point.Properties.IsXButton2Pressed
+                ? 1
+                : 0;
+
+        if (direction == 0)
+            return;
+
+        BeginChatHistoryNavigation(vm, direction);
+        e.Handled = true;
     }
 
     private void HideToTray()
