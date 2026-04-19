@@ -102,6 +102,8 @@ public partial class ChatViewModel
     public bool HasPendingAttachments => PendingAttachmentItems.Count > 0;
     public bool HasProjectBadge => !string.IsNullOrWhiteSpace(ProjectBadgeText);
     public bool HasAgentBadge => !string.IsNullOrWhiteSpace(AgentBadgeText);
+    public bool HasHeaderSubtitle => HasProjectBadge || HasAgentBadge;
+    public bool HasHeaderSubtitleSeparator => HasProjectBadge && HasAgentBadge;
     public bool ShowBrowserToggle => HasUsedBrowser;
 
     public event Action<Guid?>? ComposerProjectFilterRequested;
@@ -541,11 +543,15 @@ public partial class ChatViewModel
     partial void OnProjectBadgeTextChanged(string? value)
     {
         OnPropertyChanged(nameof(HasProjectBadge));
+        OnPropertyChanged(nameof(HasHeaderSubtitle));
+        OnPropertyChanged(nameof(HasHeaderSubtitleSeparator));
     }
 
     partial void OnAgentBadgeTextChanged(string? value)
     {
         OnPropertyChanged(nameof(HasAgentBadge));
+        OnPropertyChanged(nameof(HasHeaderSubtitle));
+        OnPropertyChanged(nameof(HasHeaderSubtitleSeparator));
     }
 
     partial void OnGitChangedFileCountChanged(int value)
@@ -667,15 +673,15 @@ public partial class ChatViewModel
     private void RefreshProjectBadge()
     {
         var projectName = GetCurrentProjectName();
-        ProjectBadgeText = string.IsNullOrWhiteSpace(projectName) ? null : $"📁 {projectName}";
+        ProjectBadgeText = string.IsNullOrWhiteSpace(projectName) ? null : projectName;
     }
 
     private void RefreshAgentBadge()
     {
         if (SelectedSdkAgentName is not null)
-            AgentBadgeText = $"🤖 {SelectedSdkAgentName}";
+            AgentBadgeText = SelectedSdkAgentName;
         else
-            AgentBadgeText = ActiveAgent is null ? null : $"{ActiveAgent.IconGlyph} {ActiveAgent.Name}";
+            AgentBadgeText = ActiveAgent?.Name;
     }
 
     private static void ReplaceCollection<T>(ObservableCollection<T> target, IEnumerable<T> values)

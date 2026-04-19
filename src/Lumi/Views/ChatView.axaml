@@ -54,9 +54,6 @@
     <Style Selector="Button#BrowserToggleButton.open">
       <Setter Property="Background" Value="{DynamicResource Brush.AccentSubtle}" />
     </Style>
-    <Style Selector="Button#BrowserToggleButton.open TextBlock#BrowserToggleText">
-      <Setter Property="Foreground" Value="{DynamicResource Brush.AccentDefault}" />
-    </Style>
     <Style Selector="Button#BrowserToggleButton.open PathIcon#BrowserToggleIcon">
       <Setter Property="Foreground" Value="{DynamicResource Brush.AccentDefault}" />
     </Style>
@@ -927,50 +924,67 @@
     <!-- Active chat -->
     <Panel x:Name="ChatPanel" Classes.active="{Binding IsChatVisible}">
       <sc:StrataChatShell x:Name="ChatShell"
-                          IsOnline="True"
+                          IsOnline="False"
                           IsStreaming="{Binding IsStreaming}">
 
         <sc:StrataChatShell.Header>
-          <DockPanel Margin="0,0,8,0">
-            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6"
-                        VerticalAlignment="Center" Margin="8,0,0,0">
-              <Border IsVisible="{Binding HasProjectBadge}"
-                      Background="{DynamicResource Brush.SurfaceSubtle}" CornerRadius="12" Padding="10,4">
-                <TextBlock Classes="caption" FontWeight="SemiBold"
-                           Foreground="{DynamicResource Brush.TextSecondary}"
-                           Text="{Binding ProjectBadgeText}" />
-              </Border>
-              <Border IsVisible="{Binding HasAgentBadge}"
-                      Background="{DynamicResource Brush.AccentSubtle}" CornerRadius="12" Padding="10,4">
-                <TextBlock Classes="caption" FontWeight="SemiBold"
-                           Foreground="{DynamicResource Brush.AccentDefault}"
-                           Text="{Binding AgentBadgeText}" />
-              </Border>
-              <Button x:Name="BrowserToggleButton" Classes="subtle"
+          <DockPanel Margin="2,1,2,1" LastChildFill="True">
+            <StackPanel DockPanel.Dock="Right"
+                        Orientation="Horizontal"
+                        Spacing="10"
+                        VerticalAlignment="Center"
+                        Margin="16,0,0,0">
+              <StackPanel Orientation="Horizontal"
+                          Spacing="8"
+                          VerticalAlignment="Center"
+                          IsVisible="{Binding HasHeaderSubtitle}">
+                <TextBlock IsVisible="{Binding HasProjectBadge}"
+                           Classes="caption"
+                           Foreground="{DynamicResource Brush.TextTertiary}"
+                           Text="{Binding ProjectBadgeText}"
+                           TextTrimming="CharacterEllipsis" />
+                <TextBlock IsVisible="{Binding HasHeaderSubtitleSeparator}"
+                           Classes="caption"
+                           Foreground="{DynamicResource Brush.TextTertiary}"
+                           Opacity="0.55"
+                           Text="•" />
+                <TextBlock IsVisible="{Binding HasAgentBadge}"
+                           Classes="caption"
+                           Foreground="{DynamicResource Brush.TextTertiary}"
+                           Text="{Binding AgentBadgeText}"
+                           TextTrimming="CharacterEllipsis" />
+              </StackPanel>
+
+              <Border IsVisible="{Binding ShowBrowserToggle}"
+                      Width="1"
+                      Height="16"
+                      Background="{DynamicResource Brush.BorderSubtle}" />
+
+              <Button x:Name="BrowserToggleButton"
+                      Classes="subtle"
                       IsVisible="{Binding ShowBrowserToggle}"
                       Classes.open="{Binding IsBrowserOpen}"
                       Command="{Binding ToggleBrowserVisibilityCommand}"
                       ToolTip.Tip="{loc:Str Browser_ShowBrowser}"
-                      Padding="7,4" CornerRadius="12">
-                <StackPanel Orientation="Horizontal" Spacing="4">
-                  <PathIcon x:Name="BrowserToggleIcon" Width="12" Height="12"
-                            Foreground="{DynamicResource Brush.TextSecondary}"
-                            Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
-                  <TextBlock x:Name="BrowserToggleText" Classes="caption" FontWeight="SemiBold"
-                             Foreground="{DynamicResource Brush.TextSecondary}" Text="Browser" />
-                </StackPanel>
+                      Width="30"
+                      Height="30"
+                      Padding="0"
+                      CornerRadius="7">
+                <PathIcon x:Name="BrowserToggleIcon"
+                          Width="14"
+                          Height="14"
+                          Foreground="{DynamicResource Brush.TextSecondary}"
+                          Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
               </Button>
             </StackPanel>
-            <!-- Avatar is fixed, title fills remaining space and trims -->
-            <Border DockPanel.Dock="Left" Width="26" Height="26" CornerRadius="7"
-                    Background="{DynamicResource Brush.AccentGradient}" Margin="0,0,10,0">
-              <TextBlock Text="{loc:Str Chat_AvatarLetter}" FontSize="12" FontWeight="Bold"
-                         Foreground="{DynamicResource Brush.TextOnAccent}"
-                         HorizontalAlignment="Center" VerticalAlignment="Center" />
-            </Border>
-            <TextBlock Classes="body-strong" Text="{Binding CurrentChatTitle}"
+
+            <TextBlock Classes="subtitle"
+                       FontSize="15.5"
+                       FontWeight="SemiBold"
+                       VerticalAlignment="Center"
+                       Text="{Binding CurrentChatTitle}"
                        ToolTip.Tip="{Binding CurrentChatTitle}"
-                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                       TextTrimming="CharacterEllipsis" />
           </DockPanel>
         </sc:StrataChatShell.Header>
 
