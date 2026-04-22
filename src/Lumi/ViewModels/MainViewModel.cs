@@ -283,7 +283,7 @@ public partial class MainViewModel : ObservableObject
             // Refresh account quota in background
             _ = ChatVM.RefreshQuotaAsync();
 
-            // Refresh catalogs now that connection is established (discovers workspace agents)
+            // Refresh catalogs now that connection is established (discovers workspace/user Copilot agents)
             ChatVM.RefreshComposerCatalogs();
         }
         catch (Exception ex)

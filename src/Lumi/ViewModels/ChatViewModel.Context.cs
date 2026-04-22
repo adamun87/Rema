@@ -87,7 +87,7 @@ public partial class ChatViewModel
 
         SyncComposerProjectSelectionFromState();
         RefreshProjectBadge();
-        RefreshComposerCatalogs(); // Re-scan workspace agents/skills for the new project
+        RefreshComposerCatalogs(); // Re-scan workspace and user Copilot agents/skills for the new project
         _ = RefreshCodingProjectState();
     }
 
@@ -137,7 +137,7 @@ public partial class ChatViewModel
 
         SyncComposerProjectSelectionFromState();
         RefreshProjectBadge();
-        RefreshComposerCatalogs(); // Re-scan to remove workspace agents/skills
+        RefreshComposerCatalogs(); // Re-scan to remove workspace and user Copilot agents/skills
         _ = RefreshCodingProjectState();
     }
     public void AddSkill(Skill skill)
@@ -151,13 +151,13 @@ public partial class ChatViewModel
         SyncActiveSkillsToChat();
     }
 
-    /// <summary>Workspace skill names currently active for this chat (from .github/skills/).</summary>
-    private readonly List<string> _activeWorkspaceSkillNames = new();
+    /// <summary>File-based Copilot skill names currently active for this chat.</summary>
+    private readonly List<string> _activeExternalSkillNames = new();
 
     /// <summary>Registers a skill ID without adding a chip (composer already added it).</summary>
     public void RegisterSkillIdByName(string name)
     {
-        var skill = _dataStore.Data.Skills.FirstOrDefault(s => s.Name == name);
+        var skill = _dataStore.Data.Skills.FirstOrDefault(s => s.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
         if (skill is not null)
         {
             if (ActiveSkillIds.Contains(skill.Id)) return;
@@ -169,9 +169,15 @@ public partial class ChatViewModel
         }
         else
         {
-            // Workspace skill (from .github/skills/) — track by name persistently
-            if (!_activeWorkspaceSkillNames.Contains(name))
-                _activeWorkspaceSkillNames.Add(name);
+            var externalSkill = FindExternalSkillByName(name);
+            if (externalSkill is null)
+                return;
+
+            if (_activeExternalSkillNames.Any(existing => existing.Equals(externalSkill.Name, StringComparison.OrdinalIgnoreCase)))
+                return;
+
+            _activeExternalSkillNames.Add(externalSkill.Name);
+            SyncActiveSkillsToChat();
         }
     }
 
@@ -180,18 +186,29 @@ public partial class ChatViewModel
         if (CurrentChat is not null)
         {
             CurrentChat.ActiveSkillIds = new List<Guid>(ActiveSkillIds);
+            CurrentChat.ActiveExternalSkillNames = new List<string>(_activeExternalSkillNames);
             QueueSaveChat(CurrentChat, saveIndex: true);
         }
     }
 
     public void RemoveSkillByName(string name)
     {
-        var skill = _dataStore.Data.Skills.FirstOrDefault(s => s.Name == name);
-        if (skill is null) return;
-        ActiveSkillIds.Remove(skill.Id);
+        var skill = _dataStore.Data.Skills.FirstOrDefault(s => s.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+        var changed = false;
+
+        if (skill is not null)
+            changed = ActiveSkillIds.Remove(skill.Id);
+        else if (_activeExternalSkillNames.RemoveAll(existing => existing.Equals(name, StringComparison.OrdinalIgnoreCase)) > 0)
+            changed = true;
+
+        if (!changed)
+            return;
+
         var chip = ActiveSkillChips.OfType<StrataTheme.Controls.StrataComposerChip>()
-            .FirstOrDefault(c => c.Name == name);
-        if (chip is not null) ActiveSkillChips.Remove(chip);
+            .FirstOrDefault(c => c.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+        if (chip is not null)
+            ActiveSkillChips.Remove(chip);
+
         SyncActiveSkillsToChat();
     }
 
@@ -314,21 +331,50 @@ public partial class ChatViewModel
     /// <summary>Selects an agent by name (called from composer autocomplete).</summary>
     public void SelectAgentByName(string name)
     {
-        var agent = _dataStore.Data.Agents.FirstOrDefault(a => a.Name == name);
-        SetActiveAgent(agent);
+        ApplyComposerAgentSelection(name);
     }
 
     /// <summary>Adds a skill by name (called from composer autocomplete).</summary>
     public void AddSkillByName(string name)
     {
-        var skill = _dataStore.Data.Skills.FirstOrDefault(s => s.Name == name);
-        if (skill is not null) AddSkill(skill);
+        var skillReference = FindSkillReferenceByName(name);
+        if (skillReference is null)
+            return;
+
+        var alreadyActive = ActiveSkillChips
+            .OfType<StrataComposerChip>()
+            .Any(chip => chip.Name.Equals(skillReference.Name, StringComparison.OrdinalIgnoreCase));
+        if (!alreadyActive)
+        {
+            RegisterSkillIdByName(skillReference.Name);
+            ActiveSkillChips.Add(new StrataComposerChip(skillReference.Name, skillReference.Glyph));
+        }
     }
 
     /// <summary>Finds a skill by name for display purposes (e.g. fetching icon glyph).</summary>
     public Skill? FindSkillByName(string name)
     {
         return _dataStore.Data.Skills.FirstOrDefault(s => s.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public SkillReference? FindSkillReferenceByName(string name)
+    {
+        var skill = FindSkillByName(name);
+        if (skill is not null)
+        {
+            return new SkillReference
+            {
+                Name = skill.Name,
+                Glyph = skill.IconGlyph,
+                Description = skill.Description
+            };
+        }
+
+        var externalSkill = FindExternalSkillByName(name);
+        if (externalSkill is null)
+            return null;
+
+        return CreateExternalSkillReference(externalSkill);
     }
 
     public void AddAttachment(string filePath)

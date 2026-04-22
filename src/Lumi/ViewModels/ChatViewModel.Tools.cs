@@ -515,9 +515,14 @@ public partial class ChatViewModel
             {
                 var skill = _dataStore.Data.Skills
                     .FirstOrDefault(s => s.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
-                if (skill is null)
-                    return $"Skill not found: {name}. Check the Available Skills list for exact names.";
-                return $"# {skill.Name}\n\n{skill.Content}";
+                if (skill is not null)
+                    return $"# {skill.Name}\n\n{skill.Content}";
+
+                var externalSkill = FindExternalSkillByName(name);
+                if (externalSkill is not null)
+                    return externalSkill.Content;
+
+                return $"Skill not found: {name}. Check the Available Skills list for exact names.";
             },
             "fetch_skill",
             "Retrieve the full content of a skill by name. Use this when the user asks to use a skill, or when their request closely matches a skill's description. The skill content contains detailed instructions on how to perform the task.");
@@ -730,12 +735,12 @@ public partial class ChatViewModel
              if (chatMetadataChanged)
                 _ = SaveIndexAsync();
 
-            if (CurrentChat?.CopilotSessionId is not null)
-            {
-                _pendingSessionInvalidations.Add(CurrentChat.Id);
-                _pendingSkillInjections.Clear();
-                _activeWorkspaceSkillNames.Clear();
-            }
+             if (CurrentChat?.CopilotSessionId is not null)
+             {
+                 _pendingSessionInvalidations.Add(CurrentChat.Id);
+                 _pendingSkillInjections.Clear();
+                 _activeExternalSkillNames.Clear();
+             }
             else
             {
                 PrunePendingSkillInjections();
@@ -771,7 +776,11 @@ public partial class ChatViewModel
     private bool RefreshActiveSkillChipsFromState()
     {
         var skillsById = _dataStore.Data.Skills.ToDictionary(skill => skill.Id);
+        var externalCatalog = GetExternalCatalog(GetEffectiveWorkingDirectory());
+        var externalSkillsByName = externalCatalog.Skills
+            .ToDictionary(skill => skill.Name, StringComparer.OrdinalIgnoreCase);
         var filteredIds = new List<Guid>();
+        var filteredExternalNames = new List<string>();
         var chips = new List<StrataTheme.Controls.StrataComposerChip>();
 
         foreach (var skillId in ActiveSkillIds.ToList())
@@ -783,17 +792,32 @@ public partial class ChatViewModel
             chips.Add(new StrataTheme.Controls.StrataComposerChip(skill.Name, skill.IconGlyph));
         }
 
+        foreach (var skillName in _activeExternalSkillNames.ToList())
+        {
+            if (!externalSkillsByName.TryGetValue(skillName, out var skill))
+                continue;
+
+            filteredExternalNames.Add(skill.Name);
+            chips.Add(new StrataTheme.Controls.StrataComposerChip(skill.Name, ExternalSkillGlyph));
+        }
+
         ActiveSkillIds.Clear();
+        _activeExternalSkillNames.Clear();
         ActiveSkillChips.Clear();
         foreach (var skillId in filteredIds)
             ActiveSkillIds.Add(skillId);
+        foreach (var skillName in filteredExternalNames)
+            _activeExternalSkillNames.Add(skillName);
         foreach (var chip in chips)
             ActiveSkillChips.Add(chip);
 
         var changed = false;
-        if (CurrentChat is not null && !CurrentChat.ActiveSkillIds.SequenceEqual(filteredIds))
+        if (CurrentChat is not null
+            && (!CurrentChat.ActiveSkillIds.SequenceEqual(filteredIds)
+                || !SkillNameListsEqual(CurrentChat.ActiveExternalSkillNames, filteredExternalNames)))
         {
             CurrentChat.ActiveSkillIds = new List<Guid>(filteredIds);
+            CurrentChat.ActiveExternalSkillNames = new List<string>(filteredExternalNames);
             _dataStore.MarkChatChanged(CurrentChat);
             changed = true;
         }

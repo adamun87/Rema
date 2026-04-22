@@ -1458,11 +1458,11 @@ public partial class ChatViewModel
                     {
                     if (!string.IsNullOrWhiteSpace(skillInvoked.Data.Name))
                     {
-                        var skill = FindSkillByName(skillInvoked.Data.Name);
+                        var skill = FindSkillReferenceByName(skillInvoked.Data.Name);
                         _transcriptBuilder.PendingFetchedSkillRefs.Add(new SkillReference
                         {
-                            Name = skillInvoked.Data.Name,
-                            Glyph = skill?.IconGlyph ?? "\u26A1",
+                            Name = skill?.Name ?? skillInvoked.Data.Name,
+                            Glyph = skill?.Glyph ?? "\u26A1",
                             Description = skill?.Description ?? string.Empty
                         });
                     }

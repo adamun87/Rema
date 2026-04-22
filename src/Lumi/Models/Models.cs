@@ -47,6 +47,7 @@ public class Chat : INotifyPropertyChanged
 {
     private bool _isRunning;
     private bool _hasUnreadMessages;
+    private List<string> _activeExternalSkillNames = [];
 
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Title { get; set; } = "New Chat";
@@ -58,6 +59,11 @@ public class Chat : INotifyPropertyChanged
     [JsonIgnore]
     public List<ChatMessage> Messages { get; set; } = [];
     public List<Guid> ActiveSkillIds { get; set; } = [];
+    public List<string> ActiveExternalSkillNames
+    {
+        get => _activeExternalSkillNames;
+        set => _activeExternalSkillNames = value ?? [];
+    }
     public List<string> ActiveMcpServerNames { get; set; } = [];
 
     /// <summary>Deprecated — session mode is no longer used. Kept for backward-compatible deserialization.</summary>

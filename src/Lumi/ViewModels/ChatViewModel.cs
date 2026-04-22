@@ -511,25 +511,6 @@ public partial class ChatViewModel : ObservableObject
             .ToList();
     }
 
-    private static async Task<string?> LoadWorkspaceAgentContentAsync(string workDir, string? workspaceAgentName, CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(workspaceAgentName))
-            return null;
-
-        var agentFile = Path.Combine(workDir, ".github", "agents", workspaceAgentName + ".md");
-        if (!File.Exists(agentFile))
-            return null;
-
-        try
-        {
-            return await File.ReadAllTextAsync(agentFile, ct);
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
     private async Task<string?> SyncActiveSkillDirectoryAsync(CancellationToken ct)
     {
         if (ActiveSkillIds.Count == 0)
@@ -577,23 +558,24 @@ public partial class ChatViewModel : ObservableObject
         var project = chat.ProjectId.HasValue
             ? _dataStore.Data.Projects.FirstOrDefault(p => p.Id == chat.ProjectId)
             : null;
+        var workDir = GetEffectiveWorkingDirectory();
+        var externalCatalog = GetExternalCatalog(workDir);
+        var externalSkills = externalCatalog.Skills;
         var systemPrompt = SystemPromptBuilder.Build(
             _dataStore.Data.Settings, ActiveAgent, project, allSkills, activeSkills, memories);
-        var workDir = GetEffectiveWorkingDirectory();
+        systemPrompt = AppendAvailableExternalSkillsToPrompt(systemPrompt, externalSkills);
 
-        // If a workspace agent (from .github/agents/) is selected, load its content and append to system prompt
-        var workspaceAgentName = chat.SdkAgentName ?? SelectedSdkAgentName;
-        var workspaceAgentContentTask = ActiveAgent is null
-            ? LoadWorkspaceAgentContentAsync(workDir, workspaceAgentName, ct)
-            : Task.FromResult<string?>(null);
+        var sdkAgentName = chat.SdkAgentName ?? SelectedSdkAgentName;
+        var externalAgent = ActiveAgent is null
+            ? FindExternalAgentByName(externalCatalog, sdkAgentName)
+            : null;
         var skillDirTask = SyncActiveSkillDirectoryAsync(ct);
         var mcpServersTask = BuildMcpServersAsync(workDir, ct);
 
         var customAgents = BuildCustomAgents();
         var customTools = BuildCustomTools(chat.Id);
-        var agentContent = await workspaceAgentContentTask;
-        if (!string.IsNullOrWhiteSpace(agentContent))
-            systemPrompt = (systemPrompt ?? "") + "\n\n--- Active Agent: " + workspaceAgentName + " ---\n" + agentContent;
+        if (!string.IsNullOrWhiteSpace(externalAgent?.Content))
+            systemPrompt = (systemPrompt ?? "") + "\n\n--- Active Agent: " + externalAgent.Name + " ---\n" + externalAgent.Content;
 
         var skillDirs = new List<string>();
         var dir = await skillDirTask;
@@ -607,6 +589,8 @@ public partial class ChatViewModel : ObservableObject
 
         var effort = GetSelectedReasoningEffort() ?? persistedEffort;
         var agentName = ActiveAgent?.Name;
+        if (agentName is null && externalAgent is null && !string.IsNullOrWhiteSpace(sdkAgentName))
+            agentName = sdkAgentName;
 
         // Native user input handler — wired to the existing question card UI.
         // Capture chat.Id in the closure so questions always target the owning chat,
@@ -850,7 +834,7 @@ public partial class ChatViewModel : ObservableObject
 
             // Clear pending state from any previous chat
             _pendingSkillInjections.Clear();
-        _activeWorkspaceSkillNames.Clear();
+            _activeExternalSkillNames.Clear();
             _pendingSearchSources.Clear();
             _transcriptBuilder.PendingFetchedSkillRefs.Clear();
 
@@ -914,21 +898,13 @@ public partial class ChatViewModel : ObservableObject
 
             // Restore active skills from chat
             ActiveSkillIds.Clear();
+            _activeExternalSkillNames.Clear();
             ActiveSkillChips.Clear();
-            var skillsById = new Dictionary<Guid, Skill>();
-            foreach (var skill in _dataStore.Data.Skills)
-            {
-                if (!skillsById.ContainsKey(skill.Id))
-                    skillsById[skill.Id] = skill;
-            }
             foreach (var skillId in chat.ActiveSkillIds)
-            {
-                if (skillsById.TryGetValue(skillId, out var skill))
-                {
-                    ActiveSkillIds.Add(skillId);
-                    ActiveSkillChips.Add(new StrataTheme.Controls.StrataComposerChip(skill.Name, skill.IconGlyph));
-                }
-            }
+                ActiveSkillIds.Add(skillId);
+            foreach (var skillName in chat.ActiveExternalSkillNames)
+                _activeExternalSkillNames.Add(skillName);
+            RefreshActiveSkillChipsFromState();
 
             // Restore active MCP servers from chat (default to all enabled if none saved)
             ActiveMcpServerNames.Clear();
@@ -1107,7 +1083,7 @@ public partial class ChatViewModel : ObservableObject
         PopulateDefaultMcps();
         _pendingProjectId = null;
         _pendingSkillInjections.Clear();
-        _activeWorkspaceSkillNames.Clear();
+        _activeExternalSkillNames.Clear();
         StatusText = "";
         ActiveAgent = null;
         RestoreDefaultModelSelection();
@@ -1135,7 +1111,7 @@ public partial class ChatViewModel : ObservableObject
         {
             InvalidateCurrentSession();
             _pendingSkillInjections.Clear();
-        _activeWorkspaceSkillNames.Clear();
+            _activeExternalSkillNames.Clear();
         }
     }
 
@@ -1218,6 +1194,7 @@ public partial class ChatViewModel : ObservableObject
                 AgentId = ActiveAgent?.Id,
                 ProjectId = _pendingProjectId ?? ActiveProjectFilterId,
                 ActiveSkillIds = new List<Guid>(ActiveSkillIds),
+                ActiveExternalSkillNames = new List<string>(_activeExternalSkillNames),
                 ActiveMcpServerNames = new List<string>(ActiveMcpServerNames),
                 SdkAgentName = SelectedSdkAgentName,
                 WorktreePath = IsWorktreeMode ? WorktreePath : null,
@@ -1249,7 +1226,7 @@ public partial class ChatViewModel : ObservableObject
                 Content = prompt,
                 Author = _dataStore.Data.Settings.UserName ?? Loc.Author_You,
                 Attachments = attachments?.Select(a => a.Path).ToList() ?? [],
-                ActiveSkills = BuildSkillReferences(ActiveSkillIds)
+                ActiveSkills = BuildSkillReferences(ActiveSkillIds, _activeExternalSkillNames)
             };
             targetChat.Messages.Add(userMsg);
             Messages.Add(new ChatMessageViewModel(userMsg));
@@ -1390,7 +1367,7 @@ public partial class ChatViewModel : ObservableObject
                     retainedContext.Count);
 
                 // Agent is pre-selected via SessionConfig.Agent in EnsureSessionAsync.
-                // Workspace agents (.github/agents/) are handled via system prompt injection.
+                // File-based Copilot agents are handled via system prompt injection.
 
                 // Discover SDK agents in background (non-blocking)
                 _ = PopulateFromSessionAsync();
@@ -1935,6 +1912,16 @@ public partial class ChatViewModel : ObservableObject
     private string BuildSendPromptAdditions()
     {
         var builder = new StringBuilder();
+        var hasActivatedSkillsSection = false;
+
+        void AppendActivatedSkillsHeader()
+        {
+            if (hasActivatedSkillsSection)
+                return;
+
+            builder.Append("\n\n--- Activated Skills (apply these to help with the request) ---\n");
+            hasActivatedSkillsSection = true;
+        }
 
         if (_pendingSkillInjections.Count > 0)
         {
@@ -1943,7 +1930,7 @@ public partial class ChatViewModel : ObservableObject
 
             if (injectedSkills.Count > 0)
             {
-                builder.Append("\n\n--- Activated Skills (apply these to help with the request) ---\n");
+                AppendActivatedSkillsHeader();
                 foreach (var skill in injectedSkills)
                 {
                     builder.Append("\n### ")
@@ -1955,12 +1942,22 @@ public partial class ChatViewModel : ObservableObject
             }
         }
 
-        if (_activeWorkspaceSkillNames.Count > 0)
+        if (_activeExternalSkillNames.Count > 0)
         {
-            var skillNames = string.Join(", ", _activeWorkspaceSkillNames.Select(n => $"\"{n}\""));
-            builder.Append("\n\n[Use the following skills to help with this request: ")
-                .Append(skillNames)
-                .Append(". Retrieve each skill's content using the fetch_skill tool before proceeding.]");
+            var externalSkills = ResolveExternalSkills(GetExternalCatalog(), _activeExternalSkillNames);
+
+            if (externalSkills.Count > 0)
+            {
+                AppendActivatedSkillsHeader();
+                foreach (var skill in externalSkills)
+                {
+                    builder.Append("\n### ")
+                        .Append(skill.Name)
+                        .Append('\n')
+                        .Append(skill.Content)
+                        .Append('\n');
+                }
+            }
         }
 
         return builder.ToString();

@@ -73,6 +73,36 @@ public class AppDataSnapshotFactoryTests
     }
 
     [Fact]
+    public void AppDataJsonContext_DeserializesMissingExternalSkillNamesAsEmptyList()
+    {
+        var chatId = Guid.NewGuid();
+        var json = $$"""
+            {
+              "settings": {},
+              "chats": [
+                {
+                  "id": "{{chatId}}",
+                  "title": "Legacy chat",
+                  "activeSkillIds": [],
+                  "activeMcpServerNames": []
+                }
+              ],
+              "projects": [],
+              "skills": [],
+              "agents": [],
+              "mcpServers": [],
+              "memories": []
+            }
+            """;
+
+        var data = JsonSerializer.Deserialize(json, AppDataJsonContext.Default.AppData);
+
+        var chat = Assert.Single(data!.Chats);
+        Assert.NotNull(chat.ActiveExternalSkillNames);
+        Assert.Empty(chat.ActiveExternalSkillNames);
+    }
+
+    [Fact]
     public void MergeChatIndexChanges_PreservesPersistedChat_WhenLocalChatWasNotMarkedDirty()
     {
         var chatId = Guid.NewGuid();

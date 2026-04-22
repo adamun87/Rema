@@ -275,9 +275,10 @@ public partial class ChatViewModel
             .Select(s => new StrataComposerChip(s.Name, s.IconGlyph))
             .ToList();
 
-        // Discover workspace agents/skills from .github directory
+        // Discover workspace and user-level Copilot agents/skills
         var workDir = GetEffectiveWorkingDirectory();
-        DiscoverWorkspaceItems(workDir, agentChips, skillChips);
+        var externalCatalog = GetExternalCatalog(workDir);
+        DiscoverCopilotItems(externalCatalog, agentChips, skillChips);
 
         ReplaceCollection(AvailableAgentChips, agentChips);
         ReplaceCollection(AvailableSkillChips, skillChips);
@@ -335,78 +336,34 @@ public partial class ChatViewModel
     }
 
     /// <summary>
-    /// Discovers workspace agents and skills from the .github directory.
-    /// Supports two GitHub Copilot skill conventions:
-    ///   1. Flat: .github/skills/*.md (e.g., travel-planner.md)
-    ///   2. Folder: .github/Skills/&lt;name&gt;/SKILL.md (e.g., fluentsearch-translate/SKILL.md)
-    /// Agent convention: .github/agents/*.md
-    /// The SDK discovers these via ConfigDir when creating a session.
+    /// Discovers file-based Copilot agents and skills from the workspace and
+    /// the user's <c>~\.copilot</c> directory.
     /// </summary>
-    private static void DiscoverWorkspaceItems(
-        string workDir, List<StrataComposerChip> agentChips, List<StrataComposerChip> skillChips)
+    private static void DiscoverCopilotItems(
+        CopilotCatalogSnapshot catalog,
+        List<StrataComposerChip> agentChips,
+        List<StrataComposerChip> skillChips)
     {
-        var githubDir = Path.Combine(workDir, ".github");
-        if (!Directory.Exists(githubDir)) return;
-
         var existingAgentNames = agentChips.Select(c => c.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var existingSkillNames = skillChips.Select(c => c.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        // Discover agents — .github/agents/*.md (case-insensitive lookup)
-        var agentsDir = FindSubdirectory(githubDir, "agents");
-        if (agentsDir is not null)
+        foreach (var agent in catalog.Agents)
         {
-            foreach (var file in Directory.GetFiles(agentsDir, "*.md"))
-            {
-                var name = Path.GetFileNameWithoutExtension(file);
-                if (!existingAgentNames.Contains(name))
-                    agentChips.Add(new StrataComposerChip(name, "🤖"));
-            }
+            if (existingAgentNames.Contains(agent.Name))
+                continue;
+
+            agentChips.Add(new StrataComposerChip(agent.Name, ExternalAgentGlyph));
+            existingAgentNames.Add(agent.Name);
         }
 
-        // Discover skills (case-insensitive lookup for both "skills" and "Skills")
-        var skillsDir = FindSubdirectory(githubDir, "skills");
-        if (skillsDir is not null)
+        foreach (var skill in catalog.Skills)
         {
-            // Pattern 1: flat files — .github/skills/*.md
-            foreach (var file in Directory.GetFiles(skillsDir, "*.md"))
-            {
-                var name = Path.GetFileNameWithoutExtension(file);
-                if (!existingSkillNames.Contains(name))
-                    skillChips.Add(new StrataComposerChip(name, "⚡"));
-            }
+            if (existingSkillNames.Contains(skill.Name))
+                continue;
 
-            // Pattern 2: subdirectories with SKILL.md — .github/Skills/<name>/SKILL.md
-            foreach (var dir in Directory.GetDirectories(skillsDir))
-            {
-                var skillFile = Path.Combine(dir, "SKILL.md");
-                if (File.Exists(skillFile))
-                {
-                    var name = Path.GetFileName(dir);
-                    if (!existingSkillNames.Contains(name))
-                        skillChips.Add(new StrataComposerChip(name, "⚡"));
-                }
-            }
+            skillChips.Add(new StrataComposerChip(skill.Name, ExternalSkillGlyph));
+            existingSkillNames.Add(skill.Name);
         }
-    }
-
-    /// <summary>Finds a subdirectory by name, case-insensitive.</summary>
-    private static string? FindSubdirectory(string parentDir, string name)
-    {
-        var exact = Path.Combine(parentDir, name);
-        if (Directory.Exists(exact)) return exact;
-
-        // Case-insensitive fallback
-        try
-        {
-            foreach (var dir in Directory.GetDirectories(parentDir))
-            {
-                if (string.Equals(Path.GetFileName(dir), name, StringComparison.OrdinalIgnoreCase))
-                    return dir;
-            }
-        }
-        catch { /* best effort */ }
-
-        return null;
     }
 
     /// <summary>
@@ -464,7 +421,7 @@ public partial class ChatViewModel
                 Dispatcher.UIThread.Post(() =>
                 {
                     foreach (var agent in sdkOnly.OrderBy(a => a.DisplayName ?? a.Name))
-                        AvailableAgentChips.Add(new StrataComposerChip(agent.DisplayName ?? agent.Name, "🤖"));
+                        AvailableAgentChips.Add(new StrataComposerChip(agent.DisplayName ?? agent.Name, ExternalAgentGlyph));
                 });
             }
         }
@@ -603,9 +560,9 @@ public partial class ChatViewModel
             return;
         }
 
-        // Not a Lumi agent — check if it's an SDK workspace agent
-        // (identified by presence in AvailableAgentChips with 🤖 glyph)
-        var isSdkAgent = AvailableAgentChips.Any(c => c.Name == value && c.Glyph == "🤖");
+        // Not a Lumi agent — check if it's an SDK/workspace agent
+        // (identified by presence in AvailableAgentChips with the external-agent glyph)
+        var isSdkAgent = AvailableAgentChips.Any(c => c.Name == value && c.Glyph == ExternalAgentGlyph);
         if (isSdkAgent)
         {
             SetActiveAgent(null); // Clear Lumi agent when switching to SDK agent
@@ -649,7 +606,7 @@ public partial class ChatViewModel
         {
             // Prefer SDK agent name if set, otherwise use Lumi agent
             SelectedAgentName = SelectedSdkAgentName ?? ActiveAgent?.Name;
-            SelectedAgentGlyph = SelectedSdkAgentName is not null ? "🤖" : (ActiveAgent?.IconGlyph ?? "◉");
+            SelectedAgentGlyph = SelectedSdkAgentName is not null ? ExternalAgentGlyph : (ActiveAgent?.IconGlyph ?? "◉");
         }
         finally
         {
@@ -933,8 +890,28 @@ public partial class ChatViewModel
             if (string.Equals(CurrentChat.SdkAgentName, value, StringComparison.Ordinal))
                 return;
 
+            var previousValue = CurrentChat.SdkAgentName;
             CurrentChat.SdkAgentName = value;
             QueueSaveChat(CurrentChat, saveIndex: true);
+
+            var externalCatalog = GetExternalCatalog();
+            var previousExternalAgent = !string.IsNullOrWhiteSpace(previousValue)
+                && FindExternalAgentByName(externalCatalog, previousValue) is not null;
+            var currentExternalAgent = !string.IsNullOrWhiteSpace(value)
+                && FindExternalAgentByName(externalCatalog, value) is not null;
+
+            if (CurrentChat.CopilotSessionId is not null && (previousExternalAgent || currentExternalAgent))
+            {
+                InvalidateCurrentSession();
+                _pendingSkillInjections.Clear();
+            }
+            else if (_activeSession is not null)
+            {
+                if (!string.IsNullOrWhiteSpace(value))
+                    _ = SelectAgentOnSessionAsync(value);
+                else if (ActiveAgent is null)
+                    _ = DeselectAgentOnSessionAsync();
+            }
         }
     }
 

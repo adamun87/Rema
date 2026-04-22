@@ -180,6 +180,7 @@ internal static class AppDataSnapshotFactory
             CreatedAt = source.CreatedAt,
             UpdatedAt = source.UpdatedAt,
             ActiveSkillIds = [..source.ActiveSkillIds],
+            ActiveExternalSkillNames = [..source.ActiveExternalSkillNames],
             ActiveMcpServerNames = [..source.ActiveMcpServerNames],
             SessionMode = source.SessionMode,
             SdkAgentName = source.SdkAgentName,
