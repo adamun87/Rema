@@ -42,17 +42,18 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Install sign CLI
+        run: dotnet tool install --global sign --version 0.9.1-beta.25330.2
+
       - name: Sign Lumi.exe
-        uses: azure/trusted-signing-action@v0.5.0
-        with:
-          endpoint: https://wus2.codesigning.azure.net/
-          trusted-signing-account-name: acsfluentsearch
-          certificate-profile-name: profileFluentSearch1
-          files-folder: ${{ github.workspace }}\publish
-          files-folder-filter: exe
-          file-digest: SHA256
-          timestamp-rfc3161: http://timestamp.acs.microsoft.com
-          timestamp-digest: SHA256
+        shell: pwsh
+        run: |
+          sign code trusted-signing "${{ github.workspace }}\publish\Lumi.exe" `
+            -tse "https://wus2.codesigning.azure.net/" `
+            -tsa "acsfluentsearch" `
+            -tscp "profileFluentSearch1" `
+            -act azure-cli `
+            -v Information
 
       - name: Install Velopack CLI
         run: dotnet tool install -g vpk
@@ -74,16 +75,14 @@ jobs:
           --icon src/Lumi/Assets/lumi-icon.ico
 
       - name: Sign Setup.exe
-        uses: azure/trusted-signing-action@v0.5.0
-        with:
-          endpoint: https://wus2.codesigning.azure.net/
-          trusted-signing-account-name: acsfluentsearch
-          certificate-profile-name: profileFluentSearch1
-          files-folder: ${{ github.workspace }}\Releases
-          files-folder-filter: exe
-          file-digest: SHA256
-          timestamp-rfc3161: http://timestamp.acs.microsoft.com
-          timestamp-digest: SHA256
+        shell: pwsh
+        run: |
+          sign code trusted-signing "${{ github.workspace }}\Releases\Lumi-win-Setup.exe" `
+            -tse "https://wus2.codesigning.azure.net/" `
+            -tsa "acsfluentsearch" `
+            -tscp "profileFluentSearch1" `
+            -act azure-cli `
+            -v Information
 
       - name: Upload to GitHub Releases
         run: >
