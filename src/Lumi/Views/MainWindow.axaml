@@ -834,12 +834,24 @@
               MaxWidth="{Binding Bounds.Width, RelativeSource={RelativeSource AncestorType=Grid}}"
                   FlowDirection="{Binding FlowDirection, RelativeSource={RelativeSource AncestorType=Window}}"
                   CornerRadius="{DynamicResource Radius.Overlay}"
-                  Background="{DynamicResource Brush.SurfaceCard}"
-                  BorderBrush="{DynamicResource Brush.BorderSubtle}"
+                  Background="{DynamicResource Brush.Surface1Translucent}"
                   BorderThickness="1"
-                  BoxShadow="0 0 24 0 #1A000000, 0 0 4 0 #08000000"
+                  BoxShadow="0 18 44 0 #14000000, 0 3 12 0 #0A000000"
                   ClipToBounds="True">
-            <views:ChatView x:Name="PageChat" DataContext="{Binding ChatVM}" />
+              <Border.BorderBrush>
+                <SolidColorBrush Color="{DynamicResource Color.TextPrimary}" Opacity="0.08" />
+              </Border.BorderBrush>
+              <Grid>
+                <Border IsHitTestVisible="False"
+                        CornerRadius="{DynamicResource Radius.Overlay}"
+                        BorderThickness="0,1,0,0"
+                        Opacity="0.75">
+                  <Border.BorderBrush>
+                    <SolidColorBrush Color="White" Opacity="0.12" />
+                  </Border.BorderBrush>
+                </Border>
+                <views:ChatView x:Name="PageChat" DataContext="{Binding ChatVM}" />
+              </Grid>
           </Border>
 
           <!-- Drag splitter between chat and browser (hidden by default) -->
