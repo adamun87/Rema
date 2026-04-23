@@ -400,8 +400,8 @@ public partial class ChatViewModel
 
     /// <summary>
     /// Searches for files in the current working directory matching the query.
-    /// Returns StrataComposerChip items where Name is the relative display path
-    /// and Glyph stores the full absolute path (for selection).
+    /// Returns StrataComposerChip items where Name is the display filename,
+    /// SecondaryText shows path context, and Value stores the full absolute path.
     /// </summary>
     public List<StrataTheme.Controls.StrataComposerChip> SearchFiles(string query, int maxResults = 20)
     {
@@ -414,7 +414,20 @@ public partial class ChatViewModel
 
         var maxDepth = isProjectDir ? 10 : 4;
         return _fileSearchService.Search(workDir, query, maxResults, maxDepth)
-            .ConvertAll(r => new StrataTheme.Controls.StrataComposerChip(r.RelativePath, r.FullPath));
+            .ConvertAll(r =>
+            {
+                var fileName = Path.GetFileName(r.RelativePath);
+                var parentPath = Path.GetDirectoryName(r.RelativePath);
+                var secondaryText = string.IsNullOrWhiteSpace(parentPath)
+                    ? null
+                    : parentPath.Replace('\\', '/');
+
+                return new StrataTheme.Controls.StrataComposerChip(
+                    string.IsNullOrWhiteSpace(fileName) ? r.RelativePath : fileName,
+                    "📄",
+                    SecondaryText: secondaryText,
+                    Value: r.FullPath);
+            });
     }
 
     /// <summary>

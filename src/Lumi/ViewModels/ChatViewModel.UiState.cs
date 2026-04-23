@@ -266,13 +266,19 @@ public partial class ChatViewModel
         // Start with Lumi agents
         var agentChips = _dataStore.Data.Agents
             .OrderBy(a => a.Name)
-            .Select(a => new StrataComposerChip(a.Name, a.IconGlyph))
+            .Select(a => new StrataComposerChip(
+                a.Name,
+                a.IconGlyph,
+                SecondaryText: NormalizeInlineCompletionSecondaryText(a.Description)))
             .ToList();
 
         // Start with Lumi skills
         var skillChips = _dataStore.Data.Skills
             .OrderBy(s => s.Name)
-            .Select(s => new StrataComposerChip(s.Name, s.IconGlyph))
+            .Select(s => new StrataComposerChip(
+                s.Name,
+                s.IconGlyph,
+                SecondaryText: NormalizeInlineCompletionSecondaryText(s.Description)))
             .ToList();
 
         // Discover workspace and user-level Copilot agents/skills
@@ -329,7 +335,10 @@ public partial class ChatViewModel
         ReplaceCollection(AvailableProjectChips,
             _dataStore.Data.Projects
                 .OrderBy(p => p.Name)
-                .Select(p => new StrataComposerChip(p.Name, "📁")));
+                .Select(p => new StrataComposerChip(
+                    p.Name,
+                    "📁",
+                    SecondaryText: BuildProjectInlineCompletionSecondaryText(p))));
 
         SyncComposerProjectSelectionFromState();
         RefreshProjectBadge();
@@ -352,7 +361,10 @@ public partial class ChatViewModel
             if (existingAgentNames.Contains(agent.Name))
                 continue;
 
-            agentChips.Add(new StrataComposerChip(agent.Name, ExternalAgentGlyph));
+            agentChips.Add(new StrataComposerChip(
+                agent.Name,
+                ExternalAgentGlyph,
+                SecondaryText: NormalizeInlineCompletionSecondaryText(agent.Description)));
             existingAgentNames.Add(agent.Name);
         }
 
@@ -361,7 +373,10 @@ public partial class ChatViewModel
             if (existingSkillNames.Contains(skill.Name))
                 continue;
 
-            skillChips.Add(new StrataComposerChip(skill.Name, ExternalSkillGlyph));
+            skillChips.Add(new StrataComposerChip(
+                skill.Name,
+                ExternalSkillGlyph,
+                SecondaryText: NormalizeInlineCompletionSecondaryText(skill.Description)));
             existingSkillNames.Add(skill.Name);
         }
     }
@@ -646,6 +661,26 @@ public partial class ChatViewModel
         target.Clear();
         foreach (var value in values)
             target.Add(value);
+    }
+
+    private static string? NormalizeInlineCompletionSecondaryText(string? value, int maxLength = 96)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var normalized = string.Join(" ", value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        if (normalized.Length <= maxLength)
+            return normalized;
+
+        return normalized[..(maxLength - 3)] + "...";
+    }
+
+    private static string? BuildProjectInlineCompletionSecondaryText(Project project)
+    {
+        if (!string.IsNullOrWhiteSpace(project.WorkingDirectory))
+            return NormalizeInlineCompletionSecondaryText(project.WorkingDirectory, 80);
+
+        return NormalizeInlineCompletionSecondaryText(project.Instructions);
     }
 
     private void OnPendingAttachmentItemsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
