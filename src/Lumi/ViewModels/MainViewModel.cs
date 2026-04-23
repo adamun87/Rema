@@ -441,6 +441,22 @@ public partial class MainViewModel : ObservableObject
         return true;
     }
 
+    public async Task<bool> OpenChatByIdAsync(Guid chatId)
+    {
+        var chat = _dataStore.Data.Chats.FirstOrDefault(candidate => candidate.Id == chatId);
+        if (chat is null)
+            return false;
+
+        try
+        {
+            return await LoadChatAndShowAsync(chat);
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
     private async Task<bool> ApplyChatNavigationEntryAsync(ChatNavigationState entry)
     {
         if (SelectedProjectFilter != entry.ProjectFilterId)

@@ -995,7 +995,7 @@ public partial class ChatViewModel
                         var body = string.IsNullOrWhiteSpace(chatTitle)
                             ? Loc.Notification_ResponseReady
                             : $"{chatTitle} — {Loc.Notification_ResponseReady}";
-                        NotificationService.ShowIfInactive(agentName, body);
+                        NotificationService.ShowIfInactive(agentName, body, chat.Id);
                     }
 
                     // Flush file changes only when session is truly idle (not between agentic turns).

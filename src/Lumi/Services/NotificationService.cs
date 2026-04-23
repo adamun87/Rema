@@ -11,27 +11,28 @@ namespace Lumi.Services;
 /// </summary>
 public static class NotificationService
 {
+    private const string ChatActivationArgumentKey = "chatId";
     private static bool _compatListenerRegistered;
 
     /// <summary>Shows a native desktop notification if the main window is not active.</summary>
-    public static void ShowIfInactive(string title, string body)
+    public static void ShowIfInactive(string title, string body, Guid? chatId = null)
     {
         if (IsMainWindowActive())
             return;
 
-        Show(title, body);
+        Show(title, body, chatId);
 
         if (OperatingSystem.IsWindows())
             FlashMainWindow();
     }
 
     /// <summary>Shows a native desktop notification unconditionally.</summary>
-    public static void Show(string title, string body)
+    public static void Show(string title, string body, Guid? chatId = null)
     {
         try
         {
             if (OperatingSystem.IsWindows())
-                ShowWindows(title, body);
+                ShowWindows(title, body, chatId);
             else if (OperatingSystem.IsMacOS())
                 ShowMacOS(title, body);
             else if (OperatingSystem.IsLinux())
@@ -55,12 +56,41 @@ public static class NotificationService
         return true;
     }
 
-    private static void ActivateMainWindow()
+    internal static string CreateActivationArguments(Guid? chatId)
+    {
+        if (chatId is not Guid targetChatId)
+            return string.Empty;
+
+        return $"{ChatActivationArgumentKey}={targetChatId:D}";
+    }
+
+    internal static Guid? ParseChatIdFromActivationArguments(string? activationArguments)
+    {
+        if (string.IsNullOrWhiteSpace(activationArguments))
+            return null;
+
+        foreach (var segment in activationArguments.Split('&',
+                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var parts = segment.Split('=', 2);
+            if (parts.Length != 2
+                || !string.Equals(parts[0], ChatActivationArgumentKey, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            return Guid.TryParse(parts[1], out var chatId) ? chatId : null;
+        }
+
+        return null;
+    }
+
+    private static void ActivateMainWindow(Guid? chatId = null)
     {
         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
         {
             if (Avalonia.Application.Current is App app)
-                app.ShowMainWindow();
+                app.ShowMainWindow(chatId);
         });
     }
 
@@ -80,7 +110,8 @@ public static class NotificationService
             // (e.g. net10→net11, Debug→Release), the stale shortcut causes AUMID mismatches
             // that silently drop toast notifications. Delete it so the toolkit recreates it.
             CleanStaleShortcut();
-            Microsoft.Toolkit.Uwp.Notifications.ToastNotificationManagerCompat.OnActivated += _ => ActivateMainWindow();
+            Microsoft.Toolkit.Uwp.Notifications.ToastNotificationManagerCompat.OnActivated += toastArgs =>
+                ActivateMainWindow(ParseChatIdFromActivationArguments(toastArgs.Argument));
         }
         catch (Exception ex)
         {
@@ -141,7 +172,7 @@ public static class NotificationService
                       int cch, nint pfd, uint fFlags);
     }
 
-    private static void ShowWindows(string title, string body)
+    private static void ShowWindows(string title, string body, Guid? chatId)
     {
         EnsureWindowsCompat();
 
@@ -155,8 +186,12 @@ public static class NotificationService
         textNodes[0].AppendChild(toastXml.CreateTextNode(title));
         textNodes[1].AppendChild(toastXml.CreateTextNode(body));
 
+        var activationArguments = CreateActivationArguments(chatId);
+        if (!string.IsNullOrWhiteSpace(activationArguments))
+            toastXml.DocumentElement?.SetAttribute("launch", activationArguments);
+
         var toast = new Windows.UI.Notifications.ToastNotification(toastXml);
-        toast.Activated += (_, _) => ActivateMainWindow();
+        toast.Activated += (_, _) => ActivateMainWindow(chatId);
         notifier.Show(toast);
     }
 

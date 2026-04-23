@@ -183,6 +183,17 @@ public partial class App : Application
         }
     }
 
+    public void ShowMainWindow(Guid? chatId)
+    {
+        ShowMainWindow();
+
+        if (chatId is not Guid targetChatId)
+            return;
+
+        if (_mainWindow?.DataContext is MainViewModel vm)
+            _ = vm.OpenChatByIdAsync(targetChatId);
+    }
+
     /// <summary>Toggle window visibility. Called by the global hotkey.</summary>
     public void ToggleMainWindow()
     {
