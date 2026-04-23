@@ -28,14 +28,22 @@ public sealed class LocalizationGenerator : IIncrementalGenerator
         var jsonFiles = context.AdditionalTextsProvider
             .Where(static f => f.Path.EndsWith(".json", StringComparison.OrdinalIgnoreCase));
 
+        // Combine JSON files with the assembly name so we can derive the namespace
+        var assemblyName = context.CompilationProvider
+            .Select(static (c, _) => c.AssemblyName ?? "Lumi");
+
+        var combined = jsonFiles.Collect().Combine(assemblyName);
+
         context.RegisterSourceOutput(
-            jsonFiles.Collect(),
-            static (ctx, files) => Execute(ctx, files));
+            combined,
+            static (ctx, pair) => Execute(ctx, pair.Left, pair.Right));
     }
 
-    private static void Execute(SourceProductionContext ctx, ImmutableArray<AdditionalText> files)
+    private static void Execute(SourceProductionContext ctx, ImmutableArray<AdditionalText> files, string assemblyName)
     {
         if (files.IsDefaultOrEmpty) return;
+
+        var locNamespace = assemblyName + ".Localization";
 
         // Parse each JSON file
         var languages = new List<LangData>();
@@ -78,7 +86,7 @@ public sealed class LocalizationGenerator : IIncrementalGenerator
         sb.AppendLine("using System.Collections.Frozen;");
         sb.AppendLine("using System.Collections.Generic;");
         sb.AppendLine();
-        sb.AppendLine("namespace Lumi.Localization;");
+        sb.Append("namespace ").Append(locNamespace).AppendLine(";");
         sb.AppendLine();
         sb.AppendLine("partial class Loc");
         sb.AppendLine("{");
