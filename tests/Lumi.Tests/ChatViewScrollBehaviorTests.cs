@@ -81,10 +81,85 @@ public sealed class ChatViewScrollBehaviorTests
         }, CancellationToken.None);
     }
 
-    private static Chat CreateLongChat()
+    [Fact]
+    public async Task MountedTurnsRemovedWhileBusy_RehydratesViewportCoverage()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+
+        await session.Dispatch(async () =>
+        {
+            var chat = CreateLongChat(pairCount: 28);
+            var data = new AppData
+            {
+                Settings = new UserSettings
+                {
+                    AutoSaveChats = false,
+                    EnableMemoryAutoSave = false
+                }
+            };
+            data.Chats.Add(chat);
+
+            var viewModel = new ChatViewModel(new DataStore(data), new CopilotService());
+            var view = new ChatView { DataContext = viewModel };
+            var window = new Window
+            {
+                Width = 1100,
+                Height = 820,
+                Content = view,
+            };
+
+            window.Show();
+            try
+            {
+                await PumpAsync();
+                await PumpAsync();
+
+                await viewModel.LoadChatAsync(chat);
+                await WaitUntilAsync(() => view.FindControl<StrataChatShell>("ChatShell")?.TranscriptScrollViewer is not null);
+
+                var shell = Assert.IsType<StrataChatShell>(view.FindControl<StrataChatShell>("ChatShell"));
+                var scrollViewer = Assert.IsType<ScrollViewer>(shell.TranscriptScrollViewer);
+
+                shell.JumpToLatest();
+                await PumpAsync();
+
+                Assert.True(scrollViewer.Extent.Height > scrollViewer.Viewport.Height);
+                Assert.True(viewModel.MountedTranscriptTurns.Count < viewModel.TranscriptTurns.Count);
+
+                viewModel.StatusText = "Thinking...";
+                viewModel.IsBusy = true;
+                await WaitUntilAsync(() => viewModel.MountedTranscriptTurns.Count > 0);
+                await WaitUntilAsync(() => shell.IsPinnedToBottom);
+
+                Assert.Contains(viewModel.MountedTranscriptTurns, turn => turn.StableId == "turn:typing");
+
+                while (viewModel.MountedTranscriptTurns.Count > 1)
+                    viewModel.MountedTranscriptTurns.RemoveAt(0);
+
+                await PumpAsync();
+
+                await WaitUntilAsync(() =>
+                    viewModel.MountedTranscriptTurns.Count > 1
+                    && scrollViewer.Extent.Height > scrollViewer.Viewport.Height
+                    && shell.IsPinnedToBottom);
+
+                Assert.True(viewModel.MountedTranscriptTurns.Count > 1);
+                Assert.True(scrollViewer.Extent.Height > scrollViewer.Viewport.Height);
+                Assert.True(shell.IsPinnedToBottom);
+                Assert.Contains(viewModel.MountedTranscriptTurns, turn => turn.StableId == "turn:typing");
+            }
+            finally
+            {
+                viewModel.IsBusy = false;
+                window.Close();
+            }
+        }, CancellationToken.None);
+    }
+
+    private static Chat CreateLongChat(int pairCount = 18)
     {
         var chat = new Chat { Title = "Scroll regression" };
-        for (var i = 0; i < 18; i++)
+        for (var i = 0; i < pairCount; i++)
         {
             chat.Messages.Add(new ChatMessage
             {

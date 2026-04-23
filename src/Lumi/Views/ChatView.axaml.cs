@@ -260,6 +260,8 @@ public partial class ChatView : UserControl
                 foreach (var turn in _subscribedMountedTurns)
                     SubscribeToTurnHeight(turn);
             }
+
+            QueueViewportRecoveryAfterMountedTurnsChanged();
             return;
         }
 
@@ -278,6 +280,32 @@ public partial class ChatView : UserControl
             foreach (TranscriptTurn turn in e.NewItems)
                 SubscribeToTurnHeight(turn);
         }
+
+        QueueViewportRecoveryAfterMountedTurnsChanged();
+    }
+
+    // Turn add/remove churn (typing indicator, tool-group cleanup, summary collapse)
+    // changes the live scroll extent without producing a height delta on an existing turn.
+    private void QueueViewportRecoveryAfterMountedTurnsChanged()
+    {
+        if (_chatShell is null
+            || _subscribedVm is null
+            || _subscribedVm.CurrentChat is null
+            || _subscribedVm.IsLoadingChat
+            || (!_subscribedVm.IsBusy && !_chatShell.IsPinnedToBottom))
+        {
+            return;
+        }
+
+        if (_isApplyingTranscriptMutation)
+        {
+            _viewportEvaluationRequested = true;
+            return;
+        }
+
+        QueueTranscriptViewportEvaluation();
+        if (_chatShell.IsPinnedToBottom)
+            Dispatcher.UIThread.Post(() => _chatShell?.ScrollToEnd(), DispatcherPriority.Loaded);
     }
 
     private void UnsubscribeAllTurnHeights()
