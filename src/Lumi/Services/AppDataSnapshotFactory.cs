@@ -25,6 +25,7 @@ internal static class AppDataSnapshotFactory
                 MinimizeToTray = settings.MinimizeToTray,
                 GlobalHotkey = settings.GlobalHotkey,
                 NotificationsEnabled = settings.NotificationsEnabled,
+                DismissedUpdateBannerToken = settings.DismissedUpdateBannerToken,
                 IsDarkTheme = settings.IsDarkTheme,
                 IsCompactDensity = settings.IsCompactDensity,
                 FontSize = settings.FontSize,

@@ -46,6 +46,12 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private Guid? _selectedProjectFilter;
     [ObservableProperty] private bool _isSidebarCollapsed;
 
+    public bool IsGlobalUpdateBannerVisible => SettingsVM.ShouldShowUpdateBanner
+        && (SelectedNavIndex != 6 || SettingsVM.SelectedPageIndex != SettingsViewModel.AboutPageIndex);
+
+    partial void OnSelectedNavIndexChanged(int value)
+        => OnPropertyChanged(nameof(IsGlobalUpdateBannerVisible));
+
     [RelayCommand]
     private void ToggleSidebar() => IsSidebarCollapsed = !IsSidebarCollapsed;
 
@@ -140,6 +146,15 @@ public partial class MainViewModel : ObservableObject
         // Sync settings changes back to MainViewModel
         SettingsVM.PropertyChanged += (_, args) =>
         {
+            if (args.PropertyName is nameof(SettingsViewModel.IsUpdateAvailable)
+                or nameof(SettingsViewModel.IsUpdateDownloading)
+                or nameof(SettingsViewModel.IsUpdateReadyToRestart)
+                or nameof(SettingsViewModel.ShouldShowUpdateBanner)
+                or nameof(SettingsViewModel.SelectedPageIndex))
+            {
+                OnPropertyChanged(nameof(IsGlobalUpdateBannerVisible));
+            }
+
             if (args.PropertyName == nameof(SettingsViewModel.IsDarkTheme))
                 IsDarkTheme = SettingsVM.IsDarkTheme;
             else if (args.PropertyName == nameof(SettingsViewModel.IsCompactDensity))
@@ -618,7 +633,19 @@ public partial class MainViewModel : ObservableObject
     private void SetNav(string indexStr)
     {
         if (int.TryParse(indexStr, out var idx))
+        {
+            if (idx == 6 && SettingsVM.ShouldAutoNavigateToUpdateCenter)
+                SettingsVM.OpenUpdateCenter();
+
             SelectedNavIndex = idx;
+        }
+    }
+
+    [RelayCommand]
+    private void OpenUpdateCenter()
+    {
+        SettingsVM.OpenUpdateCenter();
+        SelectedNavIndex = 6;
     }
 
     [RelayCommand]

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -11,6 +12,8 @@ namespace Lumi.ViewModels;
 
 public partial class SettingsViewModel : ObservableObject
 {
+    public const int AboutPageIndex = 6;
+
     private readonly DataStore _dataStore;
     private readonly CopilotService _copilotService;
     private readonly BrowserService _browserService;
@@ -38,6 +41,9 @@ public partial class SettingsViewModel : ObservableObject
     {
         if (IsSearching)
             SearchQuery = "";
+
+        if (value == AboutPageIndex)
+            ShouldAutoNavigateToUpdateCenter = false;
     }
 
     public ObservableCollection<string> Pages { get; } =
@@ -150,14 +156,96 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool _isUpdateDownloading;
     [ObservableProperty] private bool _isUpdateReadyToRestart;
     [ObservableProperty] private bool _isCheckingForUpdate;
+    [ObservableProperty] private bool _isUpdateUpToDate;
+    [ObservableProperty] private bool _isUpdateUnavailableInDev;
+    [ObservableProperty] private bool _hasUpdateError;
+    [ObservableProperty] private bool _isUpdateStatusIdle = true;
     [ObservableProperty] private int _updateDownloadProgress;
+    [ObservableProperty] private string _availableUpdateVersion = "";
+    [ObservableProperty] private string _updateReleaseNotesMarkdown = "";
+    [ObservableProperty] private string _updateReleaseTitle = "";
+    [ObservableProperty] private string _updateReleasePageUrl = UpdateService.ReleasesPageUrl;
+    [ObservableProperty] private string _updatePublishedText = "";
+    [ObservableProperty] private string _updateLastCheckedText = "";
+    [ObservableProperty] private bool _shouldAutoNavigateToUpdateCenter;
+    private string _lastUpdateNotificationToken = string.Empty;
 
     /// <summary>Check Now button should only show when not downloading/ready.</summary>
     public bool IsCheckButtonVisible => !IsUpdateAvailable && !IsUpdateDownloading && !IsUpdateReadyToRestart;
 
-    partial void OnIsUpdateAvailableChanged(bool value) => OnPropertyChanged(nameof(IsCheckButtonVisible));
-    partial void OnIsUpdateDownloadingChanged(bool value) => OnPropertyChanged(nameof(IsCheckButtonVisible));
-    partial void OnIsUpdateReadyToRestartChanged(bool value) => OnPropertyChanged(nameof(IsCheckButtonVisible));
+    public bool HasPendingUpdate => IsUpdateAvailable || IsUpdateDownloading || IsUpdateReadyToRestart;
+    public bool HasUpdateAttention => IsUpdateAvailable || IsUpdateReadyToRestart;
+    public bool ShouldShowUpdateBanner => HasPendingUpdate && !IsUpdateBannerDismissed;
+    public bool ShouldShowUpdateBadge => HasPendingUpdate;
+    public bool HasAvailableUpdateVersion => !string.IsNullOrWhiteSpace(AvailableUpdateVersion);
+    public bool HasReleaseNotes => !string.IsNullOrWhiteSpace(UpdateReleaseNotesMarkdown);
+    public bool IsUpdateReleaseNotesVisible => HasPendingUpdate || HasReleaseNotes;
+    public bool CanOpenReleasePage => !string.IsNullOrWhiteSpace(UpdateReleasePageUrl);
+    public string UpdateReleaseNotesHeading => HasAvailableUpdateVersion
+        ? Loc.Get("Update_WhatsNewVersion", AvailableUpdateVersion)
+        : Loc.Update_WhatsNew;
+    public string UpdateReleaseNotesDisplayMarkdown => HasReleaseNotes
+        ? UpdateReleaseNotesMarkdown
+        : Loc.Update_ReleaseNotesFallback;
+    public string OpenReleasePageButtonText => HasPendingUpdate
+        ? Loc.Update_ViewRelease
+        : Loc.Update_ViewReleases;
+    public string UpdateStatusBadgeText => IsUpdateStatusIdle
+        ? Loc.Update_StatusIdle
+        : IsUpdateReadyToRestart
+            ? Loc.Update_StatusRestartRequired
+            : IsUpdateDownloading
+                ? Loc.Update_StatusDownloading
+                : IsUpdateAvailable
+                    ? Loc.Update_StatusAvailable
+                    : IsCheckingForUpdate
+                        ? Loc.Update_StatusChecking
+                        : IsUpdateUnavailableInDev
+                            ? Loc.Update_StatusDev
+                            : HasUpdateError
+                                ? Loc.Update_StatusError
+                                : Loc.Update_StatusCurrent;
+    public string UpdateSidebarBadgeText => IsUpdateReadyToRestart
+        ? Loc.Update_BadgeRestart
+        : IsUpdateDownloading
+            ? Loc.Update_BadgeUpdating
+            : Loc.Update_BadgeNew;
+    public string UpdateHeroTitle => IsUpdateStatusIdle
+        ? Loc.Update_HeroIdleTitle
+        : IsUpdateReadyToRestart
+            ? Loc.Get("Update_BannerReadyTitle", GetUpdateVersionDisplay())
+            : IsUpdateDownloading
+                ? Loc.Get("Update_BannerDownloadingTitle", GetUpdateVersionDisplay())
+                : IsUpdateAvailable
+                    ? Loc.Get("Update_BannerAvailableTitle", GetUpdateVersionDisplay())
+                    : IsCheckingForUpdate
+                        ? Loc.Update_HeroCheckingTitle
+                        : IsUpdateUnavailableInDev
+                            ? Loc.Update_HeroDevTitle
+                            : HasUpdateError
+                                ? Loc.Update_HeroErrorTitle
+                                : Loc.Update_HeroUpToDateTitle;
+    public string UpdateHeroDescription => IsUpdateStatusIdle
+        ? Loc.Update_HeroIdleBody
+        : IsUpdateReadyToRestart
+            ? Loc.Get("Update_HeroReadyBody", AppVersion)
+            : IsUpdateDownloading
+                ? Loc.Get("Update_HeroDownloadingBody", AppVersion)
+                : IsUpdateAvailable
+                    ? Loc.Get("Update_HeroAvailableBody", AppVersion)
+                    : IsCheckingForUpdate
+                        ? Loc.Update_HeroCheckingBody
+                        : IsUpdateUnavailableInDev
+                            ? Loc.Update_HeroDevBody
+                            : HasUpdateError
+                                ? HasAvailableUpdateVersion
+                                    ? Loc.Get("Update_HeroErrorWithDetailsBody", GetUpdateVersionDisplay())
+                                    : Loc.Update_HeroErrorBody
+                                : Loc.Update_HeroUpToDateBody;
+
+    partial void OnIsUpdateAvailableChanged(bool value) => OnUpdateStateInputsChanged();
+    partial void OnIsUpdateDownloadingChanged(bool value) => OnUpdateStateInputsChanged();
+    partial void OnIsUpdateReadyToRestartChanged(bool value) => OnUpdateStateInputsChanged();
 
     [RelayCommand]
     private async Task CheckForUpdateAsync() => await _updateService.CheckForUpdateAsync();
@@ -167,6 +255,35 @@ public partial class SettingsViewModel : ObservableObject
 
     [RelayCommand]
     private void ApplyUpdateAndRestart() => _updateService.ApplyUpdateAndRestart();
+
+    [RelayCommand]
+    private void DismissUpdateBanner()
+    {
+        var token = GetUpdateBannerDismissToken();
+        if (string.IsNullOrWhiteSpace(token))
+            return;
+
+        _dataStore.Data.Settings.DismissedUpdateBannerToken = token;
+        Save();
+        RaiseUpdatePresentationPropertiesChanged();
+    }
+
+    [RelayCommand]
+    private void OpenReleasePage()
+    {
+        var url = string.IsNullOrWhiteSpace(UpdateReleasePageUrl)
+            ? UpdateService.ReleasesPageUrl
+            : UpdateReleasePageUrl;
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            Trace.TraceWarning($"[Settings] Failed to open release page: {ex.Message}");
+        }
+    }
 
     /// <summary>Raised when a setting that affects other ViewModels changes.</summary>
     public event Action? SettingsChanged;
@@ -225,20 +342,37 @@ public partial class SettingsViewModel : ObservableObject
 
         // Wire update status changes
         _updateService.StatusChanged += OnUpdateStatusChanged;
+        OnUpdateStatusChanged(_updateService.CurrentStatus);
     }
 
     private void OnUpdateStatusChanged(UpdateStatus status)
     {
-        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        void ApplyStatus()
         {
+            IsUpdateStatusIdle = status == UpdateStatus.Idle;
             IsCheckingForUpdate = status == UpdateStatus.Checking;
             IsUpdateAvailable = status == UpdateStatus.UpdateAvailable;
             IsUpdateDownloading = status == UpdateStatus.Downloading;
             IsUpdateReadyToRestart = status == UpdateStatus.ReadyToRestart;
+            IsUpdateUpToDate = status == UpdateStatus.UpToDate;
+            IsUpdateUnavailableInDev = status == UpdateStatus.NotInstalled;
+            HasUpdateError = status == UpdateStatus.Error;
             UpdateDownloadProgress = _updateService.DownloadProgress;
+            AvailableUpdateVersion = _updateService.AvailableVersion ?? string.Empty;
+            UpdateReleaseNotesMarkdown = _updateService.ReleaseNotesMarkdown;
+            UpdateReleaseTitle = _updateService.ReleaseTitle;
+            UpdateReleasePageUrl = string.IsNullOrWhiteSpace(_updateService.ReleasePageUrl)
+                ? UpdateService.ReleasesPageUrl
+                : _updateService.ReleasePageUrl;
+            UpdatePublishedText = FormatUpdateTimestamp(_updateService.ReleasePublishedAt);
+            UpdateLastCheckedText = FormatUpdateTimestamp(_updateService.LastCheckedAt);
+            ShouldAutoNavigateToUpdateCenter =
+                (status is UpdateStatus.UpdateAvailable or UpdateStatus.ReadyToRestart)
+                && SelectedPageIndex != AboutPageIndex;
 
             UpdateStatusText = status switch
             {
+                UpdateStatus.Idle => string.Empty,
                 UpdateStatus.Checking => Loc.Update_Checking,
                 UpdateStatus.UpToDate => Loc.Update_UpToDate,
                 UpdateStatus.UpdateAvailable => Loc.Get("Update_Available", _updateService.AvailableVersion ?? ""),
@@ -249,15 +383,103 @@ public partial class SettingsViewModel : ObservableObject
                 _ => ""
             };
 
-            // System notification when update is found and window is minimized/inactive
+            RaiseUpdatePresentationPropertiesChanged();
+
+            if (!_dataStore.Data.Settings.NotificationsEnabled)
+                return;
+
+            // System notification when an update needs attention and the window is minimized/inactive
             if (status == UpdateStatus.UpdateAvailable)
             {
+                if (!TryMarkUpdateNotificationShown("available"))
+                    return;
+
                 NotificationService.ShowIfInactive(
                     Loc.Update_NotificationTitle,
                     Loc.Get("Update_NotificationBody", _updateService.AvailableVersion ?? ""));
             }
-        });
+            else if (status == UpdateStatus.ReadyToRestart)
+            {
+                if (!TryMarkUpdateNotificationShown("ready"))
+                    return;
+
+                NotificationService.ShowIfInactive(
+                    Loc.Update_NotificationReadyTitle,
+                    Loc.Get("Update_NotificationReadyBody", _updateService.AvailableVersion ?? ""));
+            }
+        }
+
+        if (Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+            ApplyStatus();
+        else
+            Avalonia.Threading.Dispatcher.UIThread.Post(ApplyStatus);
     }
+
+    public void OpenUpdateCenter()
+    {
+        ShouldAutoNavigateToUpdateCenter = false;
+        SelectedPageIndex = AboutPageIndex;
+    }
+
+    private void OnUpdateStateInputsChanged()
+    {
+        OnPropertyChanged(nameof(IsCheckButtonVisible));
+        RaiseUpdatePresentationPropertiesChanged();
+    }
+
+    private void RaiseUpdatePresentationPropertiesChanged()
+    {
+        OnPropertyChanged(nameof(HasPendingUpdate));
+        OnPropertyChanged(nameof(HasUpdateAttention));
+        OnPropertyChanged(nameof(ShouldShowUpdateBanner));
+        OnPropertyChanged(nameof(ShouldShowUpdateBadge));
+        OnPropertyChanged(nameof(HasAvailableUpdateVersion));
+        OnPropertyChanged(nameof(HasReleaseNotes));
+        OnPropertyChanged(nameof(IsUpdateReleaseNotesVisible));
+        OnPropertyChanged(nameof(CanOpenReleasePage));
+        OnPropertyChanged(nameof(UpdateReleaseNotesHeading));
+        OnPropertyChanged(nameof(UpdateReleaseNotesDisplayMarkdown));
+        OnPropertyChanged(nameof(OpenReleasePageButtonText));
+        OnPropertyChanged(nameof(UpdateStatusBadgeText));
+        OnPropertyChanged(nameof(UpdateSidebarBadgeText));
+        OnPropertyChanged(nameof(UpdateHeroTitle));
+        OnPropertyChanged(nameof(UpdateHeroDescription));
+    }
+
+    private string GetUpdateVersionDisplay()
+        => HasAvailableUpdateVersion ? AvailableUpdateVersion : AppVersion;
+
+    private bool TryMarkUpdateNotificationShown(string stage)
+    {
+        var version = GetUpdateVersionDisplay();
+        var token = $"{stage}:{version}";
+        if (string.Equals(_lastUpdateNotificationToken, token, StringComparison.Ordinal))
+            return false;
+
+        _lastUpdateNotificationToken = token;
+        return true;
+    }
+
+    private bool IsUpdateBannerDismissed
+        => string.Equals(
+            _dataStore.Data.Settings.DismissedUpdateBannerToken,
+            GetUpdateBannerDismissToken(),
+            StringComparison.Ordinal);
+
+    private string GetUpdateBannerDismissToken()
+    {
+        if (!HasPendingUpdate)
+            return string.Empty;
+
+        var stage = IsUpdateReadyToRestart
+            ? "ready"
+            : "pending";
+        var version = HasAvailableUpdateVersion ? AvailableUpdateVersion.Trim() : AppVersion;
+        return $"{stage}:{version}";
+    }
+
+    private static string FormatUpdateTimestamp(DateTimeOffset? timestamp)
+        => timestamp?.ToLocalTime().ToString("g", Loc.Culture) ?? string.Empty;
 
     // ── Auto-save on every property change + notify IsModified ──
 

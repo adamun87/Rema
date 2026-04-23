@@ -29,6 +29,7 @@ public class DataStore
     private readonly object _chatChangeSync = new();
     private readonly Dictionary<Guid, long> _dirtyChatVersions = [];
     private readonly Dictionary<Guid, long> _deletedChatVersions = [];
+    private readonly bool _usesPersistentStorage = true;
     private int? _activeSkillSyncHash;
     private string? _activeSkillSyncDirectory;
     private long _nextChatChangeVersion;
@@ -47,6 +48,7 @@ public class DataStore
 
     internal DataStore(AppData data)
     {
+        _usesPersistentStorage = false;
         _data = data ?? new AppData();
     }
 
@@ -82,6 +84,9 @@ public class DataStore
     /// </summary>
     public void Save()
     {
+        if (!_usesPersistentStorage)
+            return;
+
         Task.Run(() => SaveAsync()).GetAwaiter().GetResult();
     }
 
@@ -91,6 +96,9 @@ public class DataStore
     /// </summary>
     public async Task SaveAsync(CancellationToken cancellationToken = default)
     {
+        if (!_usesPersistentStorage)
+            return;
+
         await _writeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         FileStream? indexLock = null;
         Dictionary<Guid, long>? dirtyChatVersions = null;
@@ -137,12 +145,18 @@ public class DataStore
     /// <summary>Saves a chat's messages to its per-chat file.</summary>
     public void SaveChat(Chat chat)
     {
+        if (!_usesPersistentStorage)
+            return;
+
         SaveChatAsync(chat).GetAwaiter().GetResult();
     }
 
     /// <summary>Saves a chat's messages to its per-chat file.</summary>
     public async Task SaveChatAsync(Chat chat, CancellationToken cancellationToken = default)
     {
+        if (!_usesPersistentStorage)
+            return;
+
         var chatFile = Path.Combine(ChatsDir, $"{chat.Id}.json");
         var messagesSnapshot = chat.Messages
             .Select(static m => new ChatMessage

@@ -204,6 +204,7 @@ public class UserSettings
     public bool MinimizeToTray { get; set; }
     public string GlobalHotkey { get; set; } = "";
     public bool NotificationsEnabled { get; set; } = true;
+    public string DismissedUpdateBannerToken { get; set; } = "";
 
     // ── Appearance ──
     public bool IsDarkTheme { get; set; } = true;

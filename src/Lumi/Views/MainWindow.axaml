@@ -319,14 +319,14 @@
                     <Panel>
                       <PathIcon Data="{StaticResource Icon.Gear}" Width="14" Height="14"
                                  VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextSecondary}" />
-                      <Border x:Name="UpdateBadge" Width="7" Height="7" CornerRadius="4"
-                              Background="{DynamicResource Brush.AccentDefault}"
-                              HorizontalAlignment="Right" VerticalAlignment="Top"
-                              Margin="0,-1,-1,0"
-                              IsVisible="{Binding SettingsVM.IsUpdateAvailable}" />
-                    </Panel>
-                  </StackPanel>
-                </Button>
+                       <Border x:Name="UpdateBadge" Width="7" Height="7" CornerRadius="4"
+                               Background="{DynamicResource Brush.AccentDefault}"
+                               HorizontalAlignment="Right" VerticalAlignment="Top"
+                               Margin="0,-1,-1,0"
+                               IsVisible="{Binding SettingsVM.ShouldShowUpdateBadge}" />
+                     </Panel>
+                   </StackPanel>
+                 </Button>
               </StackPanel>
             </Border>
           </Border>
@@ -797,19 +797,32 @@
                     <TextBlock Text="{loc:Str Settings_PrivacyData}" FontSize="{DynamicResource Font.SizeBody}" VerticalAlignment="Center" />
                   </StackPanel>
                 </ListBoxItem>
-                <ListBoxItem>
-                  <StackPanel Orientation="Horizontal" Spacing="10">
-                    <PathIcon Width="14" Height="14" Foreground="{DynamicResource Brush.TextSecondary}">
-                      <PathIcon.Data>
-                        <StreamGeometry>M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm0 3a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zm2 12h-4v-1h1v-5h-1v-1h3v6h1v1z</StreamGeometry>
-                      </PathIcon.Data>
-                    </PathIcon>
-                    <TextBlock Text="{loc:Str Settings_About}" FontSize="{DynamicResource Font.SizeBody}" VerticalAlignment="Center" />
-                  </StackPanel>
-                </ListBoxItem>
-              </ListBox>
-            </DockPanel>
-          </Panel>
+                 <ListBoxItem>
+                   <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                     <PathIcon Grid.Column="0" Width="14" Height="14" Foreground="{DynamicResource Brush.TextSecondary}">
+                       <PathIcon.Data>
+                         <StreamGeometry>M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm0 3a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zm2 12h-4v-1h1v-5h-1v-1h3v6h1v1z</StreamGeometry>
+                       </PathIcon.Data>
+                     </PathIcon>
+                     <TextBlock Grid.Column="1" Text="{loc:Str Settings_About}" FontSize="{DynamicResource Font.SizeBody}" VerticalAlignment="Center" />
+                      <Border Grid.Column="2"
+                              IsVisible="{Binding ShouldShowUpdateBadge}"
+                              Background="{DynamicResource Brush.AccentSubtle}"
+                              BorderBrush="{DynamicResource Brush.BorderSubtle}"
+                              BorderThickness="1"
+                              CornerRadius="999"
+                              Padding="8,2"
+                              VerticalAlignment="Center">
+                        <TextBlock Text="{Binding UpdateSidebarBadgeText}"
+                                   FontSize="10"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource Brush.AccentDefault}" />
+                      </Border>
+                   </Grid>
+                 </ListBoxItem>
+               </ListBox>
+             </DockPanel>
+           </Panel>
 
           </Panel><!-- end sidebar content wrapper -->
         </DockPanel>
@@ -826,6 +839,76 @@
 
       <!-- ═══ CONTENT AREA (full height, inset for title bar) ═══ -->
       <Border x:Name="ContentArea" Margin="0,0,6,6" Padding="{StaticResource MainLayout.IslandOuterMargin}">
+      <DockPanel LastChildFill="True">
+        <Border DockPanel.Dock="Top"
+                IsVisible="{Binding IsGlobalUpdateBannerVisible}"
+                Margin="0,0,0,12"
+                CornerRadius="{DynamicResource Radius.Overlay}"
+                Background="{DynamicResource Brush.AccentSubtle}"
+                BorderBrush="{DynamicResource Brush.BorderSubtle}"
+                BorderThickness="1"
+                Padding="16,14">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <StackPanel Grid.Column="0" Spacing="8">
+              <Border HorizontalAlignment="Left"
+                      Background="{DynamicResource Brush.SurfaceCard}"
+                      BorderBrush="{DynamicResource Brush.BorderSubtle}"
+                      BorderThickness="1"
+                      CornerRadius="999"
+                      Padding="8,2">
+                <TextBlock Text="{Binding SettingsVM.UpdateStatusBadgeText}"
+                           FontSize="10"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource Brush.AccentDefault}" />
+              </Border>
+              <TextBlock Text="{Binding SettingsVM.UpdateHeroTitle}"
+                         FontSize="{DynamicResource Font.SizeBody}"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource Brush.TextPrimary}" />
+              <TextBlock Text="{Binding SettingsVM.UpdateHeroDescription}"
+                         TextWrapping="Wrap"
+                         FontSize="{DynamicResource Font.SizeCaption}"
+                         Foreground="{DynamicResource Brush.TextSecondary}" />
+              <StackPanel IsVisible="{Binding SettingsVM.IsUpdateDownloading}" Spacing="6">
+                <ProgressBar Minimum="0"
+                             Maximum="100"
+                             Value="{Binding SettingsVM.UpdateDownloadProgress}" />
+                <TextBlock Text="{Binding SettingsVM.UpdateStatusText}"
+                           FontSize="{DynamicResource Font.SizeCaption}"
+                           Foreground="{DynamicResource Brush.TextSecondary}" />
+              </StackPanel>
+            </StackPanel>
+
+            <StackPanel Grid.Column="1"
+                        Orientation="Horizontal"
+                        Spacing="8"
+                        VerticalAlignment="Top">
+              <Button Classes="subtle"
+                      Content="{loc:Str Update_ViewDetails}"
+                      Padding="14,6"
+                      MinHeight="0"
+                      Command="{Binding OpenUpdateCenterCommand}" />
+              <Button Classes="subtle"
+                      Content="{loc:Str Update_DismissBanner}"
+                      Padding="14,6"
+                      MinHeight="0"
+                      Command="{Binding SettingsVM.DismissUpdateBannerCommand}" />
+              <Button Classes="accent"
+                      Content="{loc:Str Update_Download}"
+                      Padding="14,6"
+                      MinHeight="0"
+                      Command="{Binding SettingsVM.DownloadUpdateCommand}"
+                      IsVisible="{Binding SettingsVM.IsUpdateAvailable}" />
+              <Button Classes="accent"
+                      Content="{loc:Str Update_Restart}"
+                      Padding="14,6"
+                      MinHeight="0"
+                      Command="{Binding SettingsVM.ApplyUpdateAndRestartCommand}"
+                      IsVisible="{Binding SettingsVM.IsUpdateReadyToRestart}" />
+            </StackPanel>
+          </Grid>
+        </Border>
+
       <Grid>
         <!-- Chat view (visible on Chat tab) — wrapped in Grid for browser split -->
         <Grid x:Name="ChatContentGrid" ColumnDefinitions="1*,Auto,0">
@@ -1012,6 +1095,7 @@
           <ContentControl x:Name="PageSettingsHost" />
         </Border>
       </Grid>
+      </DockPanel>
       </Border>
     </DockPanel>
 

@@ -340,11 +340,162 @@
                      Foreground="{DynamicResource Brush.TextTertiary}" />
         </StackPanel>
 
+        <Border Background="{DynamicResource Brush.AccentSubtle}"
+                BorderBrush="{DynamicResource Brush.BorderSubtle}"
+                BorderThickness="1"
+                CornerRadius="{DynamicResource Radius.Overlay}"
+                Padding="18">
+          <StackPanel Spacing="14">
+            <Border HorizontalAlignment="Left"
+                    Background="{DynamicResource Brush.SurfaceCard}"
+                    BorderBrush="{DynamicResource Brush.BorderSubtle}"
+                    BorderThickness="1"
+                    CornerRadius="999"
+                    Padding="8,2">
+              <TextBlock Text="{Binding UpdateStatusBadgeText}"
+                         FontSize="10"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource Brush.AccentDefault}" />
+            </Border>
+
+            <StackPanel Spacing="4">
+              <TextBlock Text="{Binding UpdateHeroTitle}"
+                         FontSize="{DynamicResource Font.SizeBody}"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource Brush.TextPrimary}" />
+              <TextBlock Text="{Binding UpdateHeroDescription}"
+                         TextWrapping="Wrap"
+                         FontSize="{DynamicResource Font.SizeCaption}"
+                         Foreground="{DynamicResource Brush.TextSecondary}" />
+            </StackPanel>
+
+            <Grid ColumnDefinitions="*,*"
+                  RowDefinitions="Auto,Auto"
+                  ColumnSpacing="16"
+                  RowSpacing="10">
+              <StackPanel Grid.Row="0" Grid.Column="0" Spacing="2">
+                <TextBlock Text="{loc:Str Update_CurrentVersion}"
+                           FontSize="11"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource Brush.TextTertiary}" />
+                <TextBlock Text="{Binding AppVersion, StringFormat='v{0}'}"
+                           FontSize="{DynamicResource Font.SizeBody}"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource Brush.TextPrimary}" />
+              </StackPanel>
+
+              <StackPanel Grid.Row="0" Grid.Column="1"
+                          Spacing="2"
+                          IsVisible="{Binding HasAvailableUpdateVersion}">
+                <TextBlock Text="{loc:Str Update_AvailableVersion}"
+                           FontSize="11"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource Brush.TextTertiary}" />
+                <TextBlock Text="{Binding AvailableUpdateVersion, StringFormat='v{0}'}"
+                           FontSize="{DynamicResource Font.SizeBody}"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource Brush.TextPrimary}" />
+              </StackPanel>
+
+              <StackPanel Grid.Row="1" Grid.Column="0"
+                          Spacing="2"
+                          IsVisible="{Binding UpdateLastCheckedText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                <TextBlock Text="{loc:Str Update_LastChecked}"
+                           FontSize="11"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource Brush.TextTertiary}" />
+                <TextBlock Text="{Binding UpdateLastCheckedText}"
+                           FontSize="{DynamicResource Font.SizeCaption}"
+                           Foreground="{DynamicResource Brush.TextPrimary}" />
+              </StackPanel>
+
+              <StackPanel Grid.Row="1" Grid.Column="1"
+                          Spacing="2"
+                          IsVisible="{Binding UpdatePublishedText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                <TextBlock Text="{loc:Str Update_Published}"
+                           FontSize="11"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource Brush.TextTertiary}" />
+                <TextBlock Text="{Binding UpdatePublishedText}"
+                           FontSize="{DynamicResource Font.SizeCaption}"
+                           Foreground="{DynamicResource Brush.TextPrimary}" />
+              </StackPanel>
+            </Grid>
+
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Content="{loc:Str Update_CheckNow}"
+                      Classes="subtle"
+                      Padding="14,6"
+                      MinHeight="0"
+                      Command="{Binding CheckForUpdateCommand}"
+                      IsVisible="{Binding IsCheckButtonVisible}"
+                      IsEnabled="{Binding !IsCheckingForUpdate}" />
+              <Button Content="{loc:Str Update_Download}"
+                      Classes="accent"
+                      Padding="14,6"
+                      MinHeight="0"
+                      Command="{Binding DownloadUpdateCommand}"
+                      IsVisible="{Binding IsUpdateAvailable}" />
+              <Button Content="{loc:Str Update_Restart}"
+                      Classes="accent"
+                      Padding="14,6"
+                      MinHeight="0"
+                      Command="{Binding ApplyUpdateAndRestartCommand}"
+                      IsVisible="{Binding IsUpdateReadyToRestart}" />
+              <Button Content="{Binding OpenReleasePageButtonText}"
+                      Classes="subtle"
+                      Padding="14,6"
+                      MinHeight="0"
+                      Command="{Binding OpenReleasePageCommand}" />
+            </StackPanel>
+
+            <ProgressBar IsIndeterminate="True"
+                         IsVisible="{Binding IsCheckingForUpdate}" />
+
+            <ProgressBar Minimum="0"
+                         Maximum="100"
+                         Value="{Binding UpdateDownloadProgress}"
+                         IsVisible="{Binding IsUpdateDownloading}" />
+
+            <TextBlock Text="{Binding UpdateStatusText}"
+                       IsVisible="{Binding UpdateStatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                       TextWrapping="Wrap"
+                       FontSize="{DynamicResource Font.SizeCaption}"
+                       Foreground="{DynamicResource Brush.TextSecondary}" />
+          </StackPanel>
+        </Border>
+
+        <Border IsVisible="{Binding IsUpdateReleaseNotesVisible}"
+                Background="{DynamicResource Brush.SurfaceSubtle}"
+                BorderBrush="{DynamicResource Brush.BorderSubtle}"
+                BorderThickness="1"
+                CornerRadius="{DynamicResource Radius.Overlay}"
+                Padding="18">
+          <StackPanel Spacing="12">
+            <DockPanel LastChildFill="False">
+              <Button DockPanel.Dock="Right"
+                      Classes="subtle motion-action"
+                      Content="{Binding OpenReleasePageButtonText}"
+                      Padding="12,6"
+                      MinHeight="0"
+                      Command="{Binding OpenReleasePageCommand}" />
+              <StackPanel Spacing="2">
+                <TextBlock Text="{Binding UpdateReleaseNotesHeading}"
+                           FontSize="{DynamicResource Font.SizeBody}"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource Brush.TextPrimary}" />
+                <TextBlock Text="{Binding UpdateReleaseTitle}"
+                           IsVisible="{Binding UpdateReleaseTitle, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                           FontSize="{DynamicResource Font.SizeCaption}"
+                           Foreground="{DynamicResource Brush.TextTertiary}" />
+              </StackPanel>
+            </DockPanel>
+
+            <sc:StrataMarkdown Markdown="{Binding UpdateReleaseNotesDisplayMarkdown}" />
+          </StackPanel>
+        </Border>
+
         <sc:StrataSettingGroup Header="{loc:Str SettingsGroup_App}">
-          <sc:StrataSetting Header="{loc:Str Setting_Version}" Description="{loc:Str SettingDesc_Version}">
-            <TextBlock Text="{Binding AppVersion, StringFormat='v{0}'}" FontSize="{DynamicResource Font.SizeCaption}"
-                       Foreground="{DynamicResource Brush.TextTertiary}" />
-          </sc:StrataSetting>
           <sc:StrataSetting Header="{loc:Str Setting_DotNetRuntime}">
             <TextBlock Text="{Binding DotNetVersion}" FontSize="{DynamicResource Font.SizeCaption}"
                        Foreground="{DynamicResource Brush.TextTertiary}" TextTrimming="CharacterEllipsis" />
@@ -366,29 +517,6 @@
                             Description="Show Avalonia's debug FPS counter overlay."
                             IsVisible="False">
             <ToggleSwitch x:Name="DebugFpsOverlayToggle" />
-          </sc:StrataSetting>
-        </sc:StrataSettingGroup>
-
-        <sc:StrataSettingGroup Header="{loc:Str Setting_CheckForUpdates}">
-          <sc:StrataSetting Header="{loc:Str Setting_CheckForUpdates}" Description="{Binding UpdateStatusText}">
-            <StackPanel Orientation="Horizontal" Spacing="8">
-              <!-- Check Now button — hidden during download/ready states -->
-              <Button Content="{loc:Str Update_CheckNow}"
-                      Classes="subtle"
-                      Command="{Binding CheckForUpdateCommand}"
-                      IsVisible="{Binding IsCheckButtonVisible}"
-                      IsEnabled="{Binding !IsCheckingForUpdate}" />
-              <!-- Download button — visible when update is available -->
-              <Button Content="{loc:Str Update_Download}"
-                      Classes="accent"
-                      Command="{Binding DownloadUpdateCommand}"
-                      IsVisible="{Binding IsUpdateAvailable}" />
-              <!-- Restart button — visible when update is downloaded -->
-              <Button Content="{loc:Str Update_Restart}"
-                      Classes="accent"
-                      Command="{Binding ApplyUpdateAndRestartCommand}"
-                      IsVisible="{Binding IsUpdateReadyToRestart}" />
-            </StackPanel>
           </sc:StrataSetting>
         </sc:StrataSettingGroup>
 
