@@ -373,13 +373,10 @@ public sealed class UpdateService
         var notes = Environment.GetEnvironmentVariable("LUMI_DEBUG_UPDATE_NOTES");
         if (string.IsNullOrWhiteSpace(notes))
         {
-            notes = """
-                ## What's new
-
-                - A clearer update callout across the app.
-                - Better guidance inside Settings > About.
-                - Rich release notes and a direct link to the GitHub release.
-                """;
+            notes = "## What's new\n\n"
+                + "- A clearer update callout across the app.\n"
+                + "- Better guidance inside Settings > About.\n"
+                + "- Rich release notes and a direct link to the GitHub release.";
         }
 
         var publishedAt = DateTimeOffset.TryParse(
