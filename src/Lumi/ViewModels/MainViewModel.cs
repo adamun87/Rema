@@ -116,7 +116,9 @@ public partial class MainViewModel : ObservableObject
         McpServersVM = new McpServersViewModel(dataStore);
         SettingsVM = new SettingsViewModel(dataStore, copilotService, _settingsBrowserService, updateService);
         SettingsVM.LoginVM = LoginVM;
-        SearchOverlayVM = new SearchOverlayViewModel(dataStore, () => SelectedNavIndex);
+        SearchOverlayVM = new SearchOverlayViewModel(
+            new GlobalSearchService(() => _dataStore.Data, _dataStore.GetChatSearchSnapshot),
+            () => SelectedNavIndex);
 
         // When the chat model selector changes the global default, sync it to SettingsVM.
         ChatVM.DefaultModelSelectionChanged += (model, reasoningEffort) =>

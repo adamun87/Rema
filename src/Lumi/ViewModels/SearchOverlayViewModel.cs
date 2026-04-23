@@ -2,10 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Avalonia.Media;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Lumi.Models;
 using Lumi.Services;
 
 namespace Lumi.ViewModels;
@@ -18,7 +20,7 @@ public class SearchResultItem
     public string Subtitle { get; init; } = "";
     public int NavIndex { get; init; }
     public object? Item { get; init; }
-    public int Priority { get; init; }
+    public double Score { get; init; }
     public bool IsContentMatch { get; init; }
     public int SettingsPageIndex { get; init; } = -1;
 
@@ -30,7 +32,7 @@ public class SearchResultItem
 public class SearchResultGroup
 {
     public string Category { get; init; } = "";
-    public string CategoryIcon { get; init; } = ""; // SVG path data
+    public string CategoryIcon { get; init; } = "";
     public bool IsCurrentTab { get; init; }
     public List<SearchResultItem> Items { get; init; } = [];
 
@@ -41,10 +43,16 @@ public class SearchResultGroup
 
 public partial class SearchOverlayViewModel : ObservableObject
 {
-    private readonly DataStore _dataStore;
+    private readonly GlobalSearchService _searchService;
     private readonly Func<int> _getCurrentNavIndex;
+    private CancellationTokenSource? _searchCts;
+    private long _searchRequestId;
+    private long _lastAppliedRequestId = -1;
+    private int _lastAppliedPhaseRank = -1;
 
-    // Icon SVG paths matching the nav bar icons
+    private const int FastSearchDelayMs = 28;
+    private const int FullSearchDelayMs = 90;
+
     private const string IconChat = "M4 4h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H7l-4 3V6a2 2 0 0 1 2-2z";
     private const string IconFolder = "M2 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6z";
     private const string IconBolt = "M21.64 3.64l-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72z M14 7l3 3 M5 6v4 M19 14v4 M10 2v2 M7 8H3 M21 16h-4 M11 3H9";
@@ -68,9 +76,9 @@ public partial class SearchOverlayViewModel : ObservableObject
     /// <summary>Raises the ResultSelected event for the given item.</summary>
     public void RaiseResultSelected(SearchResultItem item) => ResultSelected?.Invoke(item);
 
-    public SearchOverlayViewModel(DataStore dataStore, Func<int> getCurrentNavIndex)
+    public SearchOverlayViewModel(GlobalSearchService searchService, Func<int> getCurrentNavIndex)
     {
-        _dataStore = dataStore;
+        _searchService = searchService;
         _getCurrentNavIndex = getCurrentNavIndex;
     }
 
@@ -79,17 +87,18 @@ public partial class SearchOverlayViewModel : ObservableObject
         SearchQuery = "";
         SelectedIndex = 0;
         IsOpen = true;
-        // Always search — the setter won't fire OnSearchQueryChanged if query was already ""
-        PerformSearch();
+        QueueSearch(immediate: true);
     }
 
     [RelayCommand]
     public void Close()
     {
+        CancelPendingSearch();
         IsOpen = false;
         SearchQuery = "";
         ResultGroups.Clear();
         FlatResults.Clear();
+        SelectedIndex = -1;
     }
 
     public void SelectCurrent()
@@ -105,367 +114,271 @@ public partial class SearchOverlayViewModel : ObservableObject
     public void MoveSelection(int delta)
     {
         if (FlatResults.Count == 0) return;
+
         var newIndex = SelectedIndex + delta;
         if (newIndex < 0) newIndex = FlatResults.Count - 1;
         else if (newIndex >= FlatResults.Count) newIndex = 0;
+
         SelectedIndex = newIndex;
     }
 
-    partial void OnSearchQueryChanged(string value) => PerformSearch();
-
-    private void PerformSearch()
+    partial void OnSearchQueryChanged(string value)
     {
+        if (!IsOpen)
+            return;
+
+        QueueSearch();
+    }
+
+    private void QueueSearch(bool immediate = false)
+    {
+        CancelPendingSearch(disposeOnly: true);
+
+        _searchCts = new CancellationTokenSource();
+        var token = _searchCts.Token;
+        var requestId = Interlocked.Increment(ref _searchRequestId);
         var query = SearchQuery?.Trim() ?? "";
-        var currentNav = _getCurrentNavIndex();
-        var allResults = new List<SearchResultItem>();
+        _lastAppliedRequestId = -1;
+        _lastAppliedPhaseRank = -1;
 
-        // Search all categories
-        allResults.AddRange(SearchChats(query));
-        allResults.AddRange(SearchProjects(query));
-        allResults.AddRange(SearchSkills(query));
-        allResults.AddRange(SearchAgents(query));
-        allResults.AddRange(SearchMemories(query));
-        allResults.AddRange(SearchMcpServers(query));
-        allResults.AddRange(SearchSettings(query));
+        if (string.IsNullOrEmpty(query))
+        {
+            _ = RunSearchAsync(
+                query,
+                requestId,
+                token,
+                GlobalSearchExecutionMode.Full,
+                delayMs: 0,
+                phaseRank: 1);
+            return;
+        }
 
-        // Group results: current tab first, then others
-        var groups = allResults
-            .GroupBy(r => r.Category)
-            .Select(g => new SearchResultGroup
+        _ = RunSearchAsync(
+            query,
+            requestId,
+            token,
+            GlobalSearchExecutionMode.Fast,
+            delayMs: immediate ? 0 : FastSearchDelayMs,
+            phaseRank: 0);
+
+        _ = RunSearchAsync(
+            query,
+            requestId,
+            token,
+            GlobalSearchExecutionMode.Full,
+            delayMs: FullSearchDelayMs,
+            phaseRank: 1);
+    }
+
+    private async Task RunSearchAsync(
+        string query,
+        long requestId,
+        CancellationToken cancellationToken,
+        GlobalSearchExecutionMode executionMode,
+        int delayMs,
+        int phaseRank)
+    {
+        try
+        {
+            if (delayMs > 0)
+                await Task.Delay(TimeSpan.FromMilliseconds(delayMs), cancellationToken);
+
+            // SearchAsync captures a snapshot before it offloads scoring, so keep
+            // the call on the UI thread and only move off-thread for the heavy work.
+            var matches = await _searchService
+                .SearchAsync(query, executionMode, cancellationToken)
+                .ConfigureAwait(false);
+
+            await Dispatcher.UIThread.InvokeAsync(
+                () => ApplyResults(query, requestId, phaseRank, matches),
+                DispatcherPriority.Background);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // A newer query superseded this one.
+        }
+    }
+
+    private void ApplyResults(string query, long requestId, int phaseRank, IReadOnlyList<GlobalSearchMatch> matches)
+    {
+        if (!IsOpen
+            || requestId != _searchRequestId
+            || !string.Equals(query, SearchQuery?.Trim() ?? "", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (_lastAppliedRequestId == requestId && phaseRank < _lastAppliedPhaseRank)
+            return;
+
+        var currentNavIndex = _getCurrentNavIndex();
+        var groups = matches
+            .GroupBy(static match => match.Category)
+            .Select(group =>
             {
-                Category = g.Key,
-                CategoryIcon = g.First().CategoryIcon,
-                IsCurrentTab = g.First().NavIndex == currentNav,
-                Items = g.OrderBy(r => r.Priority).ThenBy(r => r.Title).Take(20).ToList()
+                var items = group
+                    .Take(20)
+                    .Select(ToResultItem)
+                    .ToList();
+
+                return new
+                {
+                    Group = new SearchResultGroup
+                    {
+                        Category = GetCategoryLabel(group.Key),
+                        CategoryIcon = GetCategoryIcon(group.Key),
+                        IsCurrentTab = items.Count > 0 && items[0].NavIndex == currentNavIndex,
+                        Items = items
+                    },
+                    TopScore = items.Count > 0 ? items[0].Score : 0
+                };
             })
-            .OrderByDescending(g => g.IsCurrentTab)
-            .ThenBy(g => g.Category)
+            .OrderByDescending(entry => entry.TopScore + (entry.Group.IsCurrentTab ? 12 : 0))
+            .ThenBy(entry => entry.Group.Category)
+            .Select(entry => entry.Group)
             .ToList();
+
+        var previousSelectedItem = SelectedIndex >= 0 && SelectedIndex < FlatResults.Count
+            ? FlatResults[SelectedIndex]
+            : null;
+        var flatResults = groups.SelectMany(static group => group.Items).ToList();
+        var selectedIndex = ResolveSelectedIndex(previousSelectedItem, flatResults);
+
+        if (HasEquivalentResults(groups, flatResults))
+        {
+            SelectedIndex = selectedIndex;
+            _lastAppliedRequestId = requestId;
+            _lastAppliedPhaseRank = phaseRank;
+            return;
+        }
+
+        FlatResults = flatResults;
+        SelectedIndex = selectedIndex;
 
         ResultGroups.Clear();
         foreach (var group in groups)
             ResultGroups.Add(group);
 
-        FlatResults = groups.SelectMany(g => g.Items).ToList();
-        SelectedIndex = FlatResults.Count > 0 ? 0 : -1;
+        _lastAppliedRequestId = requestId;
+        _lastAppliedPhaseRank = phaseRank;
     }
 
-    private List<SearchResultItem> SearchChats(string query)
+    private void CancelPendingSearch(bool disposeOnly = false)
     {
-        var results = new List<SearchResultItem>();
-        var chats = _dataStore.Data.Chats;
+        if (_searchCts is null)
+            return;
 
-        foreach (var chat in chats.OrderByDescending(c => c.UpdatedAt))
+        _searchCts.Cancel();
+        _searchCts.Dispose();
+        _searchCts = null;
+
+        _lastAppliedRequestId = -1;
+        _lastAppliedPhaseRank = -1;
+
+        if (!disposeOnly)
+            Interlocked.Increment(ref _searchRequestId);
+    }
+
+    private int ResolveSelectedIndex(SearchResultItem? previousSelectedItem, IReadOnlyList<SearchResultItem> flatResults)
+    {
+        if (flatResults.Count == 0)
+            return -1;
+
+        if (previousSelectedItem is not null)
         {
-            int? priority = null;
-
-            if (string.IsNullOrEmpty(query))
+            for (var index = 0; index < flatResults.Count; index++)
             {
-                // Show recent chats when query is empty
-                priority = 50;
-            }
-            else if (chat.Title.Contains(query, StringComparison.OrdinalIgnoreCase))
-            {
-                priority = chat.Title.StartsWith(query, StringComparison.OrdinalIgnoreCase) ? 0 : 10;
-            }
-            else
-            {
-                // Content search: look in messages
-                var hasContentMatch = chat.Messages.Any(m =>
-                    m.Role is "user" or "assistant" &&
-                    m.Content.Contains(query, StringComparison.OrdinalIgnoreCase));
-                if (hasContentMatch)
-                    priority = 30;
-            }
-
-            if (priority.HasValue)
-            {
-                var subtitle = chat.UpdatedAt.ToString("MMM d, yyyy");
-                var projectName = GetProjectName(chat.ProjectId);
-                if (projectName != null)
-                    subtitle = $"{projectName} · {subtitle}";
-
-                results.Add(new SearchResultItem
-                {
-                    Category = "Chats",
-                    CategoryIcon = IconChat,
-                    Title = chat.Title,
-                    Subtitle = subtitle,
-                    NavIndex = 0,
-                    Item = chat,
-                    Priority = priority.Value,
-                    IsContentMatch = !string.IsNullOrEmpty(query) && priority.Value >= 30
-                });
+                if (AreEquivalent(previousSelectedItem, flatResults[index]))
+                    return index;
             }
         }
 
-        return string.IsNullOrEmpty(query) ? results.Take(3).ToList() : results;
+        return SelectedIndex >= 0
+            ? Math.Min(SelectedIndex, flatResults.Count - 1)
+            : 0;
     }
 
-    private List<SearchResultItem> SearchProjects(string query)
+    private bool HasEquivalentResults(
+        IReadOnlyList<SearchResultGroup> groups,
+        IReadOnlyList<SearchResultItem> flatResults)
     {
-        var results = new List<SearchResultItem>();
-        foreach (var project in _dataStore.Data.Projects)
+        if (FlatResults.Count != flatResults.Count || ResultGroups.Count != groups.Count)
+            return false;
+
+        for (var index = 0; index < flatResults.Count; index++)
         {
-            int? priority = null;
+            var current = FlatResults[index];
+            var next = flatResults[index];
+            if (!AreEquivalent(current, next))
+                return false;
+        }
 
-            if (string.IsNullOrEmpty(query))
-            {
-                priority = 50;
-            }
-            else if (project.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
-            {
-                priority = project.Name.StartsWith(query, StringComparison.OrdinalIgnoreCase) ? 0 : 10;
-            }
-            else if (project.Instructions.Contains(query, StringComparison.OrdinalIgnoreCase))
-            {
-                priority = 30;
-            }
+        for (var groupIndex = 0; groupIndex < groups.Count; groupIndex++)
+        {
+            var currentGroup = ResultGroups[groupIndex];
+            var nextGroup = groups[groupIndex];
 
-            if (priority.HasValue)
+            if (!string.Equals(currentGroup.Category, nextGroup.Category, StringComparison.Ordinal)
+                || !string.Equals(currentGroup.CategoryIcon, nextGroup.CategoryIcon, StringComparison.Ordinal)
+                || currentGroup.IsCurrentTab != nextGroup.IsCurrentTab
+                || currentGroup.Items.Count != nextGroup.Items.Count)
             {
-                var chatCount = _dataStore.Data.Chats.Count(c => c.ProjectId == project.Id);
-                results.Add(new SearchResultItem
-                {
-                    Category = "Projects",
-                    CategoryIcon = IconFolder,
-                    Title = project.Name,
-                    Subtitle = chatCount > 0 ? $"{chatCount} chat{(chatCount != 1 ? "s" : "")}" : "No chats",
-                    NavIndex = 1,
-                    Item = project,
-                    Priority = priority.Value,
-                    IsContentMatch = !string.IsNullOrEmpty(query) && priority.Value >= 30
-                });
+                return false;
             }
         }
-        return string.IsNullOrEmpty(query) ? results.Take(3).ToList() : results;
+
+        return true;
     }
 
-    private List<SearchResultItem> SearchSkills(string query)
+    private static bool AreEquivalent(SearchResultItem current, SearchResultItem next)
     {
-        var results = new List<SearchResultItem>();
-        foreach (var skill in _dataStore.Data.Skills)
+        return string.Equals(current.Category, next.Category, StringComparison.Ordinal)
+               && string.Equals(current.CategoryIcon, next.CategoryIcon, StringComparison.Ordinal)
+               && string.Equals(current.Title, next.Title, StringComparison.Ordinal)
+               && string.Equals(current.Subtitle, next.Subtitle, StringComparison.Ordinal)
+               && current.NavIndex == next.NavIndex
+               && Equals(current.Item, next.Item)
+               && current.IsContentMatch == next.IsContentMatch
+               && current.SettingsPageIndex == next.SettingsPageIndex;
+    }
+
+    private static SearchResultItem ToResultItem(GlobalSearchMatch match)
+    {
+        return new SearchResultItem
         {
-            int? priority = null;
-
-            if (string.IsNullOrEmpty(query))
-            {
-                priority = 50;
-            }
-            else if (skill.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
-            {
-                priority = skill.Name.StartsWith(query, StringComparison.OrdinalIgnoreCase) ? 0 : 10;
-            }
-            else if (skill.Description.Contains(query, StringComparison.OrdinalIgnoreCase))
-            {
-                priority = 20;
-            }
-            else if (skill.Content.Contains(query, StringComparison.OrdinalIgnoreCase))
-            {
-                priority = 30;
-            }
-
-            if (priority.HasValue)
-            {
-                results.Add(new SearchResultItem
-                {
-                    Category = "Skills",
-                    CategoryIcon = IconBolt,
-                    Title = skill.Name,
-                    Subtitle = skill.Description,
-                    NavIndex = 2,
-                    Item = skill,
-                    Priority = priority.Value,
-                    IsContentMatch = !string.IsNullOrEmpty(query) && priority.Value >= 30
-                });
-            }
-        }
-        return string.IsNullOrEmpty(query) ? results.Take(3).ToList() : results;
+            Category = GetCategoryLabel(match.Category),
+            CategoryIcon = GetCategoryIcon(match.Category),
+            Title = match.Title,
+            Subtitle = match.Subtitle,
+            NavIndex = match.NavIndex,
+            Item = match.Item,
+            Score = match.Score,
+            IsContentMatch = match.IsContentMatch,
+            SettingsPageIndex = match.SettingsPageIndex
+        };
     }
 
-    private List<SearchResultItem> SearchAgents(string query)
+    private static string GetCategoryLabel(GlobalSearchCategory category) => category switch
     {
-        var results = new List<SearchResultItem>();
-        foreach (var agent in _dataStore.Data.Agents)
-        {
-            int? priority = null;
+        GlobalSearchCategory.Chats => "Chats",
+        GlobalSearchCategory.Projects => "Projects",
+        GlobalSearchCategory.Skills => "Skills",
+        GlobalSearchCategory.Lumis => "Lumis",
+        GlobalSearchCategory.Memories => "Memories",
+        GlobalSearchCategory.McpServers => "MCP Servers",
+        GlobalSearchCategory.Settings => "Settings",
+        _ => "Results"
+    };
 
-            if (string.IsNullOrEmpty(query))
-            {
-                priority = 50;
-            }
-            else if (agent.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
-            {
-                priority = agent.Name.StartsWith(query, StringComparison.OrdinalIgnoreCase) ? 0 : 10;
-            }
-            else if (agent.Description.Contains(query, StringComparison.OrdinalIgnoreCase))
-            {
-                priority = 20;
-            }
-            else if (agent.SystemPrompt.Contains(query, StringComparison.OrdinalIgnoreCase))
-            {
-                priority = 30;
-            }
-
-            if (priority.HasValue)
-            {
-                results.Add(new SearchResultItem
-                {
-                    Category = "Lumis",
-                    CategoryIcon = IconSparkle,
-                    Title = agent.Name,
-                    Subtitle = agent.Description,
-                    NavIndex = 3,
-                    Item = agent,
-                    Priority = priority.Value,
-                    IsContentMatch = !string.IsNullOrEmpty(query) && priority.Value >= 30
-                });
-            }
-        }
-        return string.IsNullOrEmpty(query) ? results.Take(3).ToList() : results;
-    }
-
-    private List<SearchResultItem> SearchMemories(string query)
+    private static string GetCategoryIcon(GlobalSearchCategory category) => category switch
     {
-        var results = new List<SearchResultItem>();
-        foreach (var memory in _dataStore.Data.Memories)
-        {
-            int? priority = null;
-
-            if (string.IsNullOrEmpty(query))
-            {
-                priority = 50;
-            }
-            else if (memory.Key.Contains(query, StringComparison.OrdinalIgnoreCase))
-            {
-                priority = memory.Key.StartsWith(query, StringComparison.OrdinalIgnoreCase) ? 0 : 10;
-            }
-            else if (memory.Content.Contains(query, StringComparison.OrdinalIgnoreCase))
-            {
-                priority = 20;
-            }
-            else if (memory.Category.Contains(query, StringComparison.OrdinalIgnoreCase))
-            {
-                priority = 20;
-            }
-
-            if (priority.HasValue)
-            {
-                results.Add(new SearchResultItem
-                {
-                    Category = "Memories",
-                    CategoryIcon = IconMemory,
-                    Title = memory.Key,
-                    Subtitle = $"[{memory.Category}] {(memory.Content.Length > 60 ? memory.Content[..60] + "…" : memory.Content)}",
-                    NavIndex = 4,
-                    Item = memory,
-                    Priority = priority.Value,
-                    IsContentMatch = !string.IsNullOrEmpty(query) && priority.Value >= 30
-                });
-            }
-        }
-        return string.IsNullOrEmpty(query) ? results.Take(3).ToList() : results;
-    }
-
-    private List<SearchResultItem> SearchMcpServers(string query)
-    {
-        var results = new List<SearchResultItem>();
-        foreach (var server in _dataStore.Data.McpServers)
-        {
-            int? priority = null;
-
-            if (string.IsNullOrEmpty(query))
-            {
-                priority = 50;
-            }
-            else if (server.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
-            {
-                priority = server.Name.StartsWith(query, StringComparison.OrdinalIgnoreCase) ? 0 : 10;
-            }
-            else if (server.Description.Contains(query, StringComparison.OrdinalIgnoreCase))
-            {
-                priority = 20;
-            }
-
-            if (priority.HasValue)
-            {
-                results.Add(new SearchResultItem
-                {
-                    Category = "MCP Servers",
-                    CategoryIcon = IconPlug,
-                    Title = server.Name,
-                    Subtitle = server.Description,
-                    NavIndex = 5,
-                    Item = server,
-                    Priority = priority.Value,
-                    IsContentMatch = !string.IsNullOrEmpty(query) && priority.Value >= 30
-                });
-            }
-        }
-        return string.IsNullOrEmpty(query) ? results.Take(3).ToList() : results;
-    }
-
-    private string? GetProjectName(Guid? projectId)
-    {
-        if (!projectId.HasValue) return null;
-        return _dataStore.Data.Projects.FirstOrDefault(p => p.Id == projectId.Value)?.Name;
-    }
-
-    // ── Settings search ──
-
-    private static readonly (string Name, string Page, int PageIndex)[] SettingsIndex =
-    [
-        ("Your Name", "Profile", 0),
-        ("Language", "Profile", 0),
-        ("Launch at Startup", "General", 1),
-        ("Start Minimized", "General", 1),
-        ("Minimize to Tray", "General", 1),
-        ("Enable Notifications", "General", 1),
-        ("Global Hotkey", "General", 1),
-        ("Dark Mode", "Appearance", 2),
-        ("Compact Density", "Appearance", 2),
-        ("Font Size", "Appearance", 2),
-        ("Show Animations", "Appearance", 2),
-        ("Send with Enter", "Chat", 3),
-        ("Show Timestamps", "Chat", 3),
-        ("Show Tool Calls", "Chat", 3),
-        ("Show Reasoning", "Chat", 3),
-        ("Expand Reasoning While Streaming", "Chat", 3),
-        ("Auto Generate Titles", "Chat", 3),
-        ("GitHub Account", "AI & Models", 4),
-        ("Default Model & Reasoning", "AI & Models", 4),
-        ("Auto Save Memories", "Privacy & Data", 5),
-        ("Auto Save Chats", "Privacy & Data", 5),
-        ("Import Browser Cookies", "Privacy & Data", 5),
-        ("Clear All Chats", "Privacy & Data", 5),
-        ("Clear All Memories", "Privacy & Data", 5),
-        ("Reset All Settings", "Privacy & Data", 5),
-        ("Version", "About", 6),
-    ];
-
-    private List<SearchResultItem> SearchSettings(string query)
-    {
-        if (string.IsNullOrEmpty(query)) return [];
-
-        var results = new List<SearchResultItem>();
-        foreach (var (name, page, pageIndex) in SettingsIndex)
-        {
-            if (name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                page.Contains(query, StringComparison.OrdinalIgnoreCase))
-            {
-                var priority = name.StartsWith(query, StringComparison.OrdinalIgnoreCase) ? 0 : 10;
-                results.Add(new SearchResultItem
-                {
-                    Category = "Settings",
-                    CategoryIcon = IconGear,
-                    Title = name,
-                    Subtitle = page,
-                    NavIndex = 6,
-                    Priority = priority,
-                    SettingsPageIndex = pageIndex,
-                });
-            }
-        }
-        return results;
-    }
+        GlobalSearchCategory.Chats => IconChat,
+        GlobalSearchCategory.Projects => IconFolder,
+        GlobalSearchCategory.Skills => IconBolt,
+        GlobalSearchCategory.Lumis => IconSparkle,
+        GlobalSearchCategory.Memories => IconMemory,
+        GlobalSearchCategory.McpServers => IconPlug,
+        GlobalSearchCategory.Settings => IconGear,
+        _ => IconChat
+    };
 }

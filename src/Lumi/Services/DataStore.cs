@@ -24,6 +24,8 @@ public class DataStore
     private readonly SemaphoreSlim _skillSyncLock = new(1, 1);
     private readonly object _chatLoadLocksSync = new();
     private readonly Dictionary<Guid, SemaphoreSlim> _chatLoadLocks = new();
+    private readonly object _chatSearchCacheSync = new();
+    private readonly Dictionary<Guid, CachedChatSearchSnapshot> _chatSearchCache = [];
     private readonly object _chatChangeSync = new();
     private readonly Dictionary<Guid, long> _dirtyChatVersions = [];
     private readonly Dictionary<Guid, long> _deletedChatVersions = [];
@@ -259,6 +261,85 @@ public class DataStore
         }
     }
 
+    /// <summary>Returns a search snapshot for a chat, including persisted history when the chat is not loaded.</summary>
+    public ChatSearchSnapshot GetChatSearchSnapshot(Chat chat)
+    {
+        ArgumentNullException.ThrowIfNull(chat);
+
+        if (chat.Messages.Count > 0)
+            return CreateLoadedChatSearchSnapshot(chat.Messages);
+
+        var chatFile = Path.Combine(ChatsDir, $"{chat.Id}.json");
+        if (!File.Exists(chatFile))
+        {
+            RemoveChatSearchSnapshot(chat.Id);
+            return new ChatSearchSnapshot { Version = $"missing:{chat.Id}" };
+        }
+
+        DateTime lastWriteUtc;
+        try
+        {
+            lastWriteUtc = File.GetLastWriteTimeUtc(chatFile);
+        }
+        catch (IOException)
+        {
+            return new ChatSearchSnapshot { Version = $"io-error:{chat.Id}" };
+        }
+
+        lock (_chatSearchCacheSync)
+        {
+            if (_chatSearchCache.TryGetValue(chat.Id, out var cached)
+                && cached.LastWriteUtc == lastWriteUtc)
+            {
+                return cached.Snapshot;
+            }
+        }
+
+        const int maxReadAttempts = 3;
+        const int retryDelayMs = 35;
+
+        for (var attempt = 1; attempt <= maxReadAttempts; attempt++)
+        {
+            try
+            {
+                using var stream = new FileStream(
+                    chatFile,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete,
+                    81920,
+                    FileOptions.SequentialScan);
+
+                var messages = JsonSerializer.Deserialize(stream, AppDataJsonContext.Default.ListChatMessage)
+                               ?? [];
+                var snapshot = CreateChatSearchSnapshot(
+                    messages,
+                    $"file:{lastWriteUtc.Ticks}:{messages.Count}");
+
+                lock (_chatSearchCacheSync)
+                {
+                    _chatSearchCache[chat.Id] = new CachedChatSearchSnapshot(lastWriteUtc, snapshot);
+                }
+
+                return snapshot;
+            }
+            catch (IOException) when (attempt < maxReadAttempts)
+            {
+                Thread.Sleep(retryDelayMs);
+            }
+            catch (IOException)
+            {
+                return new ChatSearchSnapshot { Version = $"io-error:{chat.Id}" };
+            }
+            catch (JsonException)
+            {
+                return new ChatSearchSnapshot { Version = $"json-error:{chat.Id}" };
+            }
+        }
+
+        return new ChatSearchSnapshot { Version = $"io-error:{chat.Id}" };
+    }
+
     private SemaphoreSlim GetChatLoadLock(Guid chatId)
     {
         lock (_chatLoadLocksSync)
@@ -270,6 +351,101 @@ public class DataStore
             _chatLoadLocks[chatId] = created;
             return created;
         }
+    }
+
+    private void RemoveChatSearchSnapshot(Guid chatId)
+    {
+        lock (_chatSearchCacheSync)
+            _chatSearchCache.Remove(chatId);
+    }
+
+    private static ChatSearchSnapshot CreateLoadedChatSearchSnapshot(IReadOnlyList<ChatMessage> messages)
+    {
+        var signature = new HashCode();
+        var searchMessages = CreateChatSearchMessages(messages, ref signature);
+        signature.Add(searchMessages.Length);
+
+        return new ChatSearchSnapshot
+        {
+            Version = $"loaded:{searchMessages.Length}:{signature.ToHashCode()}",
+            Messages = searchMessages
+        };
+    }
+
+    private static ChatSearchSnapshot CreateChatSearchSnapshot(
+        IReadOnlyList<ChatMessage> messages,
+        string version)
+        => new()
+        {
+            Version = version,
+            Messages = CreateChatSearchMessages(messages)
+        };
+
+    private static ChatSearchMessage[] CreateChatSearchMessages(IReadOnlyList<ChatMessage> messages)
+    {
+        var searchMessages = new List<ChatSearchMessage>(messages.Count);
+
+        foreach (var message in messages)
+        {
+            var text = BuildChatSearchText(message);
+            if (string.IsNullOrWhiteSpace(text))
+                continue;
+
+            searchMessages.Add(new ChatSearchMessage
+            {
+                Text = text,
+                Timestamp = message.Timestamp
+            });
+        }
+
+        return searchMessages.ToArray();
+    }
+
+    private static ChatSearchMessage[] CreateChatSearchMessages(
+        IReadOnlyList<ChatMessage> messages,
+        ref HashCode signature)
+    {
+        var searchMessages = new List<ChatSearchMessage>(messages.Count);
+
+        for (var index = 0; index < messages.Count; index++)
+        {
+            var message = messages[index];
+            var text = BuildChatSearchText(message);
+            if (string.IsNullOrWhiteSpace(text))
+                continue;
+
+            searchMessages.Add(new ChatSearchMessage
+            {
+                Text = text,
+                Timestamp = message.Timestamp
+            });
+
+            signature.Add(index);
+            signature.Add(message.Id);
+            signature.Add(message.Timestamp.UtcTicks);
+            signature.Add(text, StringComparer.Ordinal);
+        }
+
+        return searchMessages.ToArray();
+    }
+
+    private static string BuildChatSearchText(ChatMessage message)
+    {
+        var segments = new List<string>(4);
+
+        if (!string.IsNullOrWhiteSpace(message.Content))
+            segments.Add(message.Content);
+        if (!string.IsNullOrWhiteSpace(message.QuestionText))
+            segments.Add(message.QuestionText);
+        if (!string.IsNullOrWhiteSpace(message.ToolName))
+            segments.Add(message.ToolName);
+        if (!string.IsNullOrWhiteSpace(message.Author)
+            && !string.Equals(message.Author, message.Role, StringComparison.OrdinalIgnoreCase))
+        {
+            segments.Add(message.Author);
+        }
+
+        return string.Join(Environment.NewLine, segments);
     }
 
     /// <summary>Removes the load-serialisation lock for a chat, freeing the SemaphoreSlim.</summary>
@@ -286,6 +462,7 @@ public class DataStore
     public void DeleteChatFile(Guid chatId)
     {
         RemoveChatLoadLock(chatId);
+        RemoveChatSearchSnapshot(chatId);
 
         var chatFile = Path.Combine(ChatsDir, $"{chatId}.json");
         if (File.Exists(chatFile))
@@ -295,6 +472,9 @@ public class DataStore
     /// <summary>Deletes all per-chat files.</summary>
     public void DeleteAllChatFiles()
     {
+        lock (_chatSearchCacheSync)
+            _chatSearchCache.Clear();
+
         if (Directory.Exists(ChatsDir))
         {
             foreach (var file in Directory.GetFiles(ChatsDir, "*.json"))
@@ -1164,4 +1344,6 @@ public class DataStore
             }
         }
     }
+
+    private readonly record struct CachedChatSearchSnapshot(DateTime LastWriteUtc, ChatSearchSnapshot Snapshot);
 }
