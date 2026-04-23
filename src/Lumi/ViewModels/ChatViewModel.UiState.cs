@@ -269,7 +269,7 @@ public partial class ChatViewModel
             .Select(a => new StrataComposerChip(
                 a.Name,
                 a.IconGlyph,
-                SecondaryText: NormalizeInlineCompletionSecondaryText(a.Description)))
+                SecondaryText: BuildChipSearchText(a.Description, a.SystemPrompt)))
             .ToList();
 
         // Start with Lumi skills
@@ -278,7 +278,7 @@ public partial class ChatViewModel
             .Select(s => new StrataComposerChip(
                 s.Name,
                 s.IconGlyph,
-                SecondaryText: NormalizeInlineCompletionSecondaryText(s.Description)))
+                SecondaryText: BuildChipSearchText(s.Description, s.Content)))
             .ToList();
 
         // Discover workspace and user-level Copilot agents/skills
@@ -364,7 +364,7 @@ public partial class ChatViewModel
             agentChips.Add(new StrataComposerChip(
                 agent.Name,
                 ExternalAgentGlyph,
-                SecondaryText: NormalizeInlineCompletionSecondaryText(agent.Description)));
+                SecondaryText: BuildChipSearchText(agent.Description, agent.Content)));
             existingAgentNames.Add(agent.Name);
         }
 
@@ -376,9 +376,35 @@ public partial class ChatViewModel
             skillChips.Add(new StrataComposerChip(
                 skill.Name,
                 ExternalSkillGlyph,
-                SecondaryText: NormalizeInlineCompletionSecondaryText(skill.Description)));
+                SecondaryText: BuildChipSearchText(skill.Description, skill.Content)));
             existingSkillNames.Add(skill.Name);
         }
+    }
+
+    private static string? BuildChipSearchText(string? summary, string? fallback, int maxLength = 140)
+    {
+        if (!string.IsNullOrWhiteSpace(summary))
+            return CollapseInlineCompletionText(summary, maxLength);
+
+        if (string.IsNullOrWhiteSpace(fallback))
+            return null;
+
+        return CollapseInlineCompletionText(fallback, maxLength);
+    }
+
+    private static string? CollapseInlineCompletionText(string? value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var collapsed = string.Join(
+            " ",
+            value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+        if (collapsed.Length <= maxLength)
+            return collapsed;
+
+        return collapsed[..(maxLength - 3)] + "...";
     }
 
     /// <summary>
@@ -663,24 +689,12 @@ public partial class ChatViewModel
             target.Add(value);
     }
 
-    private static string? NormalizeInlineCompletionSecondaryText(string? value, int maxLength = 96)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-            return null;
-
-        var normalized = string.Join(" ", value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-        if (normalized.Length <= maxLength)
-            return normalized;
-
-        return normalized[..(maxLength - 3)] + "...";
-    }
-
     private static string? BuildProjectInlineCompletionSecondaryText(Project project)
     {
         if (!string.IsNullOrWhiteSpace(project.WorkingDirectory))
-            return NormalizeInlineCompletionSecondaryText(project.WorkingDirectory, 80);
+            return CollapseInlineCompletionText(project.WorkingDirectory, 80);
 
-        return NormalizeInlineCompletionSecondaryText(project.Instructions);
+        return BuildChipSearchText(project.Instructions, null);
     }
 
     private void OnPendingAttachmentItemsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)

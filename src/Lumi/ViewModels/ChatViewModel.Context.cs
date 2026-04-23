@@ -283,7 +283,10 @@ public partial class ChatViewModel
     public List<StrataTheme.Controls.StrataComposerChip> GetAgentChips()
     {
         return _dataStore.Data.Agents
-            .Select(a => new StrataTheme.Controls.StrataComposerChip(a.Name, a.IconGlyph))
+            .Select(a => new StrataTheme.Controls.StrataComposerChip(
+                a.Name,
+                a.IconGlyph,
+                SecondaryText: BuildChipSearchText(a.Description, a.SystemPrompt)))
             .ToList();
     }
 
@@ -291,7 +294,10 @@ public partial class ChatViewModel
     public List<StrataTheme.Controls.StrataComposerChip> GetSkillChips()
     {
         return _dataStore.Data.Skills
-            .Select(s => new StrataTheme.Controls.StrataComposerChip(s.Name, s.IconGlyph))
+            .Select(s => new StrataTheme.Controls.StrataComposerChip(
+                s.Name,
+                s.IconGlyph,
+                SecondaryText: BuildChipSearchText(s.Description, s.Content)))
             .ToList();
     }
 
@@ -308,7 +314,10 @@ public partial class ChatViewModel
     public List<StrataTheme.Controls.StrataComposerChip> GetProjectChips()
     {
         return _dataStore.Data.Projects
-            .Select(p => new StrataTheme.Controls.StrataComposerChip(p.Name, "📁"))
+            .Select(p => new StrataTheme.Controls.StrataComposerChip(
+                p.Name,
+                "📁",
+                SecondaryText: BuildChipSearchText(p.WorkingDirectory, p.Instructions)))
             .ToList();
     }
 

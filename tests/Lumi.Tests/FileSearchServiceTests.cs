@@ -243,6 +243,51 @@ public class FileSearchServiceTests
             $"FluentSearchLanguage.cs ({langScore}) should beat FluentSearchBenchmarksConfig.cs ({benchScore})");
     }
 
+    [Fact]
+    public void ScoreMatch_PathSegmentExact_BeatsLoosePathContains()
+    {
+        var parts = new[] { "viewmodels" };
+        var exactSegmentScore = FileSearchService.ScoreMatch("src/ViewModels/ChatViewModel.cs", parts);
+        var loosePathScore = FileSearchService.ScoreMatch("src/MyViewModelsHelpers/ChatViewModel.cs", parts);
+
+        Assert.True(exactSegmentScore > loosePathScore,
+            $"Exact path segment ({exactSegmentScore}) should beat loose path contains ({loosePathScore})");
+    }
+
+    [Fact]
+    public void ScoreMatch_TypoStillRanksBestFilenameHighest()
+    {
+        var parts = new[] { "fluentserch" };
+        var bestScore = FileSearchService.ScoreMatch("src/FluentSearch.cs", parts);
+        var weakerScore = FileSearchService.ScoreMatch("src/FluentSearchBenchmarksConfig.cs", parts);
+
+        Assert.True(bestScore > weakerScore,
+            $"Best typo candidate ({bestScore}) should beat longer weaker filename ({weakerScore})");
+    }
+
+    [Fact]
+    public void Search_AcronymQuery_RanksCamelCaseFileFirst()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"lumi-test-{Guid.NewGuid():N}");
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(tempDir, "src", "ViewModels"));
+            File.WriteAllText(Path.Combine(tempDir, "src", "ViewModels", "ChatViewModel.cs"), "");
+            File.WriteAllText(Path.Combine(tempDir, "src", "ViewModels", "ConversationViewModel.cs"), "");
+            File.WriteAllText(Path.Combine(tempDir, "src", "ViewModels", "ChatVirtualMachine.cs"), "");
+
+            var service = new FileSearchService();
+            var results = service.Search(tempDir, "cvm");
+
+            Assert.Equal(3, results.Count);
+            Assert.Equal("ChatViewModel.cs", Path.GetFileName(results[0].RelativePath));
+        }
+        finally
+        {
+            try { Directory.Delete(tempDir, true); } catch { }
+        }
+    }
+
     // ── IsHardcodedIgnoredPath ──────────────────────────────────────
 
     [Theory]

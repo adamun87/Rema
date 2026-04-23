@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Text;
 
 namespace Lumi.Services;
 
@@ -45,8 +46,9 @@ public sealed class FileSearchService
 
         // Ensure file index is populated and fresh
         var index = GetOrBuildIndex(workDir, maxDepth);
+        var compiledQuery = CompiledFileQuery.Create(query);
 
-        var hasQuery = !string.IsNullOrEmpty(query);
+        var hasQuery = compiledQuery.Terms.Length > 0;
 
         if (!hasQuery)
         {
@@ -59,8 +61,6 @@ public sealed class FileSearchService
             return list;
         }
 
-        var queryParts = query.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-
         // ── Incremental narrowing ───────────────────────────────────
         // If the new query is a refinement of the previous one (user typed more),
         // filter the previous scored results instead of rescanning the full index.
@@ -72,7 +72,7 @@ public sealed class FileSearchService
             var narrowed = new List<ScoredFile>();
             foreach (var prev in _prevResults)
             {
-                var score = ScoreMatch(prev.RelativePath, queryParts);
+                var score = ScoreMatch(prev.RelativePath, compiledQuery);
                 if (score > 0)
                     narrowed.Add(new ScoredFile(prev.RelativePath, prev.FullPath, score));
             }
@@ -93,7 +93,7 @@ public sealed class FileSearchService
 
         foreach (var file in index)
         {
-            var score = ScoreMatch(file.RelativePath, queryParts);
+            var score = ScoreMatch(file, compiledQuery);
             if (score > 0)
                 candidates.Add(new ScoredFile(file.RelativePath, file.FullPath, score));
         }
@@ -152,7 +152,7 @@ public sealed class FileSearchService
 
         EnumerateNonIgnoredFiles(workDir, workDir, gitIgnoreRules, maxDepth, 0, (rel, full) =>
         {
-            index.Add(new CachedFile(rel, full));
+            index.Add(new CachedFile(rel, full, PreparedFileSearchEntry.Create(rel)));
             return true; // collect all files
         });
 
@@ -246,133 +246,53 @@ public sealed class FileSearchService
     /// </summary>
     internal static int ScoreMatch(string relativePath, string[] queryParts)
     {
-        if (queryParts.Length == 0) return 30;
-
-        // Normalize separators for consistent matching
-        var normalized = relativePath.Replace('\\', '/');
-
-        // Check all query parts match — try substring first, then fuzzy
-        var allSubstring = true;
-        foreach (var part in queryParts)
-        {
-            if (!normalized.Contains(part, StringComparison.OrdinalIgnoreCase))
-            {
-                allSubstring = false;
-                break;
-            }
-        }
-
-        var firstPart = queryParts[0];
-        var fileName = Path.GetFileName(normalized);
-        var fileNameNoExt = Path.GetFileNameWithoutExtension(normalized);
-
-        if (!allSubstring)
-        {
-            // Fuzzy fallback: check if query chars appear in order (subsequence match)
-            var joinedQuery = queryParts.Length == 1 ? firstPart : string.Join("", queryParts);
-            return ScoreFuzzyMatch(normalized, fileName, joinedQuery);
-        }
-
-        // ── Base score from match tier ──────────────────────────────
-        int score;
-
-        if (fileName.Equals(firstPart, StringComparison.OrdinalIgnoreCase))
-        {
-            // Exact filename match: "FluentSearch.cs" == "FluentSearch.cs"
-            score = 100;
-        }
-        else if (fileNameNoExt.Equals(firstPart, StringComparison.OrdinalIgnoreCase))
-        {
-            // Exact name without extension: "fluentsearch" == "FluentSearch"
-            score = 95;
-        }
-        else if (fileName.StartsWith(firstPart, StringComparison.OrdinalIgnoreCase))
-        {
-            // Filename starts with query: "fluentsearch" → "FluentSearchLanguage.cs"
-            score = 80;
-        }
-        else if (fileName.Contains(firstPart, StringComparison.OrdinalIgnoreCase))
-        {
-            // Filename contains query: "fluentsearch" → "IFluentSearchApp.cs"
-            score = 60;
-        }
-        else
-        {
-            // Path-only match: query only appears in directory components
-            score = 30;
-        }
-
-        // ── Coverage bonus (0–20): reward query covering more of the filename ──
-        // "fluentsearch" on "FluentSearch.cs" → 12/15 = 80% → +16
-        // "fluentsearch" on "FluentSearchBenchmarksConfig.cs" → 12/35 = 34% → +7
-        if (score >= 60 && fileName.Length > 0)
-        {
-            var queryLen = firstPart.Length;
-            var coverage = (double)queryLen / fileName.Length;
-            score += (int)(coverage * 20);
-        }
-
-        // ── Multi-term bonus: all query parts found in the filename ──
-        if (queryParts.Length > 1)
-        {
-            var allInFileName = true;
-            for (var i = 1; i < queryParts.Length; i++)
-            {
-                if (!fileName.Contains(queryParts[i], StringComparison.OrdinalIgnoreCase))
-                {
-                    allInFileName = false;
-                    break;
-                }
-            }
-            if (allInFileName) score += 10;
-        }
-
-        // ── Source file bonus: prefer code files over configs/docs ──
-        if (IsSourceFileExtension(Path.GetExtension(fileName)))
-            score += 5;
-
-        // ── Depth penalty (lighter than before — scoring tiers dominate) ──
-        var depth = 0;
-        foreach (var ch in normalized)
-            if (ch == '/') depth++;
-        score -= depth;
-
-        return Math.Max(score, 1);
+        return ScoreMatch(relativePath, CompiledFileQuery.Create(queryParts));
     }
 
-    /// <summary>
-    /// Scores a fuzzy (subsequence) match. Tries filename first (higher base score),
-    /// falls back to full path match.
-    /// </summary>
-    private static int ScoreFuzzyMatch(string normalizedPath, string fileName, string query)
+    private static int ScoreMatch(string relativePath, CompiledFileQuery query)
     {
-        var (fileNameFuzzy, consecutiveBonus) = FuzzyMatch(fileName, query);
-        if (fileNameFuzzy)
+        return ScoreMatch(
+            new CachedFile(relativePath, relativePath, PreparedFileSearchEntry.Create(relativePath)),
+            query);
+    }
+
+    private static int ScoreMatch(CachedFile file, CompiledFileQuery query)
+    {
+        if (query.Terms.Length == 0)
+            return 30;
+
+        var phraseScore = ScorePhrase(file.Prepared, query);
+        var totalTermScore = 0d;
+        var fileNameTermMatches = 0;
+
+        foreach (var term in query.Terms)
         {
-            var s = 45 + Math.Min(consecutiveBonus, 15);
-            if (IsSourceFileExtension(Path.GetExtension(fileName)))
-                s += 5;
-            var d = 0;
-            foreach (var ch in normalizedPath)
-                if (ch == '/') d++;
-            s -= d;
-            return Math.Max(s, 1);
+            var match = ScoreTerm(file.Prepared, term);
+            if (match.Score <= 0)
+                return 0;
+
+            totalTermScore += match.Score;
+            if (match.MatchedInFileName)
+                fileNameTermMatches++;
         }
 
-        var (pathFuzzy, pathConsBonus) = FuzzyMatch(normalizedPath, query);
-        if (pathFuzzy)
-        {
-            var s = 15 + Math.Min(pathConsBonus, 10);
-            if (IsSourceFileExtension(Path.GetExtension(fileName)))
-                s += 5;
-            var d = 0;
-            foreach (var ch in normalizedPath)
-                if (ch == '/') d++;
-            s -= d;
-            return Math.Max(s, 1);
-        }
+        var score = Math.Max(phraseScore, totalTermScore);
 
-        return 0;
+        if (fileNameTermMatches == query.Terms.Length)
+            score += 65;
+        else if (fileNameTermMatches > 0)
+            score += fileNameTermMatches * 18;
+
+        if (query.Terms.Length > 1 && fileNameTermMatches == query.Terms.Length)
+            score += 20;
+
+        if (file.Prepared.IsSourceFile)
+            score += 24;
+
+        score += GetCoverageBonus(file.Prepared.FileNameNoExtCompact.Length, query.CompactPhrase.Length);
+        score -= file.Prepared.Depth * 2;
+
+        return (int)Math.Max(Math.Round(score), 1);
     }
 
     /// <summary>
@@ -422,8 +342,341 @@ public sealed class FileSearchService
         return (true, bonus);
     }
 
+    private static double ScorePhrase(PreparedFileSearchEntry file, CompiledFileQuery query)
+    {
+        var score = 0d;
+        if (!string.IsNullOrEmpty(query.NormalizedPhrase))
+        {
+            if (string.Equals(file.FileName, query.NormalizedPhrase, StringComparison.Ordinal))
+                score = Math.Max(score, 610);
+            if (string.Equals(file.FileNameNoExt, query.NormalizedPhrase, StringComparison.Ordinal))
+                score = Math.Max(score, 590);
+            if (string.Equals(file.NormalizedPath, query.NormalizedPhrase, StringComparison.Ordinal))
+                score = Math.Max(score, 570);
+        }
+
+        if (!string.IsNullOrEmpty(query.CompactPhrase))
+        {
+            if (string.Equals(file.FileNameCompact, query.CompactPhrase, StringComparison.Ordinal))
+                score = Math.Max(score, 600);
+            if (string.Equals(file.FileNameNoExtCompact, query.CompactPhrase, StringComparison.Ordinal))
+                score = Math.Max(score, 585);
+            if (string.Equals(file.PathCompact, query.CompactPhrase, StringComparison.Ordinal))
+                score = Math.Max(score, 550);
+        }
+
+        return score;
+    }
+
+    private static FileTermMatch ScoreTerm(PreparedFileSearchEntry file, CompiledFileQueryTerm term)
+    {
+        var bestScore = 0d;
+        var matchedInFileName = false;
+
+        void Consider(double score, bool inFileName)
+        {
+            if (score <= bestScore)
+                return;
+
+            bestScore = score;
+            matchedInFileName = inFileName;
+        }
+
+        if (!string.IsNullOrEmpty(term.Normalized))
+        {
+            if (string.Equals(file.FileName, term.Normalized, StringComparison.Ordinal))
+                Consider(600, true);
+            if (string.Equals(file.FileNameNoExt, term.Normalized, StringComparison.Ordinal))
+                Consider(590, true);
+        }
+
+        if (!string.IsNullOrEmpty(term.Compact))
+        {
+            if (string.Equals(file.FileNameCompact, term.Compact, StringComparison.Ordinal))
+                Consider(595, true);
+            if (string.Equals(file.FileNameNoExtCompact, term.Compact, StringComparison.Ordinal))
+                Consider(585, true);
+
+            if (string.Equals(file.FileNameInitials, term.Compact, StringComparison.Ordinal))
+                Consider(520, true);
+            else
+            {
+                Consider(ScorePrefix(file.FileNameInitials, term.Compact, 500), true);
+                Consider(ScoreSubsequence(file.FileNameInitials, term.Compact, 455), true);
+            }
+
+            Consider(ScorePrefix(file.FileNameNoExtCompact, term.Compact, 560), true);
+            Consider(ScoreContains(file.FileNameNoExtCompact, term.Compact, 470), true);
+            Consider(ScoreSubsequence(file.FileNameNoExtCompact, term.Compact, 420), true);
+            Consider(ScoreEditDistance(file.FileNameNoExtCompact, term.Compact, 450), true);
+
+            foreach (var token in file.FileNameTokens)
+            {
+                if (string.Equals(token, term.Compact, StringComparison.Ordinal))
+                {
+                    Consider(575, true);
+                    continue;
+                }
+
+                Consider(ScorePrefix(token, term.Compact, 545), true);
+                Consider(ScoreContains(token, term.Compact, 465), true);
+                Consider(ScoreSubsequence(token, term.Compact, 405), true);
+                Consider(ScoreEditDistance(token, term.Compact, 425), true);
+            }
+
+            foreach (var token in file.PathTokens)
+            {
+                if (string.Equals(token, term.Compact, StringComparison.Ordinal))
+                {
+                    Consider(390, false);
+                    continue;
+                }
+
+                Consider(ScorePrefix(token, term.Compact, 350), false);
+                Consider(ScoreContains(token, term.Compact, 305), false);
+                Consider(ScoreSubsequence(token, term.Compact, 150), false);
+            }
+
+            Consider(ScoreSubsequence(file.PathCompact, term.Compact, 110), false);
+        }
+
+        if (!string.IsNullOrEmpty(term.Normalized))
+        {
+            Consider(ScorePrefix(file.FileNameNoExt, term.Normalized, 555), true);
+            Consider(ScoreContains(file.FileNameNoExt, term.Normalized, 475), true);
+            Consider(ScorePrefix(file.NormalizedPath, term.Normalized, 330), false);
+            Consider(ScoreContains(file.NormalizedPath, term.Normalized, 285), false);
+
+            foreach (var segment in file.PathSegments)
+            {
+                if (string.Equals(segment, term.Normalized, StringComparison.Ordinal))
+                {
+                    Consider(400, false);
+                    continue;
+                }
+
+                Consider(ScorePrefix(segment, term.Normalized, 360), false);
+                Consider(ScoreContains(segment, term.Normalized, 310), false);
+            }
+        }
+
+        return new FileTermMatch(bestScore, matchedInFileName);
+    }
+
+    private static double ScorePrefix(string candidate, string query, double baseScore)
+    {
+        if (string.IsNullOrEmpty(candidate)
+            || string.IsNullOrEmpty(query)
+            || !candidate.StartsWith(query, StringComparison.Ordinal))
+        {
+            return 0;
+        }
+
+        var lengthPenalty = Math.Max(0, candidate.Length - query.Length) * 5;
+        return baseScore - lengthPenalty;
+    }
+
+    private static double ScoreContains(string candidate, string query, double baseScore)
+    {
+        if (string.IsNullOrEmpty(candidate) || string.IsNullOrEmpty(query))
+            return 0;
+
+        var index = candidate.IndexOf(query, StringComparison.Ordinal);
+        if (index < 0)
+            return 0;
+
+        var positionPenalty = index * 18;
+        var lengthPenalty = Math.Max(0, candidate.Length - query.Length) * 3;
+        return baseScore - positionPenalty - lengthPenalty;
+    }
+
+    private static double ScoreSubsequence(string candidate, string query, double baseScore)
+    {
+        if (string.IsNullOrEmpty(candidate) || query.Length < 2 || candidate.Length < query.Length)
+            return 0;
+
+        var (isMatch, consecutiveBonus) = FuzzyMatch(candidate, query);
+        if (!isMatch)
+            return 0;
+
+        var firstMatchIndex = candidate.IndexOf(query[0]);
+        var coverage = (double)query.Length / candidate.Length;
+        return baseScore
+               + Math.Min(consecutiveBonus, 24) * 8
+               + (coverage * 90)
+               - Math.Max(0, firstMatchIndex) * 10;
+    }
+
+    private static double ScoreEditDistance(string candidate, string query, double baseScore)
+    {
+        if (candidate.Length < 3
+            || query.Length < 3
+            || Math.Abs(candidate.Length - query.Length) > 2)
+        {
+            return 0;
+        }
+
+        var maxDistance = query.Length <= 4 ? 1 : 2;
+        var distance = DamerauLevenshteinDistance(candidate, query, maxDistance);
+        if (distance > maxDistance)
+            return 0;
+
+        return baseScore
+               - (distance * 110)
+               - (Math.Abs(candidate.Length - query.Length) * 35);
+    }
+
+    private static double GetCoverageBonus(int candidateLength, int queryLength)
+    {
+        if (candidateLength <= 0 || queryLength <= 0)
+            return 0;
+
+        var coverage = Math.Min(1d, (double)queryLength / candidateLength);
+        return coverage * 40;
+    }
+
+    internal static string NormalizePathText(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return "";
+
+        var builder = new StringBuilder(text.Length);
+        foreach (var character in text)
+        {
+            if (character == '\\' || character == '/')
+            {
+                if (builder.Length > 0 && builder[^1] != '/')
+                    builder.Append('/');
+                continue;
+            }
+
+            builder.Append(char.ToLowerInvariant(character));
+        }
+
+        return builder.ToString().Trim('/');
+    }
+
+    internal static string ToCompact(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return "";
+
+        var builder = new StringBuilder(text.Length);
+        foreach (var character in text)
+        {
+            if (char.IsLetterOrDigit(character))
+                builder.Append(char.ToLowerInvariant(character));
+        }
+
+        return builder.ToString();
+    }
+
+    internal static string[] ExtractSearchTokens(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return [];
+
+        var tokens = new List<string>();
+        var builder = new StringBuilder();
+        var previousCharacter = '\0';
+
+        void Flush()
+        {
+            if (builder.Length == 0)
+                return;
+
+            tokens.Add(builder.ToString());
+            builder.Clear();
+        }
+
+        foreach (var character in text)
+        {
+            if (!char.IsLetterOrDigit(character))
+            {
+                Flush();
+                previousCharacter = '\0';
+                continue;
+            }
+
+            var startsNewToken = builder.Length > 0
+                                 && ((char.IsUpper(character) && char.IsLower(previousCharacter))
+                                     || (char.IsDigit(character) != char.IsDigit(previousCharacter)));
+
+            if (startsNewToken)
+                Flush();
+
+            builder.Append(char.ToLowerInvariant(character));
+            previousCharacter = character;
+        }
+
+        Flush();
+        return tokens.Count == 0 ? [] : tokens.ToArray();
+    }
+
+    internal static string BuildInitials(IReadOnlyList<string> tokens)
+    {
+        if (tokens.Count == 0)
+            return "";
+
+        var builder = new StringBuilder(tokens.Count);
+        foreach (var token in tokens)
+            builder.Append(token[0]);
+
+        return builder.ToString();
+    }
+
+    private static int DamerauLevenshteinDistance(string source, string target, int maxDistance)
+    {
+        if (source.Length == 0)
+            return target.Length;
+        if (target.Length == 0)
+            return source.Length;
+
+        if (Math.Abs(source.Length - target.Length) > maxDistance)
+            return maxDistance + 1;
+
+        var previous = new int[target.Length + 1];
+        var current = new int[target.Length + 1];
+        var transposition = new int[target.Length + 1];
+
+        for (var j = 0; j <= target.Length; j++)
+            previous[j] = j;
+
+        for (var i = 1; i <= source.Length; i++)
+        {
+            current[0] = i;
+            var rowMinimum = current[0];
+
+            for (var j = 1; j <= target.Length; j++)
+            {
+                var substitutionCost = source[i - 1] == target[j - 1] ? 0 : 1;
+                var value = Math.Min(
+                    Math.Min(previous[j] + 1, current[j - 1] + 1),
+                    previous[j - 1] + substitutionCost);
+
+                if (i > 1
+                    && j > 1
+                    && source[i - 1] == target[j - 2]
+                    && source[i - 2] == target[j - 1])
+                {
+                    value = Math.Min(value, transposition[j - 2] + 1);
+                }
+
+                current[j] = value;
+                rowMinimum = Math.Min(rowMinimum, value);
+            }
+
+            if (rowMinimum > maxDistance)
+                return maxDistance + 1;
+
+            (transposition, previous, current) = (previous, current, transposition);
+        }
+
+        return previous[target.Length];
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static bool IsSourceFileExtension(string ext)
+    internal static bool IsSourceFileExtension(string ext)
     {
         return ext.Equals(".cs", StringComparison.OrdinalIgnoreCase) ||
                ext.Equals(".ts", StringComparison.OrdinalIgnoreCase) ||
@@ -779,4 +1032,100 @@ public readonly record struct GitIgnoreRule(string Pattern, bool IsNegation, boo
 internal readonly record struct ScoredFile(string RelativePath, string FullPath, int Score);
 
 /// <summary>A cached file entry in the index.</summary>
-internal readonly record struct CachedFile(string RelativePath, string FullPath);
+internal readonly record struct CachedFile(string RelativePath, string FullPath, PreparedFileSearchEntry Prepared);
+
+internal readonly record struct FileTermMatch(double Score, bool MatchedInFileName);
+
+internal readonly record struct CompiledFileQuery(string NormalizedPhrase, string CompactPhrase, CompiledFileQueryTerm[] Terms)
+{
+    public static CompiledFileQuery Create(string query)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+            return new CompiledFileQuery("", "", []);
+
+        return Create(query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+    }
+
+    public static CompiledFileQuery Create(string[] queryParts)
+    {
+        if (queryParts.Length == 0)
+            return new CompiledFileQuery("", "", []);
+
+        var normalizedParts = new List<string>(queryParts.Length);
+        var compactBuilder = new StringBuilder();
+        var terms = new List<CompiledFileQueryTerm>(queryParts.Length);
+
+        foreach (var part in queryParts)
+        {
+            var term = CompiledFileQueryTerm.Create(part);
+            if (string.IsNullOrEmpty(term.Normalized) && string.IsNullOrEmpty(term.Compact))
+                continue;
+
+            terms.Add(term);
+            if (!string.IsNullOrEmpty(term.Normalized))
+                normalizedParts.Add(term.Normalized);
+            if (!string.IsNullOrEmpty(term.Compact))
+                compactBuilder.Append(term.Compact);
+        }
+
+        return new CompiledFileQuery(
+            string.Join(" ", normalizedParts),
+            compactBuilder.ToString(),
+            terms.Count == 0 ? [] : terms.ToArray());
+    }
+}
+
+internal readonly record struct CompiledFileQueryTerm(string Normalized, string Compact)
+{
+    public static CompiledFileQueryTerm Create(string value)
+    {
+        return new CompiledFileQueryTerm(
+            FileSearchService.NormalizePathText(value),
+            FileSearchService.ToCompact(value));
+    }
+}
+
+internal readonly record struct PreparedFileSearchEntry(
+    string NormalizedPath,
+    string PathCompact,
+    string[] PathSegments,
+    string[] PathTokens,
+    string FileName,
+    string FileNameNoExt,
+    string FileNameCompact,
+    string FileNameNoExtCompact,
+    string[] FileNameTokens,
+    string FileNameInitials,
+    int Depth,
+    bool IsSourceFile)
+{
+    public static PreparedFileSearchEntry Create(string relativePath)
+    {
+        var normalizedPath = FileSearchService.NormalizePathText(relativePath);
+        var pathSegments = normalizedPath.Length == 0
+            ? []
+            : normalizedPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+
+        var pathTokens = FileSearchService.ExtractSearchTokens(normalizedPath);
+        var fileName = pathSegments.Length == 0 ? normalizedPath : pathSegments[^1];
+        var extension = Path.GetExtension(fileName);
+        var fileNameNoExt = string.IsNullOrEmpty(extension)
+            ? fileName
+            : fileName[..^extension.Length];
+        var fileNameTokens = FileSearchService.ExtractSearchTokens(fileNameNoExt);
+
+        return new PreparedFileSearchEntry(
+            normalizedPath,
+            FileSearchService.ToCompact(normalizedPath),
+            pathSegments,
+            pathTokens,
+            fileName,
+            fileNameNoExt,
+            FileSearchService.ToCompact(fileName),
+            FileSearchService.ToCompact(fileNameNoExt),
+            fileNameTokens,
+            FileSearchService.BuildInitials(fileNameTokens),
+            pathSegments.Length > 0 ? pathSegments.Length - 1 : 0,
+            FileSearchService.IsSourceFileExtension(extension));
+    }
+}
