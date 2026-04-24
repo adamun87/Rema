@@ -347,7 +347,29 @@ public static class CopilotConfigCatalog
     }
 
     private static Version ParseVersionOrDefault(string? value)
-        => Version.TryParse(value, out var version) ? version : new Version(0, 0);
+    {
+        if (Version.TryParse(value, out var version))
+            return version;
+
+        if (string.IsNullOrWhiteSpace(value))
+            return new Version(0, 0);
+
+        var separatorIndex = value.IndexOf('-');
+        if (separatorIndex < 0)
+            return new Version(0, 0);
+
+        // Copilot package folders may append a numeric revision suffix, for example 1.0.35-6.
+        var baseVersionText = value[..separatorIndex];
+        var revisionText = value[(separatorIndex + 1)..];
+        if (!Version.TryParse(baseVersionText, out var baseVersion)
+            || !int.TryParse(revisionText, out var revision))
+        {
+            return new Version(0, 0);
+        }
+
+        var build = baseVersion.Build >= 0 ? baseVersion.Build : 0;
+        return new Version(baseVersion.Major, baseVersion.Minor, build, revision);
+    }
 
     private static string? FindSubdirectory(string parentDir, string name)
     {

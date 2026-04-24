@@ -8,6 +8,9 @@ namespace Lumi.Tests;
 
 public sealed class CopilotConfigCatalogTests
 {
+    private const string LatestPackagedVersion = "1.0.35-6";
+    private const string PreviousPackagedVersion = "1.0.27";
+
     [Fact]
     public void DiscoverSkills_MergesWorkspaceAndCopilotSources()
     {
@@ -19,7 +22,7 @@ public sealed class CopilotConfigCatalogTests
         {
             Directory.CreateDirectory(Path.Combine(workDir, ".github", "skills"));
             Directory.CreateDirectory(Path.Combine(copilotRoot, "skills", "user-skill"));
-            Directory.CreateDirectory(Path.Combine(copilotRoot, "pkg", "universal", "1.0.27", "builtin-skills", "package-skill"));
+            Directory.CreateDirectory(Path.Combine(copilotRoot, "pkg", "universal", LatestPackagedVersion, "builtin-skills", "package-skill"));
 
             File.WriteAllText(
                 Path.Combine(workDir, ".github", "skills", "workspace-skill.md"),
@@ -47,7 +50,7 @@ public sealed class CopilotConfigCatalogTests
                 """);
 
             File.WriteAllText(
-                Path.Combine(copilotRoot, "pkg", "universal", "1.0.27", "builtin-skills", "package-skill", "SKILL.md"),
+                Path.Combine(copilotRoot, "pkg", "universal", LatestPackagedVersion, "builtin-skills", "package-skill", "SKILL.md"),
                 """
                 ---
                 name: Package Skill
@@ -145,41 +148,17 @@ public sealed class CopilotConfigCatalogTests
         try
         {
             Directory.CreateDirectory(workDir);
-            Directory.CreateDirectory(Path.Combine(copilotRoot, "pkg", "universal", "1.0.26", "builtin-skills", "package-skill"));
-            Directory.CreateDirectory(Path.Combine(copilotRoot, "pkg", "universal", "1.0.26", "builtin-agents", "package-agent"));
-            Directory.CreateDirectory(Path.Combine(copilotRoot, "pkg", "universal", "1.0.27", "builtin-skills", "package-skill"));
-            Directory.CreateDirectory(Path.Combine(copilotRoot, "pkg", "universal", "1.0.27", "builtin-agents", "package-agent"));
+            Directory.CreateDirectory(Path.Combine(copilotRoot, "pkg", "universal", PreviousPackagedVersion, "builtin-skills", "package-skill"));
+            Directory.CreateDirectory(Path.Combine(copilotRoot, "pkg", "universal", PreviousPackagedVersion, "builtin-agents", "package-agent"));
+            Directory.CreateDirectory(Path.Combine(copilotRoot, "pkg", "universal", LatestPackagedVersion, "builtin-skills", "package-skill"));
+            Directory.CreateDirectory(Path.Combine(copilotRoot, "pkg", "universal", LatestPackagedVersion, "builtin-agents", "package-agent"));
 
             File.WriteAllText(
-                Path.Combine(copilotRoot, "pkg", "universal", "1.0.26", "builtin-skills", "package-skill", "SKILL.md"),
+                Path.Combine(copilotRoot, "pkg", "universal", PreviousPackagedVersion, "builtin-skills", "package-skill", "SKILL.md"),
                 """
                 ---
                 name: Package Skill
-                description: Old package
-                ---
-
-                # Package Skill
-                Version 1.0.26
-                """);
-
-            File.WriteAllText(
-                Path.Combine(copilotRoot, "pkg", "universal", "1.0.26", "builtin-agents", "package-agent", "AGENT.md"),
-                """
-                ---
-                name: Package Agent
-                description: Old package
-                ---
-
-                # Package Agent
-                Version 1.0.26
-                """);
-
-            File.WriteAllText(
-                Path.Combine(copilotRoot, "pkg", "universal", "1.0.27", "builtin-skills", "package-skill", "SKILL.md"),
-                """
-                ---
-                name: Package Skill
-                description: Latest package
+                description: Previous package
                 ---
 
                 # Package Skill
@@ -187,7 +166,31 @@ public sealed class CopilotConfigCatalogTests
                 """);
 
             File.WriteAllText(
-                Path.Combine(copilotRoot, "pkg", "universal", "1.0.27", "builtin-agents", "package-agent", "AGENT.md"),
+                Path.Combine(copilotRoot, "pkg", "universal", PreviousPackagedVersion, "builtin-agents", "package-agent", "AGENT.md"),
+                """
+                ---
+                name: Package Agent
+                description: Previous package
+                ---
+
+                # Package Agent
+                Version 1.0.27
+                """);
+
+            File.WriteAllText(
+                Path.Combine(copilotRoot, "pkg", "universal", LatestPackagedVersion, "builtin-skills", "package-skill", "SKILL.md"),
+                """
+                ---
+                name: Package Skill
+                description: Latest package
+                ---
+
+                # Package Skill
+                Version 1.0.35-6
+                """);
+
+            File.WriteAllText(
+                Path.Combine(copilotRoot, "pkg", "universal", LatestPackagedVersion, "builtin-agents", "package-agent", "AGENT.md"),
                 """
                 ---
                 name: Package Agent
@@ -195,7 +198,7 @@ public sealed class CopilotConfigCatalogTests
                 ---
 
                 # Package Agent
-                Version 1.0.27
+                Version 1.0.35-6
                 """);
 
             var catalog = CopilotConfigCatalog.Discover(workDir, copilotRoot);
@@ -203,9 +206,9 @@ public sealed class CopilotConfigCatalogTests
             var skill = Assert.Single(catalog.Skills);
             var agent = Assert.Single(catalog.Agents);
             Assert.Equal("Latest package", skill.Description);
-            Assert.Contains("Version 1.0.27", skill.Content);
+            Assert.Contains("Version 1.0.35-6", skill.Content);
             Assert.Equal("Latest package", agent.Description);
-            Assert.Contains("Version 1.0.27", agent.Content);
+            Assert.Contains("Version 1.0.35-6", agent.Content);
         }
         finally
         {
