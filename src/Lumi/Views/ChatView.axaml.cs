@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Input;
@@ -79,6 +80,7 @@ public partial class ChatView : UserControl
         _composerSpacer = this.FindControl<Panel>("ComposerSpacer");
         _dropOverlay = this.FindControl<Panel>("DropOverlay");
         _transcript = this.FindControl<ItemsControl>("Transcript");
+        ApplyAgentAutomationLandmarks();
 
         // Slide-up animation for coding strip
         var codingStrip = this.FindControl<Border>("CodingStrip");
@@ -134,6 +136,27 @@ public partial class ChatView : UserControl
         if (searchPrevBtn is not null) searchPrevBtn.Click += (_, _) => NavigateSearchMatch(-1);
         if (searchNextBtn is not null) searchNextBtn.Click += (_, _) => NavigateSearchMatch(1);
         if (searchCloseBtn is not null) searchCloseBtn.Click += (_, _) => CloseSearch();
+    }
+
+    private void ApplyAgentAutomationLandmarks()
+    {
+        if (_chatShell is not null)
+        {
+            AutomationProperties.SetName(_chatShell, "ChatShell - main chat surface");
+            AutomationProperties.SetHelpText(_chatShell, "Contains the header, transcript, and composer for the active Lumi chat.");
+        }
+
+        if (_composer is not null)
+        {
+            AutomationProperties.SetName(_composer, "Composer - type and send chat prompts");
+            AutomationProperties.SetHelpText(_composer, "Primary text input for Lumi chat prompts. Use this for new messages.");
+        }
+
+        if (_transcript is not null)
+        {
+            AutomationProperties.SetName(_transcript, "Transcript - mounted chat turns");
+            AutomationProperties.SetHelpText(_transcript, "Virtualized transcript items rendered from ChatViewModel.MountedTranscriptTurns.");
+        }
     }
 
     protected override void OnDataContextChanged(EventArgs e)

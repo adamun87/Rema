@@ -141,6 +141,17 @@ Lumi has an Avalonia MCP server configured in `.vscode/mcp.json`. This gives you
 2. Start Lumi: `cd src/Lumi && dotnet run`
 3. Use the MCP tools to verify your work
 
+#### Debug-only agent harnesses
+
+Lumi includes focused Debug-only harnesses for coding agents:
+
+- `dotnet run --project src\Lumi\Lumi.csproj -- --debug-agent-harness` opens Lumi directly into a synthetic transcript fixture chat. The fixture is not saved to normal chat history and exercises user/assistant messages, reasoning, tools, subagents, questions, errors, sources, attachments, plan content, token metadata, and generated files.
+- `dotnet run --project src\Lumi\Lumi.csproj -- --test-chat-stress` runs a headless real Copilot stress check. It requires a deterministic tool invocation and exits nonzero if the expected `LUMI_CHAT_STRESS_OK` response is not produced.
+- When running a Debug build, the top-right `#AgentDebugMap` overlay shows stable navigation indices, current page landmarks, chat control IDs, and an `Open fixture` button.
+- Stable MCP/UI automation landmarks are available by name: `#NavChat`, `#NavProjects`, `#NavSkills`, `#NavAgents`, `#NavMemories`, `#NavMcpServers`, `#NavSettings`, `#PageChat`, `#ChatShell`, `#Transcript`, and `#Composer`.
+
+Use these harnesses before making transcript or chat UI changes, and keep the specific debug PID running when the user should inspect the visible result.
+
 #### What to test and how
 
 - **Did your control actually render?** Use `find_control` to search by name (`#MyControl`) or type (`Button`). If it's not found, something is wrong.

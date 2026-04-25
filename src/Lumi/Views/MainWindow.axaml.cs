@@ -227,6 +227,8 @@ public partial class MainWindow : Window
             this.FindControl<Button>("NavSettings"),
         ];
 
+        ApplyAgentAutomationLandmarks();
+
         AddHandler(PointerPressedEvent, OnWindowPointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
 
         WireNavHoverEvents();
@@ -269,6 +271,53 @@ public partial class MainWindow : Window
         {
             _sidebarResizeThumb.DragDelta += OnSidebarResizeThumbDragDelta;
             _sidebarResizeThumb.DragCompleted += OnSidebarResizeThumbDragCompleted;
+        }
+    }
+
+    private void ApplyAgentAutomationLandmarks()
+    {
+        AutomationProperties.SetName(this, "Lumi main window");
+        AutomationProperties.SetHelpText(this,
+            "Agent map: navigation indices are Chat=0, Projects=1, Skills=2, Lumis=3, Memories=4, MCP Servers=5, Settings=6.");
+
+        var navNames = new[]
+        {
+            "NavChat - navigation index 0 - Chat",
+            "NavProjects - navigation index 1 - Projects",
+            "NavSkills - navigation index 2 - Skills",
+            "NavAgents - navigation index 3 - Lumis",
+            "NavMemories - navigation index 4 - Memories",
+            "NavMcpServers - navigation index 5 - MCP Servers",
+            "NavSettings - navigation index 6 - Settings",
+        };
+        for (var i = 0; i < _navButtons.Length && i < navNames.Length; i++)
+        {
+            if (_navButtons[i] is not { } button)
+                continue;
+
+            AutomationProperties.SetName(button, navNames[i]);
+            AutomationProperties.SetHelpText(button, "Use this stable navigation landmark when driving Lumi with UI automation.");
+        }
+
+        var pageNames = new (string ControlName, string Name)[]
+        {
+            ("ChatContentGrid", "Page 0 Chat content grid"),
+            ("PageChat", "Page 0 Chat view"),
+            ("PageProjects", "Page 1 Projects"),
+            ("PageSkills", "Page 2 Skills"),
+            ("PageAgents", "Page 3 Lumis"),
+            ("PageMemories", "Page 4 Memories"),
+            ("PageMcpServers", "Page 5 MCP Servers"),
+            ("PageSettings", "Page 6 Settings"),
+            ("AgentDebugMap", "Debug-only agent map and fixture launcher"),
+        };
+        foreach (var (controlName, name) in pageNames)
+        {
+            if (this.FindControl<Control>(controlName) is { } control)
+            {
+                AutomationProperties.SetName(control, name);
+                AutomationProperties.SetHelpText(control, "Stable Lumi page landmark for coding agents and MCP diagnostics.");
+            }
         }
     }
 

@@ -36,7 +36,15 @@ public partial class App : Application
             var copilotService = new CopilotService();
             var updateService = new UpdateService();
             updateService.Initialize();
-            var vm = new MainViewModel(dataStore, copilotService, updateService, Program.ForceOnboarding);
+            var vm = new MainViewModel(
+                dataStore,
+                copilotService,
+                updateService,
+                Program.ForceOnboarding
+#if DEBUG
+                , Program.OpenAgentDebugHarness
+#endif
+            );
 
             // Save data and dispose CopilotService on app shutdown.
             // The window is already hidden at this point so nothing blocks the user.

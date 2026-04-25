@@ -1099,6 +1099,47 @@
       </Border>
     </DockPanel>
 
+    <!-- Debug-only agent guide. Hidden in Release by MainViewModel. -->
+    <Border x:Name="AgentDebugMap"
+            IsVisible="{Binding IsAgentDebugMapVisible}"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Top"
+            Margin="0,42,16,0"
+            MaxWidth="430"
+            Padding="10,8"
+            CornerRadius="12"
+            Background="#E8111726"
+            BorderBrush="#46546E"
+            BorderThickness="1"
+            ZIndex="20">
+      <StackPanel Spacing="6">
+        <DockPanel LastChildFill="True">
+          <Button DockPanel.Dock="Right"
+                  Classes="accent"
+                  Content="Open fixture"
+                  Command="{Binding OpenAgentDebugHarnessCommand}"
+                  Padding="8,4"
+                  MinHeight="0"
+                  FontSize="11" />
+          <StackPanel>
+            <TextBlock Text="Agent debug map"
+                       FontSize="12"
+                       FontWeight="SemiBold"
+                       Foreground="#FFFFFFFF" />
+            <TextBlock Text="{Binding AgentDebugCurrentPage}"
+                       FontFamily="Consolas, Cascadia Code, monospace"
+                       FontSize="10.5"
+                       Foreground="#FFBFD0EA" />
+          </StackPanel>
+        </DockPanel>
+        <TextBlock Text="{Binding AgentDebugMapText}"
+                   TextWrapping="Wrap"
+                   FontFamily="Consolas, Cascadia Code, monospace"
+                   FontSize="10"
+                   Foreground="#FFDDE7F7" />
+      </StackPanel>
+    </Border>
+
     <!-- ═══ Onboarding Overlay ═══ -->
     <Panel x:Name="OnboardingPanel" IsVisible="True">
       <Grid RowDefinitions="38,*">

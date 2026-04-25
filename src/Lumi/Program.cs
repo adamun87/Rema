@@ -1,6 +1,8 @@
 using Avalonia;
 using System;
+using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using Velopack;
 #if DEBUG
 using AvaloniaMcp.Diagnostics;
@@ -12,6 +14,10 @@ class Program
 {
     /// <summary>When true, the onboarding flow is shown even if the user is already onboarded (debug only).</summary>
     public static bool ForceOnboarding { get; private set; }
+#if DEBUG
+    /// <summary>When true, opens Lumi directly into the agent debug transcript fixture.</summary>
+    public static bool OpenAgentDebugHarness { get; private set; }
+#endif
 
     [STAThread]
     public static void Main(string[] args)
@@ -22,9 +28,19 @@ class Program
         ForceOnboarding = args.Contains("--onboarding", StringComparer.OrdinalIgnoreCase);
 
 #if DEBUG
+        OpenAgentDebugHarness = args.Any(DebugAgentHarness.IsUiHarnessFlag);
+
+        if (args.Any(DebugAgentHarness.IsChatStressFlag))
+        {
+            AttachParentConsole();
+            RunChatStressAsync().GetAwaiter().GetResult();
+            return;
+        }
+
         // Headless agent test mode — no UI, just runs the onboarding agent and prints output
         if (args.Contains("--test-onboarding-agent", StringComparer.OrdinalIgnoreCase))
         {
+            AttachParentConsole();
             RunAgentTestAsync().GetAwaiter().GetResult();
             return;
         }
@@ -40,6 +56,30 @@ class Program
         var copilotService = new Services.CopilotService();
         await copilotService.ConnectAsync(default);
         await OnboardingAgentTest.RunAsync(copilotService, default);
+    }
+
+    private static async System.Threading.Tasks.Task RunChatStressAsync()
+    {
+        var copilotService = new Services.CopilotService();
+        var exitCode = await DebugAgentHarness.RunChatStressAsync(copilotService, default);
+        Environment.ExitCode = exitCode;
+    }
+
+    private const uint AttachParentProcess = 0xFFFFFFFF;
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool AttachConsole(uint dwProcessId);
+
+    private static void AttachParentConsole()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        if (!AttachConsole(AttachParentProcess))
+            return;
+
+        Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
+        Console.SetError(new StreamWriter(Console.OpenStandardError()) { AutoFlush = true });
     }
 #endif
 

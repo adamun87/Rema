@@ -69,6 +69,8 @@
   <!-- Exclude test harness from Release builds -->
   <ItemGroup Condition="'$(Configuration)' != 'Debug'">
     <Compile Remove="OnboardingAgentTest.cs" />
+    <Compile Remove="DebugAgentHarness.cs" />
+    <Compile Remove="ViewModels\ChatViewModel.Debug.cs" />
   </ItemGroup>
 
 </Project>

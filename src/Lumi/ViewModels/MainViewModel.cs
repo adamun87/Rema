@@ -49,8 +49,41 @@ public partial class MainViewModel : ObservableObject
     public bool IsGlobalUpdateBannerVisible => SettingsVM.ShouldShowUpdateBanner
         && (SelectedNavIndex != 6 || SettingsVM.SelectedPageIndex != SettingsViewModel.AboutPageIndex);
 
+    public bool IsAgentDebugMapVisible
+    {
+        get
+        {
+#if DEBUG
+            return true;
+#else
+            return false;
+#endif
+        }
+    }
+
+    public string AgentDebugCurrentPage => SelectedNavIndex switch
+    {
+        0 => "0 Chat (#PageChat, #Composer, #Transcript)",
+        1 => "1 Projects (#PageProjects)",
+        2 => "2 Skills (#PageSkills)",
+        3 => "3 Lumis (#PageAgents)",
+        4 => "4 Memories (#PageMemories)",
+        5 => "5 MCP Servers (#PageMcpServers)",
+        6 => "6 Settings (#PageSettings)",
+        _ => $"{SelectedNavIndex} Unknown"
+    };
+
+    public string AgentDebugMapText =>
+        "Debug-only agent map\n" +
+        "Nav: #NavChat=0, #NavProjects=1, #NavSkills=2, #NavAgents=3, #NavMemories=4, #NavMcpServers=5, #NavSettings=6\n" +
+        "Chat controls: #PageChat, #ChatShell, #Transcript, #Composer, #SearchInput\n" +
+        "CLI: --debug-agent-harness opens fixture, --test-chat-stress runs real Copilot stress check";
+
     partial void OnSelectedNavIndexChanged(int value)
-        => OnPropertyChanged(nameof(IsGlobalUpdateBannerVisible));
+    {
+        OnPropertyChanged(nameof(IsGlobalUpdateBannerVisible));
+        OnPropertyChanged(nameof(AgentDebugCurrentPage));
+    }
 
     [RelayCommand]
     private void ToggleSidebar() => IsSidebarCollapsed = !IsSidebarCollapsed;
@@ -81,7 +114,15 @@ public partial class MainViewModel : ObservableObject
     // Project list for filter
     public ObservableCollection<Project> Projects { get; } = [];
 
-    public MainViewModel(DataStore dataStore, CopilotService copilotService, UpdateService updateService, bool forceOnboarding = false)
+    public MainViewModel(
+        DataStore dataStore,
+        CopilotService copilotService,
+        UpdateService updateService,
+        bool forceOnboarding = false
+#if DEBUG
+        , bool openAgentDebugHarness = false
+#endif
+        )
     {
         _dataStore = dataStore;
         _copilotService = copilotService;
@@ -247,6 +288,12 @@ public partial class MainViewModel : ObservableObject
         SubscribeChatRunningState();
         RefreshChatList();
         ChatVM.RefreshComposerCatalogs();
+
+#if DEBUG
+        if (openAgentDebugHarness)
+            OpenAgentDebugHarness();
+#endif
+
         _chatNavigationHistory.Record(ChatVM.CurrentChat?.Id, SelectedProjectFilter);
         _ = InitializeAsync();
     }
@@ -511,6 +558,15 @@ public partial class MainViewModel : ObservableObject
         // Auto-assign the active project filter to new chats
         SetDraftChatProjectContext(SelectedProjectFilter);
         SelectedNavIndex = 0;
+    }
+
+    [RelayCommand]
+    private void OpenAgentDebugHarness()
+    {
+#if DEBUG
+        ChatVM.LoadDebugTranscriptFixture();
+        SelectedNavIndex = 0;
+#endif
     }
 
     [RelayCommand(AllowConcurrentExecutions = true)]
