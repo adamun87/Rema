@@ -823,7 +823,7 @@ public class CopilotService : IAsyncDisposable
         text.Length <= maxLength ? text : text[..maxLength];
 
     private const string SuggestionSystemPrompt =
-        "You generate follow-up suggestions for a chat assistant. Given the conversation below, produce exactly 3 short follow-up messages the user might want to send next. Each suggestion must be concise (under 60 characters) and contextually relevant. Output ONLY a JSON array of 3 strings, nothing else. Example: [\"Tell me more\", \"How do I implement this?\", \"What are the alternatives?\"]";
+        "You generate follow-up suggestions for a chat assistant. Use the latest conversation plus the user's historical request patterns across chats. Prefer recurring historical requests when they are plausible next actions. Produce exactly 3 short messages the user might want to send next. Each suggestion must be concise (under 60 characters) and actionable. Output ONLY a JSON array of 3 strings, nothing else. Example: [\"Run code review\", \"Push to main\", \"What are the alternatives?\"]";
 
     private async Task<CopilotSession> GetOrCreateSuggestionSessionAsync(CancellationToken ct)
     {
@@ -842,17 +842,43 @@ public class CopilotService : IAsyncDisposable
         return _suggestionSession;
     }
 
-    public async Task<List<string>?> GenerateSuggestionsAsync(string assistantMessage, string? userMessage, CancellationToken ct = default)
+    public Task<List<string>?> GenerateSuggestionsAsync(
+        string assistantMessage,
+        string? userMessage,
+        CancellationToken ct = default)
+        => GenerateSuggestionsAsync(assistantMessage, userMessage, userHistorySummary: null, ct);
+
+    public async Task<List<string>?> GenerateSuggestionsAsync(
+        string assistantMessage,
+        string? userMessage,
+        string? userHistorySummary,
+        CancellationToken ct = default)
     {
         if (_client is null) return null;
 
-        var context = string.IsNullOrWhiteSpace(userMessage)
-            ? assistantMessage
-            : $"User: {userMessage}\n\nAssistant: {assistantMessage}";
+        var contextBuilder = new StringBuilder();
+        if (!string.IsNullOrWhiteSpace(userMessage))
+        {
+            contextBuilder.AppendLine("Latest user message:");
+            contextBuilder.AppendLine(Truncate(userMessage.Trim(), 800));
+            contextBuilder.AppendLine();
+        }
+
+        contextBuilder.AppendLine("Latest assistant message:");
+        contextBuilder.AppendLine(Truncate(assistantMessage.Trim(), 1400));
+
+        if (!string.IsNullOrWhiteSpace(userHistorySummary))
+        {
+            contextBuilder.AppendLine();
+            contextBuilder.AppendLine("Historical user requests across all chats:");
+            contextBuilder.AppendLine(Truncate(userHistorySummary.Trim(), 1400));
+        }
+
+        var context = contextBuilder.ToString().Trim();
 
         // Truncate to keep the request lightweight
-        if (context.Length > 2000)
-            context = context[..2000];
+        if (context.Length > 3600)
+            context = context[..3600];
 
         await _suggestionGate.WaitAsync(ct).ConfigureAwait(false);
         CopilotSession? session = null;

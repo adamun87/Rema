@@ -25,6 +25,10 @@ namespace Lumi.ViewModels;
 
 public partial class ChatViewModel : ObservableObject
 {
+    private const int SuggestionHistoryScanLimit = 1000;
+    private const int SuggestionHistorySummaryMaxItems = 24;
+    private const int SuggestionHistoryDisplayMaxLength = 160;
+
     private static readonly bool TranscriptDiagnosticsEnabled = Debugger.IsAttached
         || string.Equals(Environment.GetEnvironmentVariable("LUMI_TRANSCRIPT_DEBUG"), "1", StringComparison.Ordinal);
 
@@ -2248,22 +2252,19 @@ public partial class ChatViewModel : ObservableObject
                     IsSuggestionsGenerating = true;
             });
 
-            // Resolve the specific assistant message that completed on idle.
-            var assistantIndex = chat.Messages.FindIndex(m => m.Id == assistantMessageId);
-            if (assistantIndex < 0)
+            var context = await Dispatcher.UIThread.InvokeAsync(() =>
+                CreateSuggestionGenerationContext(chat, assistantMessageId));
+            if (context is null)
                 return;
 
-            var assistantMessage = chat.Messages[assistantIndex];
-            if (assistantMessage.Role != "assistant" || string.IsNullOrWhiteSpace(assistantMessage.Content))
-                return;
-
-            // Use the user message that led to this assistant reply for tighter context.
-            var lastUser = chat.Messages
-                .Take(assistantIndex)
-                .LastOrDefault(m => m.Role == "user" && !string.IsNullOrWhiteSpace(m.Content));
+            var userHistorySummary = await BuildSuggestionHistorySummaryAsync(
+                context.LatestUserMessageId,
+                context.LoadedMessageSnapshots);
 
             var suggestions = await _copilotService.GenerateSuggestionsAsync(
-                assistantMessage.Content, lastUser?.Content);
+                context.AssistantMessage,
+                context.LatestUserMessage,
+                userHistorySummary);
 
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
@@ -2298,6 +2299,150 @@ public partial class ChatViewModel : ObservableObject
             });
         }
     }
+
+    private SuggestionGenerationContext? CreateSuggestionGenerationContext(
+        Chat chat,
+        Guid assistantMessageId)
+    {
+        // Resolve the specific assistant message that completed on idle.
+        var assistantIndex = chat.Messages.FindIndex(m => m.Id == assistantMessageId);
+        if (assistantIndex < 0)
+            return null;
+
+        var assistantMessage = chat.Messages[assistantIndex];
+        if (assistantMessage.Role != "assistant" || string.IsNullOrWhiteSpace(assistantMessage.Content))
+            return null;
+
+        // Use the user message that led to this assistant reply for tighter context.
+        var lastUser = chat.Messages
+            .Take(assistantIndex)
+            .LastOrDefault(m => m.Role == "user" && !string.IsNullOrWhiteSpace(m.Content));
+
+        var loadedMessageSnapshots = _dataStore.Data.Chats
+            .Where(static item => item.Messages.Count > 0)
+            .ToDictionary(
+                static item => item.Id,
+                static item => (IReadOnlyList<ChatMessage>)item.Messages.ToList());
+
+        return new SuggestionGenerationContext(
+            assistantMessage.Content,
+            lastUser?.Content,
+            lastUser?.Id,
+            loadedMessageSnapshots);
+    }
+
+    private async Task<string?> BuildSuggestionHistorySummaryAsync(
+        Guid? latestUserMessageId,
+        IReadOnlyDictionary<Guid, IReadOnlyList<ChatMessage>> loadedMessageSnapshots)
+    {
+        var userPromptHistory = await _dataStore.GetUserPromptHistoryAsync(
+            SuggestionHistoryScanLimit,
+            loadedMessageSnapshots);
+
+        var historyItems = userPromptHistory
+            .Where(item => item.MessageId != latestUserMessageId);
+
+        return FormatSuggestionHistorySummary(historyItems, SuggestionHistorySummaryMaxItems);
+    }
+
+    private static string? FormatSuggestionHistorySummary(
+        IEnumerable<UserPromptHistoryItem> historyItems,
+        int maxItems)
+    {
+        ArgumentNullException.ThrowIfNull(historyItems);
+        if (maxItems <= 0)
+            throw new ArgumentOutOfRangeException(nameof(maxItems), "History item limit must be greater than zero.");
+
+        var groups = historyItems
+            .Select(static item => new
+            {
+                Key = NormalizeSuggestionHistoryContent(item.Content),
+                Content = TrimSuggestionHistoryContent(item.Content),
+                item.Timestamp
+            })
+            .Where(static item => !string.IsNullOrWhiteSpace(item.Key)
+                                  && !string.IsNullOrWhiteSpace(item.Content))
+            .GroupBy(static item => item.Key, StringComparer.Ordinal)
+            .Select(static group =>
+            {
+                var latest = group.OrderByDescending(static item => item.Timestamp).First();
+                return new SuggestionHistoryGroup(
+                    group.Key,
+                    latest.Content,
+                    group.Count(),
+                    group.Max(static item => item.Timestamp));
+            })
+            .OrderByDescending(static group => group.LastUsedAt)
+            .ToList();
+
+        if (groups.Count == 0)
+            return null;
+
+        var frequentGroups = groups
+            .Where(static group => group.Count > 1)
+            .OrderByDescending(static group => group.Count)
+            .ThenByDescending(static group => group.LastUsedAt)
+            .Take(Math.Min(8, maxItems))
+            .ToList();
+
+        var frequentKeys = frequentGroups
+            .Select(static group => group.Key)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var recentGroups = groups
+            .Where(group => !frequentKeys.Contains(group.Key))
+            .OrderByDescending(static group => group.LastUsedAt)
+            .Take(Math.Max(0, maxItems - frequentGroups.Count))
+            .ToList();
+
+        var summary = new StringBuilder();
+        if (frequentGroups.Count > 0)
+        {
+            summary.AppendLine("Frequent user requests:");
+            foreach (var group in frequentGroups)
+                summary.AppendLine($"- {group.Content} (used {group.Count}x)");
+        }
+
+        if (recentGroups.Count > 0)
+        {
+            if (summary.Length > 0)
+                summary.AppendLine();
+
+            summary.AppendLine("Recent user requests:");
+            foreach (var group in recentGroups)
+                summary.AppendLine($"- {group.Content}");
+        }
+
+        return summary.Length > 0 ? summary.ToString().TrimEnd() : null;
+    }
+
+    private static string CollapseSuggestionHistoryWhitespace(string content)
+        => Regex.Replace(content.Trim(), @"\s+", " ");
+
+    private static string NormalizeSuggestionHistoryContent(string content)
+        => CollapseSuggestionHistoryWhitespace(content)
+            .Trim(' ', '.', '!', '?', ':', ';', '"', '\'')
+            .ToLowerInvariant();
+
+    private static string TrimSuggestionHistoryContent(string content)
+    {
+        var singleLine = CollapseSuggestionHistoryWhitespace(content);
+        return singleLine.Length <= SuggestionHistoryDisplayMaxLength
+            ? singleLine
+            : singleLine[..(SuggestionHistoryDisplayMaxLength - 3)].TrimEnd() + "...";
+    }
+
+    private sealed record SuggestionHistoryGroup(
+        string Key,
+        string Content,
+        int Count,
+        DateTimeOffset LastUsedAt);
+
+    private sealed record SuggestionGenerationContext(
+        string AssistantMessage,
+        string? LatestUserMessage,
+        Guid? LatestUserMessageId,
+        IReadOnlyDictionary<Guid, IReadOnlyList<ChatMessage>> LoadedMessageSnapshots);
 
     private void ClearSuggestions()
     {

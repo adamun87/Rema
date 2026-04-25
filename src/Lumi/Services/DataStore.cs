@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -8,6 +9,12 @@ using System.Threading.Tasks;
 using Lumi.Models;
 
 namespace Lumi.Services;
+
+public sealed record UserPromptHistoryItem(
+    Guid ChatId,
+    Guid MessageId,
+    string Content,
+    DateTimeOffset Timestamp);
 
 public class DataStore
 {
@@ -239,7 +246,7 @@ public class DataStore
                         chatFile,
                         FileMode.Open,
                         FileAccess.Read,
-                        FileShare.Read,
+                        FileShare.ReadWrite | FileShare.Delete,
                         81920,
                         FileOptions.Asynchronous | FileOptions.SequentialScan);
 
@@ -273,6 +280,96 @@ public class DataStore
         {
             loadLock.Release();
         }
+    }
+
+    /// <summary>Returns recent user-authored prompts across chats for personalized follow-up suggestions.</summary>
+    public async Task<IReadOnlyList<UserPromptHistoryItem>> GetUserPromptHistoryAsync(
+        int maxMessages,
+        IReadOnlyDictionary<Guid, IReadOnlyList<ChatMessage>> loadedMessageSnapshots,
+        CancellationToken cancellationToken = default)
+    {
+        if (maxMessages <= 0)
+            throw new ArgumentOutOfRangeException(nameof(maxMessages), "Message limit must be greater than zero.");
+
+        var history = new List<UserPromptHistoryItem>();
+        foreach (var chat in _data.Chats)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var messages = loadedMessageSnapshots.TryGetValue(chat.Id, out var loadedMessages)
+                ? loadedMessages
+                : await ReadChatMessagesForSuggestionHistoryAsync(chat, cancellationToken).ConfigureAwait(false);
+
+            foreach (var message in messages)
+            {
+                if (!string.Equals(message.Role, "user", StringComparison.Ordinal)
+                    || string.IsNullOrWhiteSpace(message.Content))
+                {
+                    continue;
+                }
+
+                history.Add(new UserPromptHistoryItem(
+                    chat.Id,
+                    message.Id,
+                    message.Content,
+                    message.Timestamp));
+            }
+        }
+
+        return history
+            .OrderByDescending(static item => item.Timestamp)
+            .Take(maxMessages)
+            .ToList();
+    }
+
+    private async Task<IReadOnlyList<ChatMessage>> ReadChatMessagesForSuggestionHistoryAsync(
+        Chat chat,
+        CancellationToken cancellationToken)
+    {
+        if (!_usesPersistentStorage)
+            return [];
+
+        var chatFile = Path.Combine(ChatsDir, $"{chat.Id}.json");
+        if (!File.Exists(chatFile))
+            return [];
+
+        const int maxReadAttempts = 3;
+        const int retryDelayMs = 35;
+
+        for (var attempt = 1; attempt <= maxReadAttempts; attempt++)
+        {
+            try
+            {
+                await using var stream = new FileStream(
+                    chatFile,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete,
+                    81920,
+                    FileOptions.Asynchronous | FileOptions.SequentialScan);
+
+                return await JsonSerializer.DeserializeAsync(
+                    stream,
+                    AppDataJsonContext.Default.ListChatMessage,
+                    cancellationToken).ConfigureAwait(false) ?? [];
+            }
+            catch (IOException) when (attempt < maxReadAttempts)
+            {
+                await Task.Delay(retryDelayMs, cancellationToken).ConfigureAwait(false);
+            }
+            catch (IOException ex)
+            {
+                Debug.WriteLine($"[Lumi] Suggestion history read failed for chat {chat.Id}: {ex.Message}");
+                return [];
+            }
+            catch (JsonException ex)
+            {
+                Debug.WriteLine($"[Lumi] Suggestion history JSON parse failed for chat {chat.Id}: {ex.Message}");
+                return [];
+            }
+        }
+
+        return [];
     }
 
     /// <summary>Returns a search snapshot for a chat, including persisted history when the chat is not loaded.</summary>
