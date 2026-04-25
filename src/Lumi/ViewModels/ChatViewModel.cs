@@ -2014,7 +2014,6 @@ public partial class ChatViewModel : ObservableObject
                 _transcriptBuilder.CollapseCompletedBlocksInCurrentTurn();
                 var msgVm = new ChatMessageViewModel(errorMsg);
                 Messages.Add(msgVm);
-                _transcriptBuilder.ProcessMessageToTranscript(msgVm);
                 ScrollToEndRequested?.Invoke();
             }
         }
@@ -2533,7 +2532,6 @@ public partial class ChatViewModel : ObservableObject
                 CurrentChat.Messages.Add(connErrorMsg);
                 var connVm = new ChatMessageViewModel(connErrorMsg);
                 Messages.Add(connVm);
-                _transcriptBuilder.ProcessMessageToTranscript(connVm);
                 ScrollToEndRequested?.Invoke();
                 return;
             }
@@ -2595,7 +2593,6 @@ public partial class ChatViewModel : ObservableObject
                     CurrentChat.Messages.Add(errorMsg);
                     var msgVm = new ChatMessageViewModel(errorMsg);
                     Messages.Add(msgVm);
-                    _transcriptBuilder.ProcessMessageToTranscript(msgVm);
                     ScrollToEndRequested?.Invoke();
                     return;
                 }

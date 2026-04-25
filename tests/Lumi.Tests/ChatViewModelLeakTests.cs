@@ -260,6 +260,33 @@ public sealed class ChatViewModelLeakTests
     }
 
     [Fact]
+    public void HandleSendError_AddsSingleTranscriptErrorItem()
+    {
+        var dataStore = CreateDataStore();
+        var vm = new ChatViewModel(dataStore, new CopilotService());
+        var chat = new Chat { Title = "error-chat" };
+        dataStore.Data.Chats.Add(chat);
+        vm.CurrentChat = chat;
+        vm.IsBusy = true;
+        vm.IsStreaming = true;
+
+        InvokePrivate(
+            vm,
+            "HandleSendError",
+            new InvalidOperationException("Copilot request failed"),
+            false,
+            null!,
+            chat);
+
+        Assert.Single(chat.Messages);
+        Assert.Single(vm.Messages);
+
+        var turn = Assert.Single(vm.TranscriptTurns);
+        var errorItem = Assert.IsType<ErrorMessageItem>(Assert.Single(turn.Items));
+        Assert.Contains("Copilot request failed", errorItem.Content, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void IsCopilotTransportError_DetectsJsonRpcDisconnect()
     {
         var ex = new Exception(
