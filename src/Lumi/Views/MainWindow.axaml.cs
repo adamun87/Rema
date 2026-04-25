@@ -15,6 +15,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Rendering.Composition;
@@ -48,8 +49,16 @@ public partial class MainWindow : Window
     private Button?[] _navButtons = [];
     private Panel? _renameOverlay;
     private TextBox? _renameTextBox;
-    private StackPanel? _projectFilterBar;
-    private ScrollViewer? _projectFilterScroller;
+    private Border? _projectSwitcherRoot;
+    private Button? _projectSwitchButton;
+    private Border? _projectSwitchRevealHost;
+    private Border? _projectSwitchPanel;
+    private TextBox? _projectFilterSearchBox;
+    private StackPanel? _projectFilterResults;
+    private TextBlock? _projectSwitchTitleText;
+    private TextBlock? _projectSwitchSubtitleText;
+    private TextBlock? _projectSwitchCountText;
+    private TextBlock? _projectFilterMoreText;
     private ScrollViewer? _chatListScroller;
     private readonly List<(Project Project, PropertyChangedEventHandler Handler)> _projectFilterHandlers = [];
     private ChatView? _chatView;
@@ -79,7 +88,12 @@ public partial class MainWindow : Window
     private List<GitFileChangeViewModel>? _lastGitChangesList;
     private Border? _planIsland;
     private CancellationTokenSource? _previewAnimCts;
+    private CancellationTokenSource? _projectSwitcherDrawerCts;
     private bool _suppressSelectionSync;
+    private bool _isProjectChatListRevealArmed;
+    private bool _isProjectChatListRevealQueued;
+    private bool _isProjectSwitcherOpen;
+    private int _chatListRevealVersion;
     private CancellationTokenSource? _browserAnimCts;
     private CancellationTokenSource? _shellAnimCts;
     private int _currentShellIndex = -1;
@@ -88,6 +102,7 @@ public partial class MainWindow : Window
     private int _pendingNavHoverIndex = -1;
     private bool _isNavPillWidthLocked;
     private double _expandedSidebarWidth = DefaultSidebarWidth;
+    private sealed record ProjectFilterCandidate(Project Project, int ChatCount, DateTimeOffset? LastActivity);
 
     private double[] _navBaseButtonWidths = [];
     private double[] _navMinButtonWidths = [];
@@ -145,6 +160,8 @@ public partial class MainWindow : Window
         DisposeCancellationTokenSource(ref _titleAnimCts);
         DisposeCancellationTokenSource(ref _browserAnimCts);
         DisposeCancellationTokenSource(ref _previewAnimCts);
+        DisposeCancellationTokenSource(ref _chatListRevealCts);
+        DisposeCancellationTokenSource(ref _projectSwitcherDrawerCts);
     }
 
     private static CancellationTokenSource ReplaceCancellationTokenSource(ref CancellationTokenSource? source)
@@ -236,10 +253,28 @@ public partial class MainWindow : Window
 
         _renameOverlay = this.FindControl<Panel>("RenameOverlay");
         _renameTextBox = this.FindControl<TextBox>("RenameTextBox");
-        _projectFilterBar = this.FindControl<StackPanel>("ProjectFilterBar");
-        _projectFilterScroller = this.FindControl<ScrollViewer>("ProjectFilterScroller");
-        if (_projectFilterScroller is not null)
-            _projectFilterScroller.PointerWheelChanged += OnProjectFilterScrollerWheel;
+        _projectSwitcherRoot = this.FindControl<Border>("ProjectSwitcherRoot");
+        _projectSwitchButton = this.FindControl<Button>("ProjectSwitchButton");
+        _projectSwitchRevealHost = this.FindControl<Border>("ProjectSwitchRevealHost");
+        _projectSwitchPanel = this.FindControl<Border>("ProjectSwitchPanel");
+        _projectFilterSearchBox = this.FindControl<TextBox>("ProjectFilterSearchBox");
+        _projectFilterResults = this.FindControl<StackPanel>("ProjectFilterResults");
+        _projectSwitchTitleText = this.FindControl<TextBlock>("ProjectSwitchTitleText");
+        _projectSwitchSubtitleText = this.FindControl<TextBlock>("ProjectSwitchSubtitleText");
+        _projectSwitchCountText = this.FindControl<TextBlock>("ProjectSwitchCountText");
+        _projectFilterMoreText = this.FindControl<TextBlock>("ProjectFilterMoreText");
+
+        if (_projectSwitchButton is not null)
+            _projectSwitchButton.Click += (_, _) => ToggleProjectSwitcher();
+        if (_projectFilterSearchBox is not null)
+        {
+            _projectFilterSearchBox.TextChanged += (_, _) =>
+            {
+                if (DataContext is MainViewModel vm)
+                    RefreshProjectSwitcher(vm);
+            };
+            _projectFilterSearchBox.KeyDown += OnProjectFilterSearchKeyDown;
+        }
 
         _chatListScroller = this.FindControl<ScrollViewer>("ChatListScroller");
         if (_chatListScroller is not null)
@@ -542,6 +577,13 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (_isProjectSwitcherOpen && e.Key == Key.Escape && noMods)
+        {
+            SetProjectSwitcherOpen(false);
+            e.Handled = true;
+            return;
+        }
+
         // ── Ctrl+N — New chat ──
         if (ctrl && !shift && e.Key == Key.N)
         {
@@ -653,6 +695,13 @@ public partial class MainWindow : Window
         if (e.Handled || DataContext is not MainViewModel vm || !CanHandleChatHistoryNavigationInput(vm, e.Source))
             return;
 
+        if (_isProjectSwitcherOpen
+            && e.GetCurrentPoint(this).Properties.IsLeftButtonPressed
+            && !IsWithinProjectSwitcher(e.Source))
+        {
+            SetProjectSwitcherOpen(false);
+        }
+
         var point = e.GetCurrentPoint(this);
         var direction = point.Properties.IsXButton1Pressed
             ? -1
@@ -709,7 +758,7 @@ public partial class MainWindow : Window
             {
                 AttachListBoxHandlers();
                 SyncListBoxSelection(vm.ActiveChatId);
-                RebuildProjectFilterBar(vm);
+                RefreshProjectSwitcher(vm);
                 ApplyProjectLabelsToChats(vm);
                 if (vm.IsOnboarded && vm.SelectedNavIndex == 0)
                 {
@@ -868,7 +917,10 @@ public partial class MainWindow : Window
                 }
                 else if (args.PropertyName == nameof(MainViewModel.SelectedProjectFilter))
                 {
-                    RebuildProjectFilterBar(vm);
+                    RefreshProjectSwitcher(vm);
+                    if (!_isProjectChatListRevealQueued)
+                        QueueProjectChatListReveal();
+                    _isProjectChatListRevealQueued = false;
                 }
                 else if (args.PropertyName == nameof(MainViewModel.IsSidebarCollapsed))
                 {
@@ -879,18 +931,27 @@ public partial class MainWindow : Window
             // When project list changes, rebuild filter bar
             vm.Projects.CollectionChanged += (_, _) =>
             {
-                Dispatcher.UIThread.Post(() => RebuildProjectFilterBar(vm), DispatcherPriority.Loaded);
+                Dispatcher.UIThread.Post(() => RefreshProjectSwitcher(vm), DispatcherPriority.Loaded);
             };
 
             // When chat groups are rebuilt, re-attach ListBox handlers, sync selection, and set project labels
             vm.ChatGroups.CollectionChanged += (_, _) =>
             {
+                var shouldRevealChats = _isProjectChatListRevealArmed;
+                if (shouldRevealChats)
+                {
+                    _isProjectChatListRevealArmed = false;
+                    _isProjectChatListRevealQueued = true;
+                }
+
                 Dispatcher.UIThread.Post(() =>
                 {
                     AttachListBoxHandlers();
                     SyncListBoxSelection(vm.ActiveChatId);
                     ApplyProjectLabelsToChats(vm);
                     ApplyMoveToProjectMenus(vm);
+                    if (shouldRevealChats)
+                        QueueProjectChatListReveal();
                 }, DispatcherPriority.Loaded);
             };
         }
@@ -1659,6 +1720,149 @@ public partial class MainWindow : Window
     }
 
     private CancellationTokenSource? _titleAnimCts;
+    private CancellationTokenSource? _chatListRevealCts;
+    private const int ChatListRevealDelayMs = 40;
+    private const int ChatListRevealDurationMs = 285;
+    private const int ChatListRevealStaggerMs = 21;
+    private const int ChatListRevealMaxDelayMs = 360;
+    private const double ChatListRevealOffsetY = 10.0;
+    private sealed record ChatListRevealTarget(ListBoxItem Item, Avalonia.Vector3D BaseOffset);
+
+    private void ArmProjectChatListReveal()
+    {
+        _isProjectChatListRevealArmed = true;
+        _isProjectChatListRevealQueued = false;
+    }
+
+    private void QueueProjectChatListReveal()
+    {
+        if (DataContext is not MainViewModel { SelectedNavIndex: 0 })
+            return;
+
+        var cts = ReplaceCancellationTokenSource(ref _chatListRevealCts);
+        Dispatcher.UIThread.Post(async () =>
+        {
+            try
+            {
+                await Task.Delay(ChatListRevealDelayMs, cts.Token);
+                await AnimateChatListRevealAsync(++_chatListRevealVersion, cts.Token);
+            }
+            catch (OperationCanceledException) { }
+            catch (ObjectDisposedException) { }
+        }, DispatcherPriority.Loaded);
+    }
+
+    private async Task AnimateChatListRevealAsync(int revealVersion, CancellationToken ct)
+    {
+        if (_chatListScroller is null)
+            return;
+
+        var items = this.GetVisualDescendants()
+            .OfType<ListBoxItem>()
+            .Where(IsChatListItem)
+            .Select(item => new
+            {
+                Item = item,
+                Top = item.TranslatePoint(default, _chatListScroller)?.Y ?? item.Bounds.Y
+            })
+            .OrderBy(candidate => candidate.Top)
+            .Select(candidate => candidate.Item)
+            .ToList();
+
+        if (items.Count == 0)
+            return;
+
+        var targets = items
+            .Select(item => (Item: item, Visual: ElementComposition.GetElementVisual(item)))
+            .Where(target => target.Visual is not null)
+            .Select(target => new ChatListRevealTarget(target.Item, target.Visual!.Offset))
+            .ToList();
+
+        foreach (var target in targets)
+            PrepareChatListItemReveal(target);
+
+        var animations = targets.Select((target, index) =>
+            AnimateChatListItemRevealAsync(target, revealVersion, Math.Min(index * ChatListRevealStaggerMs, ChatListRevealMaxDelayMs), ct));
+        await Task.WhenAll(animations);
+    }
+
+    private static void PrepareChatListItemReveal(ChatListRevealTarget target)
+    {
+        var visual = ElementComposition.GetElementVisual(target.Item);
+        if (visual is null)
+            return;
+
+        visual.StopAnimation("Opacity");
+        visual.StopAnimation("Offset");
+        visual.Opacity = 0;
+        visual.Offset = target.BaseOffset + new Avalonia.Vector3D(0, ChatListRevealOffsetY, 0);
+    }
+
+    private static bool IsChatListItem(ListBoxItem item)
+    {
+        return item.DataContext is Chat
+            && item.FindAncestorOfType<ListBox>() is { } listBox
+            && listBox.Classes.Contains("chat-list");
+    }
+
+    private async Task AnimateChatListItemRevealAsync(ChatListRevealTarget target, int revealVersion, int delayMs, CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(delayMs, ct);
+
+            var visual = ElementComposition.GetElementVisual(target.Item);
+            if (visual is null)
+                return;
+
+            var compositor = visual.Compositor;
+            var startOffset = target.BaseOffset + new Avalonia.Vector3D(0, ChatListRevealOffsetY, 0);
+            var settleOffset = target.BaseOffset + new Avalonia.Vector3D(0, 1, 0);
+
+            var offsetAnim = compositor.CreateVector3DKeyFrameAnimation();
+            offsetAnim.Target = "Offset";
+            offsetAnim.InsertKeyFrame(0f, startOffset);
+            offsetAnim.InsertKeyFrame(0.72f, settleOffset);
+            offsetAnim.InsertKeyFrame(1f, target.BaseOffset);
+            offsetAnim.Duration = TimeSpan.FromMilliseconds(ChatListRevealDurationMs);
+
+            var opacityAnim = compositor.CreateScalarKeyFrameAnimation();
+            opacityAnim.Target = "Opacity";
+            opacityAnim.InsertKeyFrame(0f, 0f);
+            opacityAnim.InsertKeyFrame(0.45f, 0.88f);
+            opacityAnim.InsertKeyFrame(1f, 1f);
+            opacityAnim.Duration = TimeSpan.FromMilliseconds(ChatListRevealDurationMs);
+
+            visual.StartAnimation("Offset", offsetAnim);
+            visual.StartAnimation("Opacity", opacityAnim);
+
+            await Task.Delay(ChatListRevealDurationMs + 20, ct);
+        }
+        catch (OperationCanceledException) { }
+        catch (ObjectDisposedException) { }
+        catch (InvalidOperationException) { }
+        finally
+        {
+            if (revealVersion == _chatListRevealVersion)
+                ResetChatListItemRevealState(target);
+        }
+    }
+
+    private static void ResetChatListItemRevealState(ChatListRevealTarget target)
+    {
+        try
+        {
+            var visual = ElementComposition.GetElementVisual(target.Item);
+            if (visual is null)
+                return;
+
+            visual.StopAnimation("Opacity");
+            visual.StopAnimation("Offset");
+            visual.Opacity = 1;
+            visual.Offset = target.BaseOffset;
+        }
+        catch (InvalidOperationException) { }
+    }
 
     private async void AnimateSidebarTitle(Guid chatId, string newTitle)
     {
@@ -1845,14 +2049,6 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnProjectFilterScrollerWheel(object? sender, PointerWheelEventArgs e)
-    {
-        if (_projectFilterScroller is null) return;
-        _projectFilterScroller.Offset = _projectFilterScroller.Offset.WithX(
-            _projectFilterScroller.Offset.X - e.Delta.Y * 50);
-        e.Handled = true;
-    }
-
     private void OnChatListScrollChanged(object? sender, ScrollChangedEventArgs e)
     {
         if (_chatListScroller is null || DataContext is not MainViewModel vm || !vm.HasMoreChats) return;
@@ -1862,78 +2058,550 @@ public partial class MainWindow : Window
             vm.LoadMoreChats();
     }
 
-    private void RebuildProjectFilterBar(MainViewModel vm)
+    private void ToggleProjectSwitcher()
     {
-        if (_projectFilterBar is null) return;
+        SetProjectSwitcherOpen(!_isProjectSwitcherOpen);
+    }
 
-        // Unsubscribe all previous project PropertyChanged handlers
+    private void SetProjectSwitcherOpen(bool isOpen)
+    {
+        if (_projectSwitchRevealHost is null || _projectSwitchPanel is null)
+            return;
+
+        if (isOpen && DataContext is MainViewModel vm)
+            RefreshProjectSwitcher(vm);
+
+        if (_isProjectSwitcherOpen == isOpen && _projectSwitchRevealHost.IsVisible == isOpen)
+        {
+            if (isOpen)
+                FocusProjectSwitcherSearch();
+            return;
+        }
+
+        _isProjectSwitcherOpen = isOpen;
+
+        if (_projectSwitchButton is not null)
+        {
+            if (isOpen && !_projectSwitchButton.Classes.Contains("open"))
+                _projectSwitchButton.Classes.Add("open");
+            else if (!isOpen)
+                _projectSwitchButton.Classes.Remove("open");
+        }
+
+        var ct = ReplaceCancellationTokenSource(ref _projectSwitcherDrawerCts).Token;
+        _ = AnimateProjectSwitcherDrawerAsync(isOpen, ct);
+
+        if (isOpen)
+            Dispatcher.UIThread.Post(FocusProjectSwitcherSearch, DispatcherPriority.Input);
+    }
+
+    private void FocusProjectSwitcherSearch()
+    {
+        _projectFilterSearchBox?.Focus();
+        _projectFilterSearchBox?.SelectAll();
+    }
+
+    private async Task AnimateProjectSwitcherDrawerAsync(bool isOpen, CancellationToken ct)
+    {
+        if (_projectSwitchRevealHost is null || _projectSwitchPanel is null)
+            return;
+
+        var host = _projectSwitchRevealHost;
+
+        if (isOpen)
+        {
+            host.IsVisible = true;
+            host.Height = 0;
+            host.Opacity = 0;
+        }
+
+        var startHeight = Math.Max(0, double.IsNaN(host.Height) ? host.Bounds.Height : host.Height);
+        if (!isOpen && startHeight <= 0)
+            startHeight = GetProjectSwitcherTargetHeight();
+
+        var endHeight = isOpen ? GetProjectSwitcherTargetHeight() : 0;
+        host.Height = startHeight;
+
+        var animation = new Animation
+        {
+            Duration = isOpen ? TimeSpan.FromMilliseconds(210) : TimeSpan.FromMilliseconds(130),
+            Easing = new SplineEasing(0.22, 0.08, 0.18, 1.0),
+            FillMode = FillMode.Forward,
+            Children =
+            {
+                new KeyFrame
+                {
+                    Cue = new Cue(0),
+                    Setters =
+                    {
+                        new Setter(Layoutable.HeightProperty, startHeight),
+                        new Setter(OpacityProperty, isOpen ? 0.0 : 1.0),
+                    }
+                },
+                new KeyFrame
+                {
+                    Cue = new Cue(1),
+                    Setters =
+                    {
+                        new Setter(Layoutable.HeightProperty, endHeight),
+                        new Setter(OpacityProperty, isOpen ? 1.0 : 0.0),
+                    }
+                },
+            }
+        };
+
+        try
+        {
+            await animation.RunAsync(host, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        if (ct.IsCancellationRequested)
+            return;
+
+        if (isOpen)
+        {
+            host.Height = double.NaN;
+            host.Opacity = 1;
+        }
+        else
+        {
+            host.Height = 0;
+            host.Opacity = 0;
+            host.IsVisible = false;
+            OnProjectSwitcherClosed();
+        }
+    }
+
+    private double GetProjectSwitcherTargetHeight()
+    {
+        if (_projectSwitchPanel is null)
+            return 0;
+
+        var width = _projectSwitchButton?.Bounds.Width
+            ?? _projectSwitcherRoot?.Bounds.Width
+            ?? 255;
+        if (width <= 0 || double.IsNaN(width) || double.IsInfinity(width))
+            width = 255;
+
+        _projectSwitchPanel.Measure(new Size(width, double.PositiveInfinity));
+        var height = _projectSwitchPanel.DesiredSize.Height;
+        if (height <= 0 || double.IsNaN(height) || double.IsInfinity(height))
+            height = _projectSwitchPanel.Bounds.Height;
+        if (height <= 0 || double.IsNaN(height) || double.IsInfinity(height))
+            height = 216;
+
+        return Math.Ceiling(Math.Clamp(height, 1, 288));
+    }
+
+    private void OnProjectSwitcherClosed()
+    {
+        _projectSwitchButton?.Classes.Remove("open");
+
         foreach (var (project, handler) in _projectFilterHandlers)
             project.PropertyChanged -= handler;
         _projectFilterHandlers.Clear();
 
-        _projectFilterBar.Children.Clear();
+        if (_projectFilterSearchBox is not null && !string.IsNullOrEmpty(_projectFilterSearchBox.Text))
+            _projectFilterSearchBox.Text = "";
+    }
+
+    private void OnProjectFilterSearchKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (DataContext is not MainViewModel vm)
+            return;
+
+        if (e.Key == Key.Escape)
+        {
+            SetProjectSwitcherOpen(false);
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key != Key.Enter)
+            return;
+
+        var first = GetProjectFilterCandidates(vm, _projectFilterSearchBox?.Text, out _).FirstOrDefault();
+        if (first is null)
+            return;
+
+        ArmProjectChatListReveal();
+        vm.SelectProjectFilterCommand.Execute(first.Project);
+        SetProjectSwitcherOpen(false);
+        e.Handled = true;
+    }
+
+    private bool IsWithinProjectSwitcher(object? source)
+    {
+        if (_projectSwitcherRoot is null || source is not Visual visual)
+            return false;
+
+        return IsVisualOrDescendantOf(visual, _projectSwitcherRoot);
+    }
+
+    private static bool IsVisualOrDescendantOf(Visual visual, Visual ancestor)
+    {
+        return ReferenceEquals(visual, ancestor)
+            || visual.GetVisualAncestors().Any(candidate => ReferenceEquals(candidate, ancestor));
+    }
+
+    private void RefreshProjectSwitcher(MainViewModel vm)
+    {
+        UpdateProjectSwitcherSummary(vm);
+
+        if (_projectFilterResults is null)
+            return;
+
+        foreach (var (project, handler) in _projectFilterHandlers)
+            project.PropertyChanged -= handler;
+        _projectFilterHandlers.Clear();
+
+        _projectFilterResults.Children.Clear();
+
+        var query = _projectFilterSearchBox?.Text;
+        var candidates = GetProjectFilterCandidates(vm, query, out var totalMatches).ToList();
+        var totalChats = vm.DataStore.Data.Chats.Count;
 
         var isAll = !vm.SelectedProjectFilter.HasValue;
+        _projectFilterResults.Children.Add(CreateProjectFilterRow(
+            vm,
+            project: null,
+            title: Loc.ProjectSwitcher_AllProjects,
+            subtitle: string.Format(Loc.ProjectSwitcher_AllSubtitle, vm.Projects.Count, totalChats),
+            isSelected: isAll,
+            isRunning: false,
+            countText: totalChats > 0 ? totalChats.ToString(Loc.Culture) : ""));
 
-        // "All" pill
-        var allBtn = new Button
+        if (candidates.Count == 0)
         {
-            Content = Loc.Sidebar_All,
-        };
-        allBtn.Classes.Add("project-pill");
-        allBtn[!Avalonia.Controls.Primitives.TemplatedControl.FontSizeProperty] = allBtn.GetResourceObservable("Font.SizeCaption").ToBinding();
-        allBtn.Classes.Add(isAll ? "accent" : "subtle");
-        allBtn.Click += (_, _) => vm.ClearProjectFilterCommand.Execute(null);
-        _projectFilterBar.Children.Add(allBtn);
-
-        // One pill per project
-        foreach (var project in vm.Projects)
-        {
-            var isActive = vm.SelectedProjectFilter == project.Id;
-
-            // Build pill content with busy indicator dot
-            var dot = new Border
+            var empty = new TextBlock
             {
-                Name = "PillBusyDot",
-                Width = 6, Height = 6,
-                CornerRadius = new CornerRadius(3),
-                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 5, 0),
-                IsVisible = project.IsRunning && !isActive,
+                Text = Loc.ProjectSwitcher_NoMatches,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                Margin = new Thickness(8, 8, 8, 4),
+                FontSize = 11,
             };
-            dot[!Border.BackgroundProperty] = dot.GetResourceObservable("Brush.AccentDefault").ToBinding();
+            empty[!TextBlock.ForegroundProperty] = empty.GetResourceObservable("Brush.TextTertiary").ToBinding();
+            _projectFilterResults.Children.Add(empty);
+        }
 
-            // Listen for project running state changes
-            var capturedDot = dot;
-            var capturedProject = project;
-            var capturedIsActive = isActive;
+        foreach (var candidate in candidates)
+        {
+            var project = candidate.Project;
+            var isActive = vm.SelectedProjectFilter == project.Id;
+            var row = CreateProjectFilterRow(
+                vm,
+                project,
+                project.Name,
+                FormatProjectFilterSubtitle(project, candidate.ChatCount, candidate.LastActivity),
+                isActive,
+                project.IsRunning,
+                candidate.ChatCount > 0 ? candidate.ChatCount.ToString(Loc.Culture) : "");
+
+            _projectFilterResults.Children.Add(row);
+
+            var capturedRow = row;
             PropertyChangedEventHandler handler = (_, args) =>
             {
-                if (args.PropertyName == nameof(Project.IsRunning))
-                    Dispatcher.UIThread.Post(() => capturedDot.IsVisible = capturedProject.IsRunning && !capturedIsActive);
+                if (args.PropertyName != nameof(Project.IsRunning))
+                    return;
+
+                Dispatcher.UIThread.Post(() =>
+                {
+                    if (DataContext is MainViewModel currentVm)
+                        RefreshProjectSwitcher(currentVm);
+                    else
+                        capturedRow.IsVisible = true;
+                });
             };
             project.PropertyChanged += handler;
             _projectFilterHandlers.Add((project, handler));
 
-            var nameText = new TextBlock { Text = project.Name, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
-            var panel = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal };
-            panel.Children.Add(dot);
-            panel.Children.Add(nameText);
-
-            var btn = new Button
-            {
-                Content = panel,
-            };
-            btn.Classes.Add("project-pill");
-            btn[!Avalonia.Controls.Primitives.TemplatedControl.FontSizeProperty] = btn.GetResourceObservable("Font.SizeCaption").ToBinding();
-            btn.Classes.Add(isActive ? "accent" : "subtle");
-            var p = project; // capture
-            btn.Click += (_, _) => vm.SelectProjectFilterCommand.Execute(p);
-            _projectFilterBar.Children.Add(btn);
-
-            if (isActive)
-                Dispatcher.UIThread.Post(() => btn.BringIntoView(), DispatcherPriority.Loaded);
+            if (isActive && _isProjectSwitcherOpen)
+                Dispatcher.UIThread.Post(() => row.BringIntoView(), DispatcherPriority.Loaded);
         }
+
+        if (_projectFilterMoreText is not null)
+        {
+            var hiddenCount = Math.Max(0, totalMatches - candidates.Count);
+            _projectFilterMoreText.IsVisible = hiddenCount > 0;
+            _projectFilterMoreText.Text = hiddenCount > 0
+                ? string.Format(Loc.ProjectSwitcher_MoreResults, hiddenCount)
+                : "";
+        }
+    }
+
+    private void UpdateProjectSwitcherSummary(MainViewModel vm)
+    {
+        if (_projectSwitchTitleText is null || _projectSwitchSubtitleText is null || _projectSwitchCountText is null)
+            return;
+
+        var selectedProject = vm.SelectedProjectFilter.HasValue
+            ? vm.Projects.FirstOrDefault(project => project.Id == vm.SelectedProjectFilter.Value)
+            : null;
+
+        _projectSwitchCountText.Text = vm.Projects.Count.ToString(Loc.Culture);
+
+        if (selectedProject is null)
+        {
+            _projectSwitchTitleText.Text = Loc.ProjectSwitcher_AllProjects;
+            _projectSwitchSubtitleText.Text = string.Format(
+                Loc.ProjectSwitcher_AllSubtitle,
+                vm.Projects.Count,
+                vm.DataStore.Data.Chats.Count);
+            return;
+        }
+
+        var chatCount = vm.GetProjectChatCount(selectedProject.Id);
+        _projectSwitchTitleText.Text = selectedProject.Name;
+        _projectSwitchSubtitleText.Text = FormatProjectFilterSubtitle(
+            selectedProject,
+            chatCount,
+            vm.GetProjectLastActivity(selectedProject.Id));
+    }
+
+    private IEnumerable<ProjectFilterCandidate> GetProjectFilterCandidates(
+        MainViewModel vm,
+        string? query,
+        out int totalMatches)
+    {
+        var normalizedQuery = query?.Trim();
+        var hasQuery = !string.IsNullOrWhiteSpace(normalizedQuery);
+
+        var candidates = vm.Projects
+            .Select(project => new ProjectFilterCandidate(
+                project,
+                vm.GetProjectChatCount(project.Id),
+                vm.GetProjectLastActivity(project.Id)))
+            .Where(candidate => !hasQuery || ProjectMatchesQuery(candidate.Project, normalizedQuery!))
+            .ToList();
+
+        totalMatches = candidates.Count;
+        var take = hasQuery ? 30 : 8;
+
+        return candidates
+            .OrderByDescending(candidate => vm.SelectedProjectFilter == candidate.Project.Id)
+            .ThenByDescending(candidate => candidate.Project.IsRunning)
+            .ThenByDescending(candidate => hasQuery && candidate.Project.Name.StartsWith(normalizedQuery!, StringComparison.CurrentCultureIgnoreCase))
+            .ThenByDescending(candidate => candidate.LastActivity ?? candidate.Project.CreatedAt)
+            .ThenBy(candidate => candidate.Project.Name, StringComparer.CurrentCultureIgnoreCase)
+            .Take(take);
+    }
+
+    private static bool ProjectMatchesQuery(Project project, string query)
+    {
+        return project.Name.Contains(query, StringComparison.CurrentCultureIgnoreCase)
+            || (!string.IsNullOrWhiteSpace(project.WorkingDirectory)
+                && project.WorkingDirectory.Contains(query, StringComparison.CurrentCultureIgnoreCase))
+            || (!string.IsNullOrWhiteSpace(project.Instructions)
+                && project.Instructions.Contains(query, StringComparison.CurrentCultureIgnoreCase));
+    }
+
+    private Button CreateProjectFilterRow(
+        MainViewModel vm,
+        Project? project,
+        string title,
+        string subtitle,
+        bool isSelected,
+        bool isRunning,
+        string countText)
+    {
+        var button = new Button
+        {
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+            Content = CreateProjectFilterRowContent(project is null, title, subtitle, isSelected, isRunning, countText),
+        };
+        ToolTip.SetTip(button, subtitle);
+        button.Classes.Add("project-switcher-row");
+        if (isSelected)
+            button.Classes.Add("selected");
+
+        button.Click += (_, _) =>
+        {
+            ArmProjectChatListReveal();
+            if (project is null)
+                vm.ClearProjectFilterCommand.Execute(null);
+            else
+                vm.SelectProjectFilterCommand.Execute(project);
+
+            SetProjectSwitcherOpen(false);
+        };
+
+        return button;
+    }
+
+    private Control CreateProjectFilterRowContent(
+        bool isAllProjects,
+        string title,
+        string subtitle,
+        bool isSelected,
+        bool isRunning,
+        string countText)
+    {
+        var dock = new DockPanel
+        {
+            LastChildFill = true,
+            Margin = new Thickness(7, 4),
+        };
+
+        if (!string.IsNullOrWhiteSpace(countText))
+        {
+            var statePill = CreateProjectStatePill(countText);
+            DockPanel.SetDock(statePill, Dock.Right);
+            dock.Children.Add(statePill);
+        }
+
+        if (isSelected)
+        {
+            var rail = CreateProjectSelectedRail();
+            DockPanel.SetDock(rail, Dock.Left);
+            dock.Children.Add(rail);
+        }
+
+        var glyph = CreateProjectGlyph(isAllProjects, isSelected, isRunning);
+        DockPanel.SetDock(glyph, Dock.Left);
+        dock.Children.Add(glyph);
+
+        var titleBlock = new TextBlock
+        {
+            Text = title,
+            FontSize = 11.5,
+            FontWeight = FontWeight.SemiBold,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+        };
+        titleBlock.Foreground = GetThemeBrush(isSelected ? "Brush.TextPrimary" : "Brush.TextSecondary", Brushes.Gray);
+
+        dock.Children.Add(titleBlock);
+
+        return dock;
+    }
+
+    private Border CreateProjectSelectedRail()
+    {
+        return new Border
+        {
+            Width = 3,
+            Height = 16,
+            CornerRadius = new CornerRadius(2),
+            Margin = new Thickness(0, 0, 6, 0),
+            Background = GetThemeBrush("Brush.AccentDefault", Brushes.DodgerBlue),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+        };
+    }
+
+    private Border CreateProjectGlyph(bool isAllProjects, bool isSelected, bool isRunning)
+    {
+        var icon = new PathIcon
+        {
+            Data = GetIconGeometry(isAllProjects ? "Icon.Browse" : "Icon.Folder"),
+            Width = 12,
+            Height = 12,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Foreground = GetThemeBrush(isSelected ? "Brush.AccentDefault" : "Brush.TextTertiary", Brushes.Gray),
+        };
+
+        var grid = new Grid();
+        grid.Children.Add(icon);
+
+        if (isRunning)
+        {
+            grid.Children.Add(new Border
+            {
+                Width = 7,
+                Height = 7,
+                CornerRadius = new CornerRadius(4),
+                Background = GetThemeBrush("Brush.AccentDefault", Brushes.DodgerBlue),
+                BorderBrush = GetThemeBrush("Brush.Surface1", Brushes.Black),
+                BorderThickness = new Thickness(1),
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+                Margin = new Thickness(0, -1, -1, 0),
+            });
+        }
+
+        return new Border
+        {
+            Width = 26,
+            Height = 22,
+            CornerRadius = new CornerRadius(8),
+            Margin = new Thickness(0, 0, 6, 0),
+            Background = GetThemeBrush(
+                isRunning ? "Brush.ControlDefault" : "Brush.Transparent",
+                Brushes.Transparent),
+            BorderBrush = GetThemeBrush(
+                isRunning ? "Brush.BorderSubtle" : "Brush.Transparent",
+                Brushes.Transparent),
+            BorderThickness = new Thickness(1),
+            Child = grid,
+        };
+    }
+
+    private Border CreateProjectStatePill(string countText)
+    {
+        var label = new TextBlock
+        {
+            Text = countText,
+            FontSize = 9.8,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = GetThemeBrush("Brush.TextTertiary", Brushes.Gray),
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+        };
+
+        return new Border
+        {
+            MinWidth = 20,
+            Padding = new Thickness(5, 1),
+            CornerRadius = new CornerRadius(999),
+            Background = GetThemeBrush("Brush.ControlDefault", Brushes.Transparent),
+            BorderBrush = GetThemeBrush("Brush.BorderSubtle", Brushes.Transparent),
+            BorderThickness = new Thickness(1),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Margin = new Thickness(7, 0, 0, 0),
+            Child = label,
+        };
+    }
+
+    private Geometry? GetIconGeometry(string resourceKey)
+    {
+        return this.TryFindResource(resourceKey, ActualThemeVariant, out var resource) && resource is Geometry geometry
+            ? geometry
+            : null;
+    }
+
+    private IBrush GetThemeBrush(string resourceKey, IBrush fallback)
+    {
+        return this.TryFindResource(resourceKey, ActualThemeVariant, out var resource) && resource is IBrush brush
+            ? brush
+            : fallback;
+    }
+
+    private string FormatProjectFilterSubtitle(Project project, int chatCount, DateTimeOffset? lastActivity)
+    {
+        var countText = chatCount switch
+        {
+            0 => Loc.ProjectSwitcher_NoChats,
+            1 => string.Format(Loc.Project_ChatCount, chatCount),
+            _ => string.Format(Loc.Project_ChatCounts, chatCount),
+        };
+
+        if (lastActivity.HasValue)
+            return string.Format(Loc.ProjectSwitcher_UpdatedSubtitle, countText, lastActivity.Value.ToString("MMM d", Loc.Culture));
+
+        if (!string.IsNullOrWhiteSpace(project.WorkingDirectory))
+            return string.Format(Loc.ProjectSwitcher_WorkspaceSubtitle, countText, Path.GetFileName(project.WorkingDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)));
+
+        return countText;
     }
 
     /// <summary>Sets the ProjectLabel TextBlock on each chat ListBoxItem to show the project name.</summary>

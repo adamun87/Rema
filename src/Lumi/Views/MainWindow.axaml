@@ -19,7 +19,6 @@
   <Window.Resources>
     <Thickness x:Key="MainLayout.IslandOuterMargin">0,38,6,6</Thickness>
     <x:Double x:Key="MainLayout.SplitIslandMinWidth">220</x:Double>
-
     <!-- ── SVG Icon Paths ── -->
     <StreamGeometry x:Key="Icon.Chat">M4 4h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H7l-4 3V6a2 2 0 0 1 2-2z</StreamGeometry>
     <StreamGeometry x:Key="Icon.Folder">M2 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6z</StreamGeometry>
@@ -174,6 +173,112 @@
       <Setter Property="Focusable" Value="False" />
     </Style>
 
+    <Style Selector="Button.project-switcher-toggle">
+      <Setter Property="Background" Value="{DynamicResource Brush.Surface2}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderSubtle}" />
+      <Setter Property="Padding" Value="7,4" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="Height" Value="34" />
+      <Setter Property="CornerRadius" Value="{DynamicResource Radius.Interactive}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="Button.project-switcher-toggle:pointerover /template/ Border#PART_Surface">
+      <Setter Property="Background" Value="{DynamicResource Brush.ControlHover}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderDefault}" />
+      <Setter Property="BoxShadow" Value="0 4 14 0 #0F000000" />
+    </Style>
+    <Style Selector="Button.project-switcher-toggle:pointerover /template/ Border#PART_Aurora">
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="RenderTransform" Value="translateX(0)" />
+    </Style>
+    <Style Selector="Button.project-switcher-toggle.open /template/ Border#PART_Surface">
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderSubtle}" />
+      <Setter Property="Background" Value="{DynamicResource Brush.Surface0}" />
+      <Setter Property="BoxShadow" Value="0 0 0 0 #00000000" />
+    </Style>
+    <Style Selector="Button.project-switcher-toggle.open /template/ Border#PART_Aurora">
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="RenderTransform" Value="translateX(0)" />
+    </Style>
+    <Style Selector="Border.project-switcher-count-pill">
+      <Setter Property="MinWidth" Value="18" />
+      <Setter Property="Height" Value="18" />
+      <Setter Property="Padding" Value="5,0" />
+      <Setter Property="CornerRadius" Value="9" />
+      <Setter Property="Background" Value="{DynamicResource Brush.ControlDefault}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderSubtle}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="Button.project-switcher-toggle:pointerover Border.project-switcher-count-pill">
+      <Setter Property="Background" Value="{DynamicResource Brush.Surface1}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderDefault}" />
+    </Style>
+
+    <Style Selector="Border.project-switcher-panel">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderSubtle}" />
+      <Setter Property="Background" Value="{DynamicResource Brush.Background}" />
+      <Setter Property="BoxShadow" Value="0 0 0 0 #00000000" />
+    </Style>
+
+    <Style Selector="Border.project-switcher-search">
+      <Setter Property="CornerRadius" Value="9" />
+      <Setter Property="Padding" Value="8,5" />
+      <Setter Property="Background" Value="{DynamicResource Brush.ControlDefault}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderSubtle}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="Border.project-switcher-search:focus-within">
+      <Setter Property="Background" Value="{DynamicResource Brush.Surface1}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderDefault}" />
+    </Style>
+
+    <Style Selector="TextBox.project-switcher-search-box">
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="FontSize" Value="{DynamicResource Font.SizeCaption}" />
+    </Style>
+
+    <Style Selector="TextBox.project-switcher-search-box /template/ Border">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="TextBox.project-switcher-search-box:focus-within /template/ Border#PART_Border">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="BoxShadow" Value="0 0 0 0 Transparent" />
+    </Style>
+    <Style Selector="TextBox.project-switcher-search-box:focus-within /template/ Border#FocusAccentBar">
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+
+    <Style Selector="Button.project-switcher-row">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="CornerRadius" Value="9" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="Button.project-switcher-row:pointerover /template/ Border#PART_Surface">
+      <Setter Property="Background" Value="{DynamicResource Brush.SubtleHover}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderSubtle}" />
+      <Setter Property="BoxShadow" Value="0 0 0 0 #00000000" />
+    </Style>
+    <Style Selector="Button.project-switcher-row.selected /template/ Border#PART_Surface">
+      <Setter Property="Background" Value="{DynamicResource Brush.ControlDefault}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderSubtle}" />
+      <Setter Property="BoxShadow" Value="0 0 0 0 #00000000" />
+    </Style>
     <Style Selector="Border#PillBusyDot">
       <Style.Animations>
         <Animation Duration="0:0:1.2" IterationCount="INFINITE" PlaybackDirection="Alternate">
@@ -354,15 +459,84 @@
                   </StackPanel>
                 </Button>
               </Border>
-              <!-- ── Project filter pills ── -->
-              <Border DockPanel.Dock="Top" Margin="10,8,10,0"
+              <!-- ── Project lens: compact selector that scales to many projects ── -->
+              <Border x:Name="ProjectSwitcherRoot"
+                      DockPanel.Dock="Top"
+                      Margin="14,6,14,0"
                       IsVisible="{Binding Projects.Count}">
-                <ScrollViewer x:Name="ProjectFilterScroller"
-                              HorizontalScrollBarVisibility="Auto"
-                              VerticalScrollBarVisibility="Disabled"
-                              Classes="scroll-fade">
-                  <StackPanel x:Name="ProjectFilterBar" Orientation="Horizontal" Spacing="4" />
-                </ScrollViewer>
+                <StackPanel>
+                  <Button x:Name="ProjectSwitchButton"
+                          Classes="project-switcher-toggle"
+                          ToolTip.Tip="{loc:Str ProjectSwitcher_OpenTooltip}">
+                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="7">
+                      <PathIcon Grid.Column="0"
+                                Data="{StaticResource Icon.Folder}"
+                                Width="13" Height="13"
+                                Foreground="{DynamicResource Brush.AccentDefault}"
+                                VerticalAlignment="Center" />
+                      <TextBlock x:Name="ProjectSwitchTitleText"
+                                 Grid.Column="1"
+                                 FontSize="12"
+                                 FontWeight="Medium"
+                                 Foreground="{DynamicResource Brush.TextSecondary}"
+                                 VerticalAlignment="Center"
+                                 TextTrimming="CharacterEllipsis" />
+                      <Border Grid.Column="2"
+                              Classes="project-switcher-count-pill"
+                              VerticalAlignment="Center">
+                        <TextBlock x:Name="ProjectSwitchCountText"
+                                   FontSize="9.8"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource Brush.TextTertiary}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" />
+                      </Border>
+                      <TextBlock x:Name="ProjectSwitchSubtitleText"
+                                 IsVisible="False" />
+                    </Grid>
+                  </Button>
+
+                  <Border x:Name="ProjectSwitchRevealHost"
+                          Height="0"
+                          Opacity="0"
+                          IsVisible="False"
+                          ClipToBounds="True"
+                          Margin="0,4,0,0">
+                    <Border x:Name="ProjectSwitchPanel"
+                            Classes="project-switcher-panel"
+                            ClipToBounds="True">
+                      <StackPanel Spacing="5" Margin="6">
+                        <Border Classes="project-switcher-search">
+                          <DockPanel>
+                            <PathIcon DockPanel.Dock="Left"
+                                      Data="{StaticResource Icon.Search}"
+                                      Width="12" Height="12"
+                                      Foreground="{DynamicResource Brush.TextTertiary}"
+                                      VerticalAlignment="Center"
+                                      Margin="0,0,7,0" />
+                            <TextBox x:Name="ProjectFilterSearchBox"
+                                     Classes="project-switcher-search-box"
+                                     PlaceholderText="{loc:Str ProjectSwitcher_SearchPlaceholder}" />
+                          </DockPanel>
+                        </Border>
+
+                        <ScrollViewer MaxHeight="208"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled"
+                                      Classes="hover-scroll">
+                          <StackPanel x:Name="ProjectFilterResults" Spacing="2" />
+                        </ScrollViewer>
+
+                        <TextBlock x:Name="ProjectFilterMoreText"
+                                   FontSize="10.5"
+                                   Foreground="{DynamicResource Brush.TextTertiary}"
+                                   HorizontalAlignment="Center"
+                                   Margin="4,0,4,1"
+                                   IsVisible="False" />
+                      </StackPanel>
+                    </Border>
+                  </Border>
+                </StackPanel>
               </Border>
               <ScrollViewer x:Name="ChatListScroller" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                             Classes="hover-scroll" Margin="0,8,0,0">
@@ -463,17 +637,33 @@
           <!-- ── 1: Projects sidebar ── -->
           <Panel x:Name="SidebarProjects" IsVisible="False" DataContext="{Binding ProjectsVM}" x:DataType="vm:ProjectsViewModel">
             <DockPanel>
-              <DockPanel DockPanel.Dock="Top" Margin="16,8,16,0">
-                <Button DockPanel.Dock="Right" Classes="subtle" Padding="7,5" MinHeight="0"
-                        CornerRadius="{DynamicResource Radius.Base}"
-                        Command="{Binding NewProjectCommand}" ToolTip.Tip="{loc:Str Sidebar_NewProjectTooltip}">
+               <DockPanel DockPanel.Dock="Top" Margin="16,8,16,0">
+                 <Button DockPanel.Dock="Right" Classes="subtle" Padding="7,5" MinHeight="0"
+                         CornerRadius="{DynamicResource Radius.Base}"
+                         Command="{Binding NewProjectCommand}" ToolTip.Tip="{loc:Str Sidebar_NewProjectTooltip}">
                   <PathIcon Data="{StaticResource Icon.Plus}" Width="14" Height="14"
                             Foreground="{DynamicResource Brush.TextSecondary}" />
                 </Button>
-                <TextBlock Text="{loc:Str Sidebar_Projects}" FontSize="{DynamicResource Font.SizeBody}" FontWeight="SemiBold"
-                           Foreground="{DynamicResource Brush.TextSecondary}"
-                           VerticalAlignment="Center" Margin="6,0,0,0" />
-              </DockPanel>
+                 <TextBlock Text="{loc:Str Sidebar_Projects}" FontSize="{DynamicResource Font.SizeBody}" FontWeight="SemiBold"
+                            Foreground="{DynamicResource Brush.TextSecondary}"
+                            VerticalAlignment="Center" Margin="6,0,0,0" />
+               </DockPanel>
+              <Border DockPanel.Dock="Top"
+                      Classes="project-switcher-search"
+                      Margin="16,8,16,0">
+                <DockPanel>
+                  <PathIcon DockPanel.Dock="Left"
+                            Data="{StaticResource Icon.Search}"
+                            Width="12" Height="12"
+                            Foreground="{DynamicResource Brush.TextTertiary}"
+                            VerticalAlignment="Center"
+                            Margin="0,0,7,0" />
+                  <TextBox x:Name="ProjectsSidebarSearchBox"
+                           Classes="project-switcher-search-box"
+                           Text="{Binding SearchQuery, Mode=TwoWay}"
+                           PlaceholderText="{loc:Str Projects_SearchPlaceholder}" />
+                </DockPanel>
+              </Border>
               <ListBox x:Name="ProjectsListBox" Classes="sidebar-list" Margin="8,8,8,8"
                        ItemsSource="{Binding Projects}"
                        SelectedItem="{Binding SelectedProject, Mode=TwoWay}"

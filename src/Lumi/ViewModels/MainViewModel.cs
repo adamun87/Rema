@@ -782,6 +782,20 @@ public partial class MainViewModel : ObservableObject
         return _dataStore.Data.Projects.FirstOrDefault(p => p.Id == projectId.Value)?.Name;
     }
 
+    public int GetProjectChatCount(Guid projectId)
+    {
+        return _dataStore.Data.Chats.Count(chat => chat.ProjectId == projectId);
+    }
+
+    public DateTimeOffset? GetProjectLastActivity(Guid projectId)
+    {
+        return _dataStore.Data.Chats
+            .Where(chat => chat.ProjectId == projectId)
+            .OrderByDescending(chat => chat.UpdatedAt)
+            .Select(chat => (DateTimeOffset?)chat.UpdatedAt)
+            .FirstOrDefault();
+    }
+
     public void RefreshProjects()
     {
         LoadProjects();
