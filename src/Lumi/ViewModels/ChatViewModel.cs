@@ -161,6 +161,18 @@ public partial class ChatViewModel : ObservableObject
     [ObservableProperty] private string _statusText = "";
     [ObservableProperty] private string? _selectedModel;
 
+    partial void OnIsBusyChanging(bool value)
+    {
+        if (!value)
+            FinalizeTranscriptActivityBeforeIdle();
+    }
+
+    private void FinalizeTranscriptActivityBeforeIdle()
+    {
+        _transcriptBuilder.CloseCurrentToolGroup();
+        _transcriptBuilder.CollapseCompletedBlocksInCurrentTurn();
+    }
+
     [ObservableProperty] private LumiAgent? _activeAgent;
     [ObservableProperty] private long _totalInputTokens;
     [ObservableProperty] private long _totalOutputTokens;

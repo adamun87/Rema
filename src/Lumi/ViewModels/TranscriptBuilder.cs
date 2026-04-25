@@ -759,6 +759,10 @@ public class TranscriptBuilder
             msgVm.PropertyChanged += handler;
             _pendingToolHandlers.Add((msgVm, handler));
         }
+        else
+        {
+            CollapseCompletedTurnBlocks(turn, assistantItem);
+        }
     }
 
     public void FlushPendingFileEdits()
@@ -941,9 +945,14 @@ public class TranscriptBuilder
         {
             UpdateToolGroupLabel();
 
-            if (_currentToolGroupCount == 1 && !_currentToolGroup.IsActive
-                && _currentToolGroup.ToolCalls.Count == 1
-                && target is not null)
+            var canFlattenSingleTool = _currentToolGroupCount == 1 && !_currentToolGroup.IsActive
+                && _currentToolGroup.ToolCalls.Count == 1;
+
+            _currentToolGroup.IsActive = false;
+            _currentToolGroup.StreamingSummary = null;
+            _currentToolGroup.IsExpanded = false;
+
+            if (canFlattenSingleTool && target is not null)
             {
                 var idx = target.IndexOf(_currentToolGroup);
                 if (idx >= 0)
@@ -969,6 +978,12 @@ public class TranscriptBuilder
             return;
 
         var assistantItems = _currentTurn.Items.OfType<AssistantMessageItem>().ToList();
+        if (assistantItems.Count == 0)
+        {
+            CollapseActivityOnlyBlocks(_currentTurn);
+            return;
+        }
+
         for (var i = assistantItems.Count - 1; i >= 0; i--)
             CollapseCompletedTurnBlocks(_currentTurn, assistantItems[i]);
     }
@@ -1043,7 +1058,7 @@ public class TranscriptBuilder
             if (IsRebuildingTranscript)
                 group.IsExpanded = false;
 
-            if (toolCount == 1 && group.ToolCalls.Count == 1 && !IsRebuildingTranscript)
+            if (!isCurrent && toolCount == 1 && group.ToolCalls.Count == 1 && !IsRebuildingTranscript)
             {
                 var turn = FindTurnContaining(group);
                 if (turn is not null)
@@ -1173,6 +1188,45 @@ public class TranscriptBuilder
         CollapseTranscriptBlocks(turn, CollectAdjacentSummaryBlocks(items, idx + 1, 1), assistantItem, "after");
     }
 
+    private void CollapseActivityOnlyBlocks(TranscriptTurn turn)
+    {
+        var runs = new List<(int StartIndex, List<TranscriptItem> Blocks)>();
+        var currentRun = new List<TranscriptItem>();
+        var currentRunStart = -1;
+        var items = turn.Items;
+
+        for (var i = 0; i < items.Count; i++)
+        {
+            if (IsActivityOnlySummaryEligibleBlock(items[i]))
+            {
+                if (currentRun.Count == 0)
+                    currentRunStart = i;
+
+                currentRun.Add(items[i]);
+                continue;
+            }
+
+            AddActivityRunIfCollapsible();
+        }
+
+        AddActivityRunIfCollapsible();
+
+        for (var i = runs.Count - 1; i >= 0; i--)
+        {
+            var (startIndex, blocks) = runs[i];
+            CollapseTranscriptBlocks(turn, blocks, $"turn-summary:{turn.StableId}:activity:{startIndex}");
+        }
+
+        void AddActivityRunIfCollapsible()
+        {
+            if (currentRun.Count >= 2)
+                runs.Add((currentRunStart, currentRun.ToList()));
+
+            currentRun.Clear();
+            currentRunStart = -1;
+        }
+    }
+
     private static List<TranscriptItem> CollectAdjacentSummaryBlocks(IList<TranscriptItem> items, int startIndex, int step)
     {
         var blocks = new List<TranscriptItem>();
@@ -1192,6 +1246,9 @@ public class TranscriptBuilder
 
     private static bool IsSummaryEligibleBlock(TranscriptItem item)
         => item is ToolGroupItem or ReasoningItem or SingleToolItem or SubagentToolCallItem or TurnSummaryItem;
+
+    private static bool IsActivityOnlySummaryEligibleBlock(TranscriptItem item)
+        => item is ToolGroupItem or ReasoningItem or SingleToolItem or TurnSummaryItem;
 
     private static IEnumerable<TranscriptItem> ExpandSummaryBlock(TranscriptItem block)
     {
@@ -1213,6 +1270,12 @@ public class TranscriptBuilder
         List<TranscriptItem> blocksToMerge,
         AssistantMessageItem assistantItem,
         string position)
+        => CollapseTranscriptBlocks(turn, blocksToMerge, $"turn-summary:{assistantItem.StableId}:{position}");
+
+    private void CollapseTranscriptBlocks(
+        TranscriptTurn turn,
+        List<TranscriptItem> blocksToMerge,
+        string stableId)
     {
         if (blocksToMerge.Count < 2)
             return;
@@ -1299,6 +1362,8 @@ public class TranscriptBuilder
             label = totalToolCalls == 1 ? Loc.TurnSummary_ReasonedAndOneAction : string.Format(Loc.TurnSummary_ReasonedAndActions, totalToolCalls);
         else if (totalToolCalls > 0)
             label = totalToolCalls == 1 ? Loc.ToolGroup_FinishedOne : string.Format(Loc.ToolGroup_FinishedCount, totalToolCalls);
+        else if (hasReasoning)
+            label = Loc.TurnSummary_Reasoned;
         else
             label = Loc.TurnSummary_ReasonedAndOneAction;
 
@@ -1309,7 +1374,7 @@ public class TranscriptBuilder
         foreach (var block in blocksToMerge)
             items.Remove(block);
 
-        var summary = new TurnSummaryItem(label, $"turn-summary:{assistantItem.StableId}:{position}")
+        var summary = new TurnSummaryItem(label, stableId)
         {
             IsExpanded = hasTodoProgress && !IsRebuildingTranscript,
             HasFailures = failedCount > 0,
@@ -1329,6 +1394,12 @@ public class TranscriptBuilder
         foreach (var turn in turns)
         {
             var assistantItems = turn.Items.OfType<AssistantMessageItem>().ToList();
+            if (assistantItems.Count == 0)
+            {
+                CollapseActivityOnlyBlocks(turn);
+                continue;
+            }
+
             for (var i = assistantItems.Count - 1; i >= 0; i--)
                 CollapseCompletedTurnBlocks(turn, assistantItems[i]);
         }
@@ -1407,47 +1478,7 @@ public class TranscriptBuilder
         => AppendItemToCurrentTurn(item, turnStableId);
 
     private TranscriptTurn AppendAssistantMessageToCurrentTurn(AssistantMessageItem item, string turnStableId)
-    {
-        if (_currentTurn is null)
-            return AppendItemToCurrentTurn(item, turnStableId);
-
-        var insertIndex = GetAssistantInsertionIndexBeforeTrailingActivity(_currentTurn.Items);
-        if (insertIndex >= 0)
-        {
-            _currentTurn.Items.Insert(insertIndex, item);
-            return _currentTurn;
-        }
-
-        _currentTurn.Items.Add(item);
-        return _currentTurn;
-    }
-
-    private static int GetAssistantInsertionIndexBeforeTrailingActivity(IList<TranscriptItem> items)
-    {
-        var lastNonActivityIndex = items.Count - 1;
-        while (lastNonActivityIndex >= 0 && IsAssistantTailActivityBlock(items[lastNonActivityIndex]))
-            lastNonActivityIndex--;
-
-        if (lastNonActivityIndex < 0 || lastNonActivityIndex == items.Count - 1)
-            return -1;
-
-        for (var i = 0; i <= lastNonActivityIndex; i++)
-        {
-            if (items[i] is AssistantMessageItem)
-                return lastNonActivityIndex + 1;
-        }
-
-        return -1;
-    }
-
-    private static bool IsAssistantTailActivityBlock(TranscriptItem item)
-        => item is ToolGroupItem
-            or ReasoningItem
-            or SingleToolItem
-            or SubagentToolCallItem
-            or TurnSummaryItem
-            or FileChangesSummaryItem
-            or PlanCardItem;
+        => AppendItemToCurrentTurn(item, turnStableId);
 
     private TranscriptTurn AppendItemToCurrentTurn(TranscriptItem item, string turnStableId)
     {
