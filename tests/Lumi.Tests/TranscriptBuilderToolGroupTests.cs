@@ -88,6 +88,63 @@ public sealed class TranscriptBuilderToolGroupTests
         Assert.Equal(2, summary.InnerItems.Count);
     }
 
+    [Fact]
+    public void ProcessMessageToTranscript_StreamingAssistantEndKeepsTailActivityAfterLatestAssistant()
+    {
+        var builder = CreateBuilder();
+        var liveTurns = new ObservableCollection<TranscriptTurn>();
+        builder.SetLiveTarget(liveTurns);
+
+        builder.ProcessMessageToTranscript(CreateAssistantVm("I will inspect the file."));
+        builder.ProcessMessageToTranscript(CreateToolVm("tool-1", "view", "Completed", "{\"path\":\"E:\\\\repo\\\\README.md\"}"));
+        builder.ProcessMessageToTranscript(CreateReasoningVm("The first file is not enough context."));
+        var streamingAssistant = CreateAssistantVm("I need to check one more thing.", isStreaming: true);
+        builder.ProcessMessageToTranscript(streamingAssistant);
+
+        streamingAssistant.Message.IsStreaming = false;
+        streamingAssistant.NotifyStreamingEnded();
+
+        var turn = Assert.Single(liveTurns);
+        Assert.Equal(3, turn.Items.Count);
+        Assert.IsType<AssistantMessageItem>(turn.Items[0]);
+        Assert.IsType<AssistantMessageItem>(turn.Items[1]);
+
+        var summary = Assert.IsType<TurnSummaryItem>(turn.Items[2]);
+        Assert.Equal(2, summary.InnerItems.Count);
+        Assert.IsType<SingleToolItem>(summary.InnerItems[0]);
+        Assert.IsType<ReasoningItem>(summary.InnerItems[1]);
+    }
+
+    [Fact]
+    public void CollapseCompletedBlocksInCurrentTurn_MergesPriorTailSummaryWithLaterTools()
+    {
+        var builder = CreateBuilder();
+        var liveTurns = new ObservableCollection<TranscriptTurn>();
+        builder.SetLiveTarget(liveTurns);
+
+        builder.ProcessMessageToTranscript(CreateAssistantVm("I will inspect the file."));
+        builder.ProcessMessageToTranscript(CreateToolVm("tool-1", "view", "Completed", "{\"path\":\"E:\\\\repo\\\\README.md\"}"));
+        builder.ProcessMessageToTranscript(CreateReasoningVm("The first file is not enough context."));
+        builder.ProcessMessageToTranscript(CreateAssistantVm("I need to check one more thing."));
+        builder.CollapseCompletedBlocksInCurrentTurn();
+
+        builder.ProcessMessageToTranscript(CreateToolVm("tool-2", "powershell", "Completed", "{\"command\":\"dotnet test\"}"));
+        builder.ProcessMessageToTranscript(CreateAssistantVm("Now I have the final result."));
+        builder.CollapseCompletedBlocksInCurrentTurn();
+
+        var turn = Assert.Single(liveTurns);
+        Assert.Equal(4, turn.Items.Count);
+        Assert.IsType<AssistantMessageItem>(turn.Items[0]);
+        Assert.IsType<AssistantMessageItem>(turn.Items[1]);
+        Assert.IsType<AssistantMessageItem>(turn.Items[2]);
+
+        var summary = Assert.IsType<TurnSummaryItem>(turn.Items[3]);
+        Assert.Equal(3, summary.InnerItems.Count);
+        Assert.IsType<SingleToolItem>(summary.InnerItems[0]);
+        Assert.IsType<ReasoningItem>(summary.InnerItems[1]);
+        Assert.IsType<SingleToolItem>(summary.InnerItems[2]);
+    }
+
     private static TranscriptBuilder CreateBuilder()
         => new(CreateDataStore(), _ => { }, (_, _) => { }, (_, _) => Task.CompletedTask, () => null);
 
@@ -108,12 +165,13 @@ public sealed class TranscriptBuilderToolGroupTests
             Timestamp = DateTimeOffset.Now,
         });
 
-    private static ChatMessageViewModel CreateAssistantVm(string content)
+    private static ChatMessageViewModel CreateAssistantVm(string content, bool isStreaming = false)
         => new(new ChatMessage
         {
             Role = "assistant",
             Content = content,
             Author = "Lumi",
+            IsStreaming = isStreaming,
             Timestamp = DateTimeOffset.Now,
         });
 

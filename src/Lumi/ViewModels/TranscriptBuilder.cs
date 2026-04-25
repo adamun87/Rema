@@ -735,7 +735,7 @@ public class TranscriptBuilder
             PendingFetchedSkillRefs.Clear();
         }
 
-        var turn = AppendItemToCurrentTurn(assistantItem, TurnStableIdFor($"message:{msgVm.Message.Id}"));
+        var turn = AppendAssistantMessageToCurrentTurn(assistantItem, TurnStableIdFor($"message:{msgVm.Message.Id}"));
 
         if (msgVm.IsStreaming)
         {
@@ -1191,7 +1191,22 @@ public class TranscriptBuilder
     }
 
     private static bool IsSummaryEligibleBlock(TranscriptItem item)
-        => item is ToolGroupItem or ReasoningItem or SingleToolItem or SubagentToolCallItem;
+        => item is ToolGroupItem or ReasoningItem or SingleToolItem or SubagentToolCallItem or TurnSummaryItem;
+
+    private static IEnumerable<TranscriptItem> ExpandSummaryBlock(TranscriptItem block)
+    {
+        if (block is not TurnSummaryItem summary)
+        {
+            yield return block;
+            yield break;
+        }
+
+        foreach (var inner in summary.InnerItems)
+        {
+            foreach (var expanded in ExpandSummaryBlock(inner))
+                yield return expanded;
+        }
+    }
 
     private void CollapseTranscriptBlocks(
         TranscriptTurn turn,
@@ -1210,9 +1225,12 @@ public class TranscriptBuilder
         string? todoMeta = null;
         string? lastIntentLabel = null;
 
-        foreach (var block in blocksToMerge)
+        var flattenedBlocks = new List<TranscriptItem>();
+        foreach (var sourceBlock in blocksToMerge.SelectMany(ExpandSummaryBlock))
         {
-            if (block is ToolGroupItem toolGroup)
+            flattenedBlocks.Add(sourceBlock);
+
+            if (sourceBlock is ToolGroupItem toolGroup)
             {
                 if (!string.IsNullOrWhiteSpace(toolGroup.Label)
                     && !toolGroup.Label.StartsWith(Loc.ToolGroup_Working.TrimEnd('…', '.'), StringComparison.CurrentCulture)
@@ -1245,7 +1263,7 @@ public class TranscriptBuilder
                     }
                 }
             }
-            else if (block is SingleToolItem singleTool)
+            else if (sourceBlock is SingleToolItem singleTool)
             {
                 totalToolCalls++;
                 if (singleTool.Inner is ToolCallItem singleCall && singleCall.Status == StrataAiToolCallStatus.Failed)
@@ -1255,7 +1273,7 @@ public class TranscriptBuilder
                 else if (singleTool.Inner is TodoProgressItem singleTodo && singleTodo.Status == StrataAiToolCallStatus.Failed)
                     failedCount++;
             }
-            else if (block is SubagentToolCallItem subagentItem)
+            else if (sourceBlock is SubagentToolCallItem subagentItem)
             {
                 totalToolCalls++;
                 if (subagentItem.Status == StrataAiToolCallStatus.Failed) failedCount++;
@@ -1296,7 +1314,7 @@ public class TranscriptBuilder
             IsExpanded = hasTodoProgress && !IsRebuildingTranscript,
             HasFailures = failedCount > 0,
         };
-        foreach (var block in blocksToMerge)
+        foreach (var block in flattenedBlocks)
             summary.InnerItems.Add(block);
 
         items.Insert(firstIdx, summary);
@@ -1387,6 +1405,49 @@ public class TranscriptBuilder
 
     private void AppendToCurrentTurn(TranscriptItem item, string turnStableId)
         => AppendItemToCurrentTurn(item, turnStableId);
+
+    private TranscriptTurn AppendAssistantMessageToCurrentTurn(AssistantMessageItem item, string turnStableId)
+    {
+        if (_currentTurn is null)
+            return AppendItemToCurrentTurn(item, turnStableId);
+
+        var insertIndex = GetAssistantInsertionIndexBeforeTrailingActivity(_currentTurn.Items);
+        if (insertIndex >= 0)
+        {
+            _currentTurn.Items.Insert(insertIndex, item);
+            return _currentTurn;
+        }
+
+        _currentTurn.Items.Add(item);
+        return _currentTurn;
+    }
+
+    private static int GetAssistantInsertionIndexBeforeTrailingActivity(IList<TranscriptItem> items)
+    {
+        var lastNonActivityIndex = items.Count - 1;
+        while (lastNonActivityIndex >= 0 && IsAssistantTailActivityBlock(items[lastNonActivityIndex]))
+            lastNonActivityIndex--;
+
+        if (lastNonActivityIndex < 0 || lastNonActivityIndex == items.Count - 1)
+            return -1;
+
+        for (var i = 0; i <= lastNonActivityIndex; i++)
+        {
+            if (items[i] is AssistantMessageItem)
+                return lastNonActivityIndex + 1;
+        }
+
+        return -1;
+    }
+
+    private static bool IsAssistantTailActivityBlock(TranscriptItem item)
+        => item is ToolGroupItem
+            or ReasoningItem
+            or SingleToolItem
+            or SubagentToolCallItem
+            or TurnSummaryItem
+            or FileChangesSummaryItem
+            or PlanCardItem;
 
     private TranscriptTurn AppendItemToCurrentTurn(TranscriptItem item, string turnStableId)
     {
