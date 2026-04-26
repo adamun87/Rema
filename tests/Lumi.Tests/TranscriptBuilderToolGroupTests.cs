@@ -1,7 +1,9 @@
 using System;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Reflection;
 using System.Runtime.Serialization;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Lumi.Models;
 using Lumi.Services;
@@ -301,8 +303,63 @@ public sealed class TranscriptBuilderToolGroupTests
         AssertCompactFinishedToolGroup(turn.Items[5], expectedToolCalls: 2);
     }
 
-    private static TranscriptBuilder CreateBuilder()
-        => new(CreateDataStore(), _ => { }, (_, _) => { }, (_, _) => Task.CompletedTask, () => null);
+    [Fact]
+    public void ProcessMessageToTranscript_FileEditToolTracksChangesWhenToolCallsHidden()
+    {
+        var builder = CreateBuilder(showToolCalls: false);
+        var liveTurns = new ObservableCollection<TranscriptTurn>();
+        builder.SetLiveTarget(liveTurns);
+
+        builder.ProcessMessageToTranscript(CreateToolVm(
+            "tool-1",
+            "edit",
+            "Completed",
+            "{\"filePath\":\"E:\\\\repo\\\\Widget.cs\",\"oldString\":\"old\",\"newString\":\"new\"}"));
+        builder.FlushPendingFileEdits();
+
+        var turn = Assert.Single(liveTurns);
+        var summary = Assert.IsType<FileChangesSummaryItem>(Assert.Single(turn.Items));
+        var change = Assert.Single(summary.FileChanges);
+        Assert.Equal("Widget.cs", change.FileName);
+        Assert.Equal(1, change.LinesAdded);
+        Assert.Equal(1, change.LinesRemoved);
+    }
+
+    [Fact]
+    public void ProcessMessageToTranscript_WorkspaceFileChangedToolFlushesCreatedFileSummary()
+    {
+        var filePath = Path.Combine(Path.GetTempPath(), $"lumi-transcript-{Guid.NewGuid():N}.txt");
+        File.WriteAllText(filePath, "one" + Environment.NewLine + "two");
+
+        try
+        {
+            var builder = CreateBuilder();
+            var liveTurns = new ObservableCollection<TranscriptTurn>();
+            builder.SetLiveTarget(liveTurns);
+
+            builder.ProcessMessageToTranscript(CreateToolVm(
+                "workspace-file-1",
+                ToolDisplayHelper.WorkspaceFileChangedToolName,
+                "Completed",
+                CreateWorkspaceFileChangedJson(filePath, "Create")));
+            builder.FlushPendingFileEdits();
+
+            var turn = Assert.Single(liveTurns);
+            var summary = Assert.IsType<FileChangesSummaryItem>(Assert.Single(turn.Items));
+            var change = Assert.Single(summary.FileChanges);
+            Assert.Equal(filePath, change.FilePath);
+            Assert.True(change.IsCreate);
+            Assert.True(change.HasSnapshots);
+            Assert.Equal(2, change.LinesAdded);
+        }
+        finally
+        {
+            File.Delete(filePath);
+        }
+    }
+
+    private static TranscriptBuilder CreateBuilder(bool showToolCalls = true)
+        => new(CreateDataStore(showToolCalls), _ => { }, (_, _) => { }, (_, _) => Task.CompletedTask, () => null);
 
     private static void AssertCompactFinishedToolGroup(TranscriptItem item, int expectedToolCalls)
     {
@@ -349,14 +406,19 @@ public sealed class TranscriptBuilderToolGroupTests
             Timestamp = DateTimeOffset.Now,
         });
 
-    private static DataStore CreateDataStore()
+    private static string CreateWorkspaceFileChangedJson(string filePath, string operation)
+        => $"{{\"filePath\":{JsonSerializer.Serialize(filePath)},\"operation\":\"{operation}\"}}";
+
+    private static DataStore CreateDataStore(bool showToolCalls = true)
     {
 #pragma warning disable SYSLIB0050
         var store = (DataStore)FormatterServices.GetUninitializedObject(typeof(DataStore));
 #pragma warning restore SYSLIB0050
+        var data = new AppData();
+        data.Settings.ShowToolCalls = showToolCalls;
         typeof(DataStore)
             .GetField("_data", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .SetValue(store, new AppData());
+            .SetValue(store, data);
         return store;
     }
 }

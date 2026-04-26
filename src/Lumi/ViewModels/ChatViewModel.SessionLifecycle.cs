@@ -1564,11 +1564,34 @@ public partial class ChatViewModel
                     break;
 
                 case SessionContextChangedEvent:
-                case SessionWorkspaceFileChangedEvent:
                 case PendingMessagesModifiedEvent:
                 case SessionHandoffEvent:
                 case SessionInfoEvent:
                     // Acknowledged but no UI action needed currently
+                    break;
+
+                case SessionWorkspaceFileChangedEvent workspaceFileChanged:
+                    var workspaceFilePath = ResolveWorkspaceFileChangedPath(chat, workspaceFileChanged.Data.Path);
+                    var workspaceFileChangePayload = BuildWorkspaceFileChangedPayloadJson(
+                        workspaceFilePath,
+                        workspaceFileChanged.Data.Operation);
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        var toolMsg = new ChatMessage
+                        {
+                            Role = "tool",
+                            ToolName = ToolDisplayHelper.WorkspaceFileChangedToolName,
+                            ToolStatus = "Completed",
+                            Content = workspaceFileChangePayload,
+                        };
+                        chat.Messages.Add(toolMsg);
+
+                        if (_activeSession == session && CurrentChat?.Id == chat.Id)
+                        {
+                            Messages.Add(new ChatMessageViewModel(toolMsg));
+                            ScrollToEndRequested?.Invoke();
+                        }
+                    });
                     break;
 
                 case SessionModeChangedEvent:
@@ -1664,6 +1687,46 @@ public partial class ChatViewModel
            || runtime.ActiveToolCount > 0
            || runtime.IsBusy
            || runtime.IsStreaming;
+
+    private string ResolveWorkspaceFileChangedPath(Chat chat, string path)
+    {
+        var trimmedPath = path.Trim();
+        if (Path.IsPathFullyQualified(trimmedPath))
+            return trimmedPath;
+
+        return Path.GetFullPath(Path.Combine(GetEffectiveWorkingDirectoryForChat(chat), trimmedPath));
+    }
+
+    private string GetEffectiveWorkingDirectoryForChat(Chat chat)
+    {
+        if (chat.WorktreePath is { Length: > 0 } worktreePath && Directory.Exists(worktreePath))
+            return worktreePath;
+
+        if (chat.ProjectId.HasValue)
+        {
+            var project = _dataStore.Data.Projects.FirstOrDefault(p => p.Id == chat.ProjectId.Value);
+            if (project is { WorkingDirectory: { Length: > 0 } workingDirectory } && Directory.Exists(workingDirectory))
+                return workingDirectory;
+        }
+
+        return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    }
+
+    private static string BuildWorkspaceFileChangedPayloadJson(
+        string filePath,
+        SessionWorkspaceFileChangedDataOperation operation)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("filePath", filePath);
+            writer.WriteString("operation", operation.ToString());
+            writer.WriteEndObject();
+        }
+
+        return System.Text.Encoding.UTF8.GetString(stream.ToArray());
+    }
 
     /// <summary>Cleans up session resources for a chat (e.g., on delete).</summary>
     public void CleanupSession(Guid chatId)

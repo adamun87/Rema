@@ -38,6 +38,7 @@ public class TranscriptBuilder
     public List<FileAttachmentItem> PendingToolFileChips { get; } = [];
     public List<(string FilePath, string ToolName, string? OldText, string? NewText)> PendingFileEdits { get; } = [];
     private readonly Dictionary<string, string?> _pendingFileOriginalContents = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, bool> _pendingWorkspaceFileChanges = new(StringComparer.OrdinalIgnoreCase);
     private IList<TranscriptTurn>? _rebuildTarget;
     public bool IsRebuildingTranscript { get; set; }
 
@@ -123,6 +124,7 @@ public class TranscriptBuilder
         PendingToolFileChips.Clear();
         PendingFileEdits.Clear();
         _pendingFileOriginalContents.Clear();
+        _pendingWorkspaceFileChanges.Clear();
         PendingFetchedSkillRefs.Clear();
         ShownFileChips.Clear();
         _shownSkillNames.Clear();
@@ -249,6 +251,17 @@ public class TranscriptBuilder
             return;
         }
 
+        if (toolName == ToolDisplayHelper.WorkspaceFileChangedToolName)
+        {
+            var filePath = ToolDisplayHelper.ExtractJsonField(msgVm.Content, "filePath")
+                ?? ToolDisplayHelper.ExtractJsonField(msgVm.Content, "path");
+            var operation = ToolDisplayHelper.ExtractJsonField(msgVm.Content, "operation");
+            TrackWorkspaceFileChange(
+                filePath,
+                string.Equals(operation, "Create", StringComparison.OrdinalIgnoreCase));
+            return;
+        }
+
         if (toolName == "report_intent")
         {
             var intentText = ToolDisplayHelper.ExtractJsonField(msgVm.Content, "intent");
@@ -338,6 +351,18 @@ public class TranscriptBuilder
             return;
         }
 
+        var diffs = ToolDisplayHelper.IsFileEditTool(toolName) && initialStatus != StrataAiToolCallStatus.Failed
+            ? ToolDisplayHelper.ExtractAllDiffs(toolName, msgVm.Content)
+            : [];
+        var captureLiveSnapshot = !IsRebuildingTranscript && initialStatus == StrataAiToolCallStatus.InProgress;
+        foreach (var diff in diffs)
+        {
+            RemovePendingWorkspaceFileChange(diff.FilePath);
+            PendingFileEdits.Add((diff.FilePath, toolName, diff.OldText, diff.NewText));
+            if (captureLiveSnapshot)
+                CapturePendingOriginalSnapshot(diff.FilePath, ToolDisplayHelper.IsFileCreateTool(toolName));
+        }
+
         if (!showToolCalls)
             return;
 
@@ -422,27 +447,15 @@ public class TranscriptBuilder
                 && initialStatus == StrataAiToolCallStatus.Completed,
         };
 
-        if (ToolDisplayHelper.IsFileEditTool(toolName) && initialStatus != StrataAiToolCallStatus.Failed)
+        if (diffs.Count > 0)
         {
-            var diffs = ToolDisplayHelper.ExtractAllDiffs(toolName, msgVm.Content);
-            var captureLiveSnapshot = !IsRebuildingTranscript && initialStatus == StrataAiToolCallStatus.InProgress;
-            foreach (var diff in diffs)
-            {
-                PendingFileEdits.Add((diff.FilePath, toolName, diff.OldText, diff.NewText));
-                if (captureLiveSnapshot)
-                    CapturePendingOriginalSnapshot(diff.FilePath, ToolDisplayHelper.IsFileCreateTool(toolName));
-            }
-
-            if (diffs.Count > 0)
-            {
-                toolCall.HasDiff = true;
-                toolCall.DiffFilePath = diffs[0].FilePath;
-                toolCall.DiffToolName = toolName;
-                toolCall.DiffEdits = diffs.Select(static diff => (diff.OldText, diff.NewText)).ToList();
-                toolCall.ShowFileChangeAction = _showDiffAction;
-                if (captureLiveSnapshot)
-                    toolCall.DiffOriginalContent = CapturePendingOriginalSnapshot(diffs[0].FilePath, ToolDisplayHelper.IsFileCreateTool(toolName));
-            }
+            toolCall.HasDiff = true;
+            toolCall.DiffFilePath = diffs[0].FilePath;
+            toolCall.DiffToolName = toolName;
+            toolCall.DiffEdits = diffs.Select(static diff => (diff.OldText, diff.NewText)).ToList();
+            toolCall.ShowFileChangeAction = _showDiffAction;
+            if (captureLiveSnapshot)
+                toolCall.DiffOriginalContent = CapturePendingOriginalSnapshot(diffs[0].FilePath, ToolDisplayHelper.IsFileCreateTool(toolName));
         }
 
         EnsureCurrentToolGroup(initialStatus, toolStableIdSeed, turnStableId);
@@ -767,7 +780,7 @@ public class TranscriptBuilder
 
     public void FlushPendingFileEdits()
     {
-        if (PendingFileEdits.Count == 0)
+        if (PendingFileEdits.Count == 0 && _pendingWorkspaceFileChanges.Count == 0)
             return;
 
         var fileChanges = GroupFileEdits();
@@ -777,6 +790,19 @@ public class TranscriptBuilder
         AppendToCurrentTurn(new FileChangesSummaryItem(fileChanges, stableId), TurnStableIdFor(stableId ?? "file-changes"));
         PendingFileEdits.Clear();
         _pendingFileOriginalContents.Clear();
+        _pendingWorkspaceFileChanges.Clear();
+    }
+
+    public void TrackWorkspaceFileChange(string? filePath, bool isCreate)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+            return;
+
+        var normalizedPath = filePath.Trim();
+        if (_pendingWorkspaceFileChanges.TryGetValue(normalizedPath, out var existingIsCreate))
+            _pendingWorkspaceFileChanges[normalizedPath] = existingIsCreate || isCreate;
+        else
+            _pendingWorkspaceFileChanges.Add(normalizedPath, isCreate);
     }
 
     public void SetPendingPlanCard(string statusText, Action openAction)
@@ -867,6 +893,22 @@ public class TranscriptBuilder
             item.AddEdit(oldText, newText);
         }
 
+        foreach (var (filePath, isCreate) in _pendingWorkspaceFileChanges)
+        {
+            if (grouped.ContainsKey(filePath))
+                continue;
+
+            var item = new FileChangeItem(filePath, isCreate, _showDiffAction);
+            if (isCreate)
+            {
+                var currentContent = ReadFileContentOrEmpty(filePath);
+                item.AddEdit(null, currentContent);
+                item.SetSnapshots(string.Empty, currentContent);
+            }
+
+            grouped[filePath] = item;
+        }
+
         foreach (var item in grouped.Values)
         {
             item.EnsureStatsForCreatedFile();
@@ -892,6 +934,11 @@ public class TranscriptBuilder
         PendingFileEdits.RemoveAll(fe => string.Equals(fe.FilePath, filePath, StringComparison.OrdinalIgnoreCase));
         if (!PendingFileEdits.Any(fe => string.Equals(fe.FilePath, filePath, StringComparison.OrdinalIgnoreCase)))
             _pendingFileOriginalContents.Remove(filePath);
+    }
+
+    private void RemovePendingWorkspaceFileChange(string filePath)
+    {
+        _pendingWorkspaceFileChanges.Remove(filePath);
     }
 
     private static string? ReadFileContentOrEmpty(string filePath, bool treatMissingAsEmpty = true)

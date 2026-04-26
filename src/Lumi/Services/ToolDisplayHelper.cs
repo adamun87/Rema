@@ -15,6 +15,8 @@ namespace Lumi.Services;
 /// </summary>
 public static partial class ToolDisplayHelper
 {
+    public const string WorkspaceFileChangedToolName = "workspace_file_changed";
+
     public static string GetToolGlyph(string toolName) => toolName switch
     {
         "powershell" or "run_in_terminal" or "bash" or "shell" => "⌨",
