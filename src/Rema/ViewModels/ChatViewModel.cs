@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Text;
+using System.Text.Json;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -20,6 +21,7 @@ public sealed partial class ChatViewModel : ObservableObject
     private CopilotSession? _activeSession;
     private CancellationTokenSource? _sendCts;
     private TypingIndicatorItem? _typingIndicator;
+    private string? _lastUserPrompt;
 
     // ── Observable Properties ──
 
@@ -31,7 +33,15 @@ public sealed partial class ChatViewModel : ObservableObject
     [ObservableProperty] private bool _isStreaming;
     [ObservableProperty] private string _promptText = "";
     [ObservableProperty] private string _statusText = "";
-    [ObservableProperty] private string? _selectedModel;
+
+    // Suggestion chips shown on the welcome panel
+    public ObservableCollection<string> SuggestionChips { get; } =
+    [
+        "What's the status of all active deployments?",
+        "Show recent pipeline runs for my services",
+        "Which deployments need approval right now?",
+        "Start a new shift and brief me",
+    ];
 
     // ── Events ──
 
@@ -45,6 +55,15 @@ public sealed partial class ChatViewModel : ObservableObject
         _copilotService = copilotService;
     }
 
+    // ── Suggestion Chips ──
+
+    [RelayCommand]
+    private Task SelectSuggestion(string chip)
+    {
+        PromptText = chip;
+        return SendMessageAsync();
+    }
+
     // ── Send Message ──
 
     [RelayCommand]
@@ -52,8 +71,9 @@ public sealed partial class ChatViewModel : ObservableObject
     {
         var prompt = PromptText?.Trim();
         if (string.IsNullOrEmpty(prompt)) return;
-        if (!_copilotService.IsConnected) return;
+        // Note: no IsConnected check here — EnsureSessionAsync handles connection/reconnect
 
+        _lastUserPrompt = prompt;
         PromptText = "";
         IsBusy = true;
         StatusText = "Thinking…";
@@ -158,21 +178,28 @@ public sealed partial class ChatViewModel : ObservableObject
             var client = _copilotService.Client;
             if (client is null) return;
 
-            // Build system prompt
+            // Build system prompt with active shift context
+            var activeShift = _dataStore.Data.Shifts.FirstOrDefault(s => s.IsActive);
+            var trackedItems = activeShift is not null
+                ? _dataStore.Data.TrackedItems.Where(t => t.ShiftId == activeShift.Id).ToList()
+                : [];
             var systemPrompt = SystemPromptBuilder.Build(
                 _dataStore.Data.Settings,
                 _dataStore.Data.ServiceProjects,
-                [], // tracked items
+                trackedItems,
                 _dataStore.Data.Memories);
 
             var model = _dataStore.Data.Settings.PreferredModel ?? "claude-sonnet-4";
             var reasoningEffort = _dataStore.Data.Settings.ReasoningEffort;
 
+            // Collect MCP servers from all enabled service projects
+            var mcpServers = BuildMcpServers();
+
             if (chat.CopilotSessionId is not null)
             {
                 // Resume existing session
                 var resumeConfig = SessionConfigBuilder.BuildForResume(
-                    systemPrompt, model, reasoningEffort, null, null, null, null);
+                    systemPrompt, model, reasoningEffort, null, mcpServers, null, null);
                 var session = await client.ResumeSessionAsync(
                     chat.CopilotSessionId, resumeConfig, ct);
                 _activeSession = session;
@@ -181,7 +208,7 @@ public sealed partial class ChatViewModel : ObservableObject
             {
                 // New session
                 var config = SessionConfigBuilder.Build(
-                    systemPrompt, model, reasoningEffort, null, null, null, null);
+                    systemPrompt, model, reasoningEffort, null, mcpServers, null, null);
                 var session = await client.CreateSessionAsync(config, ct);
                 chat.CopilotSessionId = session.SessionId;
                 _activeSession = session;
@@ -213,6 +240,7 @@ public sealed partial class ChatViewModel : ObservableObject
                     {
                         IsStreaming = true;
                         StatusText = "Generating…";
+                        if (_typingIndicator is not null) _typingIndicator.Label = "Generating…";
                         RemoveTypingIndicator();
                     });
                     break;
@@ -294,6 +322,7 @@ public sealed partial class ChatViewModel : ObservableObject
                             assistantVm.Content = assistantContent.ToString();
                         }
                         StatusText = "Writing…";
+                        if (_typingIndicator is not null) _typingIndicator.Label = "Writing…";
                         ScrollToEndRequested?.Invoke();
                     });
                     break;
@@ -420,6 +449,49 @@ public sealed partial class ChatViewModel : ObservableObject
         TranscriptRebuilt?.Invoke();
     }
 
+    // ── Retry ──
+
+    [RelayCommand]
+    private async Task RetryLastMessage()
+    {
+        if (string.IsNullOrEmpty(_lastUserPrompt)) return;
+        PromptText = _lastUserPrompt;
+        await SendMessageAsync();
+    }
+
+    // ── MCP Servers ──
+
+    private Dictionary<string, object>? BuildMcpServers()
+    {
+        var servers = new Dictionary<string, object>();
+        foreach (var project in _dataStore.Data.ServiceProjects)
+        {
+            if (project.McpServer is not { IsEnabled: true } mcp) continue;
+            if (string.IsNullOrWhiteSpace(mcp.Name)) continue;
+
+            if (mcp.ServerType == "local" || mcp.ServerType == "stdio")
+            {
+                servers[mcp.Name] = new
+                {
+                    type = "stdio",
+                    command = mcp.Command,
+                    args = mcp.Args,
+                    env = mcp.Env.Count > 0 ? (object)mcp.Env : new Dictionary<string, string>(),
+                };
+            }
+            else // sse / http
+            {
+                servers[mcp.Name] = new
+                {
+                    type = "sse",
+                    url = mcp.Url,
+                    headers = mcp.Headers.Count > 0 ? (object)mcp.Headers : new Dictionary<string, string>(),
+                };
+            }
+        }
+        return servers.Count > 0 ? servers : null;
+    }
+
     // ── Helpers ──
 
     private void RemoveTypingIndicator()
@@ -441,7 +513,8 @@ public sealed partial class ChatViewModel : ObservableObject
         };
         var vm = new ChatMessageViewModel(msg);
         _messages.Add(vm);
-        _transcriptBuilder.ProcessMessageToTranscript(vm);
+        // The transcript builder will create the ErrorMessageItem; wire retry afterward
+        _transcriptBuilder.ProcessMessageToTranscript(vm, RetryLastMessageCommand);
     }
 
     private static string? TruncateToolOutput(string? output)

@@ -10,7 +10,6 @@ public partial class ChatView : UserControl
 {
     private StrataChatShell? _chatShell;
     private StrataChatComposer? _composer;
-    private Panel? _welcomePanel;
     private ChatViewModel? _wiredVm;
 
     public ChatView()
@@ -18,14 +17,13 @@ public partial class ChatView : UserControl
         AvaloniaXamlLoader.Load(this);
         _chatShell = this.FindControl<StrataChatShell>("ChatShell");
         _composer = this.FindControl<StrataChatComposer>("Composer");
-        _welcomePanel = this.FindControl<Panel>("WelcomePanel");
+        // Copy is handled internally by StrataChatMessage (clipboard + optional CopyCommand binding)
     }
 
     protected override void OnDataContextChanged(EventArgs e)
     {
         base.OnDataContextChanged(e);
 
-        // Unsubscribe previous
         if (_wiredVm is not null)
         {
             _wiredVm.ScrollToEndRequested -= OnScrollToEnd;
@@ -52,58 +50,25 @@ public partial class ChatView : UserControl
                 _composer.SendRequested += OnSendRequested;
                 _composer.StopRequested += OnStopRequested;
             }
-
-            UpdateWelcomeVisibility(vm);
         }
     }
 
-    private void OnVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
-    {
-        if (sender is not ChatViewModel vm) return;
-
-        if (e.PropertyName == nameof(ChatViewModel.MountedTranscriptTurns) ||
-            e.PropertyName == nameof(ChatViewModel.CurrentChat))
-        {
-            UpdateWelcomeVisibility(vm);
-        }
-    }
-
-    private void UpdateWelcomeVisibility(ChatViewModel vm)
-    {
-        if (_welcomePanel is not null)
-            _welcomePanel.IsVisible = vm.MountedTranscriptTurns.Count == 0;
-    }
+    private void OnVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e) { }
 
     private void OnSendRequested(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        _wiredVm?.SendMessageCommand.Execute(null);
-    }
+        => _wiredVm?.SendMessageCommand.Execute(null);
 
     private void OnStopRequested(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        _wiredVm?.StopGenerationCommand.Execute(null);
-    }
+        => _wiredVm?.StopGenerationCommand.Execute(null);
 
     private void OnScrollToEnd()
     {
-        // Find the ScrollViewer inside StrataChatShell and scroll to end
         if (_chatShell is null) return;
-        var sv = FindScrollViewer(_chatShell);
-        if (sv is not null)
-        {
-            sv.ScrollToEnd();
-        }
+        FindScrollViewer(_chatShell)?.ScrollToEnd();
     }
 
-    private void OnUserMessageSent()
-    {
-        OnScrollToEnd();
-    }
-
-    private void OnTranscriptRebuilt()
-    {
-        UpdateWelcomeVisibility(_wiredVm!);
-    }
+    private void OnUserMessageSent() => OnScrollToEnd();
+    private void OnTranscriptRebuilt() { }
 
     private static ScrollViewer? FindScrollViewer(Control control)
     {
@@ -116,20 +81,14 @@ public partial class ChatView : UserControl
         {
             foreach (var c in panel.Children)
             {
-                var result = FindScrollViewer(c);
-                if (result is not null) return result;
+                var r = FindScrollViewer(c);
+                if (r is not null) return r;
             }
         }
-        // Try the visual tree
-        var visualCount = Avalonia.VisualTree.VisualExtensions.GetVisualChildren(control);
-        foreach (var vc in visualCount)
+        foreach (var vc in Avalonia.VisualTree.VisualExtensions.GetVisualChildren(control))
         {
             if (vc is ScrollViewer found) return found;
-            if (vc is Control vcc)
-            {
-                var result = FindScrollViewer(vcc);
-                if (result is not null) return result;
-            }
+            if (vc is Control vcc) { var r = FindScrollViewer(vcc); if (r is not null) return r; }
         }
         return null;
     }

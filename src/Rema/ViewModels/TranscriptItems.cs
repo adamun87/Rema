@@ -47,6 +47,7 @@ public sealed partial class ErrorMessageItem : TranscriptItem
 
     [ObservableProperty] private string _content = "";
     [ObservableProperty] private string _timestampText = "";
+    public System.Windows.Input.ICommand? RetryCommand { get; set; }
 }
 
 // ── Reasoning ──

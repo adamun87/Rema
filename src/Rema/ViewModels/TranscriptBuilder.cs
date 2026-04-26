@@ -57,7 +57,8 @@ public sealed class TranscriptBuilder
         _itemCounter = 0;
     }
 
-    public void ProcessMessageToTranscript(ChatMessageViewModel msgVm)
+    public void ProcessMessageToTranscript(ChatMessageViewModel msgVm,
+        System.Windows.Input.ICommand? errorRetryCommand = null)
     {
         var msg = msgVm.Message;
 
@@ -76,7 +77,7 @@ public sealed class TranscriptBuilder
                 ProcessToolMessage(msgVm);
                 break;
             case "error":
-                ProcessErrorMessage(msgVm);
+                ProcessErrorMessage(msgVm, errorRetryCommand);
                 break;
             default:
                 ProcessAssistantMessage(msgVm);
@@ -257,7 +258,8 @@ public sealed class TranscriptBuilder
         UpdateGroupMeta();
     }
 
-    private void ProcessErrorMessage(ChatMessageViewModel msgVm)
+    private void ProcessErrorMessage(ChatMessageViewModel msgVm,
+        System.Windows.Input.ICommand? retryCommand = null)
     {
         CloseCurrentToolGroup();
         EnsureTurn("assistant");
@@ -266,6 +268,7 @@ public sealed class TranscriptBuilder
         {
             Content = msgVm.Content,
             TimestampText = msgVm.TimestampText,
+            RetryCommand = retryCommand,
         };
         _currentTurn!.Items.Add(item);
     }
