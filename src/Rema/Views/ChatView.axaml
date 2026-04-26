@@ -117,7 +117,8 @@
       <Panel>
         <!-- Welcome panel (shown when no chat active) -->
         <StackPanel x:Name="WelcomePanel" HorizontalAlignment="Center"
-                    VerticalAlignment="Center" Spacing="8">
+                    VerticalAlignment="Center" Spacing="8"
+                    IsVisible="{Binding CurrentChat, Converter={x:Static ObjectConverters.IsNull}}">
           <TextBlock Text="💬" FontSize="32" HorizontalAlignment="Center" Opacity="0.4" />
           <TextBlock Text="Ask Rema about deployments, pipelines, or shift status."
                      FontSize="14" Opacity="0.5" TextAlignment="Center"

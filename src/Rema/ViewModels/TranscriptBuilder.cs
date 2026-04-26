@@ -11,7 +11,13 @@ namespace Rema.ViewModels;
 /// </summary>
 public sealed class TranscriptBuilder
 {
-    private readonly List<TranscriptTurn> _target = [];
+    private readonly ObservableCollection<TranscriptTurn> _target = [];
+
+    /// <summary>
+    /// The live collection that powers the transcript ItemsControl.
+    /// ChatViewModel binds MountedTranscriptTurns directly to this reference.
+    /// </summary>
+    public ObservableCollection<TranscriptTurn> Turns => _target;
     private TranscriptTurn? _currentTurn;
     private ToolGroupItem? _currentToolGroup;
     private readonly Dictionary<string, ToolCallItem> _toolCallsById = new(StringComparer.Ordinal);
@@ -19,7 +25,11 @@ public sealed class TranscriptBuilder
     private int _turnCounter;
     private int _itemCounter;
 
-    public ObservableCollection<TranscriptTurn> Rebuild(IReadOnlyList<ChatMessageViewModel> messages)
+    /// <summary>
+    /// Clears and rebuilds <see cref="Turns"/> in-place from a message list.
+    /// The ItemsControl binding stays live because the ObservableCollection reference never changes.
+    /// </summary>
+    public void Rebuild(IReadOnlyList<ChatMessageViewModel> messages)
     {
         _target.Clear();
         _currentTurn = null;
@@ -33,8 +43,18 @@ public sealed class TranscriptBuilder
             ProcessMessageToTranscript(msg);
 
         CloseCurrentToolGroup();
+    }
 
-        return new ObservableCollection<TranscriptTurn>(_target);
+    /// <summary>Resets the transcript to empty (used when starting a new chat).</summary>
+    public void Reset()
+    {
+        _target.Clear();
+        _currentTurn = null;
+        _currentToolGroup = null;
+        _toolCallsById.Clear();
+        _lastRole = null;
+        _turnCounter = 0;
+        _itemCounter = 0;
     }
 
     public void ProcessMessageToTranscript(ChatMessageViewModel msgVm)

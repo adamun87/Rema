@@ -24,7 +24,9 @@ public sealed partial class ChatViewModel : ObservableObject
     // ── Observable Properties ──
 
     [ObservableProperty] private Chat? _currentChat;
-    [ObservableProperty] private ObservableCollection<TranscriptTurn> _mountedTranscriptTurns = [];
+    // Bind directly to the builder's ObservableCollection so ProcessMessageToTranscript()
+    // updates are immediately visible in the ItemsControl without any reassignment.
+    public ObservableCollection<TranscriptTurn> MountedTranscriptTurns => _transcriptBuilder.Turns;
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private bool _isStreaming;
     [ObservableProperty] private string _promptText = "";
@@ -404,7 +406,7 @@ public sealed partial class ChatViewModel : ObservableObject
         foreach (var msg in chat.Messages)
             _messages.Add(new ChatMessageViewModel(msg));
 
-        MountedTranscriptTurns = _transcriptBuilder.Rebuild(_messages);
+        _transcriptBuilder.Rebuild(_messages);
         TranscriptRebuilt?.Invoke();
         ScrollToEndRequested?.Invoke();
     }
@@ -414,7 +416,7 @@ public sealed partial class ChatViewModel : ObservableObject
         CurrentChat = null;
         _messages.Clear();
         _activeSession = null;
-        MountedTranscriptTurns = [];
+        _transcriptBuilder.Reset();
         TranscriptRebuilt?.Invoke();
     }
 
