@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Avalonia.Headless;
 using Avalonia.Threading;
 using Lumi.Models;
 using Lumi.ViewModels;
@@ -53,7 +52,7 @@ public sealed class StreamingSupportHeadlessTests
     [Fact]
     public async Task StreamingTextAccumulator_BatchesBurstBeforeUiFlush()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {
@@ -85,7 +84,7 @@ public sealed class StreamingSupportHeadlessTests
     [Fact]
     public async Task StreamingTextAccumulator_Reset_CancelsPendingFlushAndClearsBuffer()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {
@@ -125,7 +124,7 @@ public sealed class StreamingSupportHeadlessTests
     [Fact]
     public async Task UiThrottler_ImmediateRequest_ReplacesPendingDelay()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {

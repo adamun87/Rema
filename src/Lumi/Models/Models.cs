@@ -178,6 +178,92 @@ public class McpServer
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
 }
 
+public static class BackgroundJobTriggerTypes
+{
+    public const string Time = "time";
+    public const string Script = "script";
+}
+
+public static class BackgroundJobScheduleTypes
+{
+    public const string Interval = "interval";
+    public const string Daily = "daily";
+    public const string Weekly = "weekly";
+    public const string Monthly = "monthly";
+    public const string Once = "once";
+    public const string Cron = "cron";
+}
+
+public static class BackgroundJobScriptLanguages
+{
+    public const string PowerShell = "powershell";
+    public const string Python = "python";
+    public const string Node = "node";
+    public const string Command = "command";
+}
+
+public static class BackgroundJobRunStatuses
+{
+    public const string Idle = "Idle";
+    public const string Running = "Running";
+    public const string Watching = "Watching";
+    public const string Completed = "Completed";
+    public const string Skipped = "Skipped";
+    public const string Failed = "Failed";
+    public const string Waiting = "Waiting";
+}
+
+public class BackgroundJob : INotifyPropertyChanged
+{
+    private bool _isRunning;
+
+    [JsonIgnore]
+    internal object SyncRoot { get; } = new();
+
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid ChatId { get; set; }
+    public string Name { get; set; } = "";
+    public string Description { get; set; } = "";
+    public string Prompt { get; set; } = "";
+    public string TriggerType { get; set; } = BackgroundJobTriggerTypes.Time;
+    public string ScheduleType { get; set; } = BackgroundJobScheduleTypes.Interval;
+    public int IntervalMinutes { get; set; } = 1440;
+    public string DailyTime { get; set; } = "08:00";
+    public string DaysOfWeek { get; set; } = "Mon,Tue,Wed,Thu,Fri";
+    public int MonthlyDay { get; set; } = 1;
+    public string CronExpression { get; set; } = "";
+    public DateTimeOffset? RunAt { get; set; }
+    public string ScriptContent { get; set; } = "";
+    public string ScriptLanguage { get; set; } = BackgroundJobScriptLanguages.PowerShell;
+    public bool IsEnabled { get; set; } = true;
+    public bool IsTemporary { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.Now;
+    public DateTimeOffset? LastRunStartedAt { get; set; }
+    public DateTimeOffset? LastRunAt { get; set; }
+    public DateTimeOffset? NextRunAt { get; set; }
+    public string LastRunStatus { get; set; } = BackgroundJobRunStatuses.Idle;
+    public string LastRunSummary { get; set; } = "";
+    public string LastScriptOutput { get; set; } = "";
+    public int? LastScriptExitCode { get; set; }
+    public int RunCount { get; set; }
+
+    [JsonIgnore]
+    public string TriggerDisplay => TriggerType == BackgroundJobTriggerTypes.Script ? "Wake script" : "Time";
+
+    [JsonIgnore]
+    public string StatusDisplay => IsEnabled ? LastRunStatus : LastRunStatus == BackgroundJobRunStatuses.Completed ? "Completed" : "Paused";
+
+    [JsonIgnore]
+    public bool IsRunning
+    {
+        get => _isRunning;
+        set { if (_isRunning == value) return; _isRunning = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsRunning))); }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+}
+
 public class Memory
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -254,5 +340,6 @@ public class AppData
     public List<Skill> Skills { get; set; } = [];
     public List<LumiAgent> Agents { get; set; } = [];
     public List<McpServer> McpServers { get; set; } = [];
+    public List<BackgroundJob> BackgroundJobs { get; set; } = [];
     public List<Memory> Memories { get; set; } = [];
 }

@@ -716,6 +716,18 @@ public class TranscriptBuilder
     {
         CloseCurrentToolGroup();
 
+        if (JobWakeItem.IsJobWakeMessage(msgVm))
+        {
+            FlushPendingFileEdits();
+            FlushPendingPlanCard();
+            FlushPendingModelLabel();
+            FinalizeCurrentTurn();
+
+            AppendToCurrentTurn(new JobWakeItem(msgVm, showTimestamps), TurnStableIdFor($"job-wake:{msgVm.Message.Id}"));
+            FinalizeCurrentTurn();
+            return;
+        }
+
         if (msgVm.Role == "user")
         {
             FlushPendingFileEdits();

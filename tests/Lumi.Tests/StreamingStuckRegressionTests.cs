@@ -1,7 +1,6 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Avalonia.Headless;
 using Avalonia.Threading;
 using Lumi.ViewModels;
 using StrataTheme.Controls;
@@ -43,7 +42,7 @@ public sealed class StreamingStuckRegressionTests
     [Fact]
     public async Task UiThrottler_FlushesAtNormalPriority_NotStarvedByBackgroundWork()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {
@@ -68,7 +67,7 @@ public sealed class StreamingStuckRegressionTests
     {
         // Regression: if the flush action throws, _scheduled must be properly
         // reset so that subsequent requests aren't permanently blocked.
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {
@@ -103,7 +102,7 @@ public sealed class StreamingStuckRegressionTests
     {
         // Regression: CancelPending() followed by a new Request() must still work.
         // Before the fix, a cancelled ScheduleAsync could leave _scheduled stuck.
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {
@@ -129,7 +128,7 @@ public sealed class StreamingStuckRegressionTests
     {
         // Simulates the streaming scenario: CancelPending + immediate flush on
         // AssistantMessageEvent completion. This must not get stuck.
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {
@@ -165,7 +164,7 @@ public sealed class StreamingStuckRegressionTests
         // Simulates the exact streaming stuck scenario: accumulator has pending
         // content, CancelPending is called, then new content arrives. The new
         // content must still be flushed.
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {
@@ -205,7 +204,7 @@ public sealed class StreamingStuckRegressionTests
     {
         // Regression: rapid Markdown property changes must all eventually render.
         // Before the fix, _rebuildQueued could get stuck at true.
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {
@@ -234,7 +233,7 @@ public sealed class StreamingStuckRegressionTests
     {
         // Regression: setting Markdown to null and then to new content must
         // not leave _rebuildQueued stuck.
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {
@@ -261,7 +260,7 @@ public sealed class StreamingStuckRegressionTests
     {
         // Simulates the exact streaming pattern: content grows via append,
         // which triggers incremental parsing in StrataMarkdown.
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {
@@ -292,7 +291,7 @@ public sealed class StreamingStuckRegressionTests
     {
         // Verifies that Normal-priority flushes execute before Background-priority work,
         // which is the key behavioral change that prevents starvation.
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {

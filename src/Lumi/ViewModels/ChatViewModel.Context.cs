@@ -459,6 +459,21 @@ public partial class ChatViewModel
         return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     }
 
+    private string GetEffectiveWorkingDirectory(Chat chat)
+    {
+        if (chat.WorktreePath is { Length: > 0 } wt && Directory.Exists(wt))
+            return wt;
+
+        if (chat.ProjectId.HasValue)
+        {
+            var project = _dataStore.Data.Projects.FirstOrDefault(p => p.Id == chat.ProjectId.Value);
+            if (project is { WorkingDirectory: { Length: > 0 } dir } && Directory.Exists(dir))
+                return dir;
+        }
+
+        return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    }
+
     private List<UserMessageDataAttachmentsItemFile>? TakePendingAttachments()
     {
         if (PendingAttachments.Count == 0) return null;

@@ -39,7 +39,9 @@ public partial class ChatViewModel
         ChatMessageViewModel? streamingVm = null;
         ChatMessageViewModel? reasoningVm = null;
         string? turnModelId = null;
-        var agentName = ActiveAgent?.Name ?? Loc.Author_Lumi;
+        var agentName = chat.AgentId.HasValue
+            ? _dataStore.Data.Agents.FirstOrDefault(agent => agent.Id == chat.AgentId.Value)?.Name ?? Loc.Author_Lumi
+            : Loc.Author_Lumi;
         var runtime = GetOrCreateRuntimeState(chat.Id);
         var toolParentById = new Dictionary<string, string?>(StringComparer.Ordinal);
         var terminalRootByToolCallId = new Dictionary<string, string>(StringComparer.Ordinal);

@@ -64,6 +64,7 @@ public partial class MainWindow : Window
     private ChatView? _chatView;
     private BrowserView? _browserView;
     private ContentControl? _browserHost;
+    private ContentControl? _jobsHost;
     private ContentControl? _projectsHost;
     private ContentControl? _skillsHost;
     private ContentControl? _agentsHost;
@@ -214,28 +215,31 @@ public partial class MainWindow : Window
         _pages =
         [
             this.FindControl<Grid>("ChatContentGrid"),         // 0 = Chat (container grid)
-            this.FindControl<Control>("PageProjects"),         // 1
-            this.FindControl<Control>("PageSkills"),           // 2
-            this.FindControl<Control>("PageAgents"),           // 3
-            this.FindControl<Control>("PageMemories"),         // 4
-            this.FindControl<Control>("PageMcpServers"),       // 5
-            this.FindControl<Control>("PageSettings"),         // 6
+            this.FindControl<Control>("PageJobs"),             // 1
+            this.FindControl<Control>("PageProjects"),         // 2
+            this.FindControl<Control>("PageSkills"),           // 3
+            this.FindControl<Control>("PageAgents"),           // 4
+            this.FindControl<Control>("PageMemories"),         // 5
+            this.FindControl<Control>("PageMcpServers"),       // 6
+            this.FindControl<Control>("PageSettings"),         // 7
         ];
 
         _sidebarPanels =
         [
             this.FindControl<Panel>("SidebarChat"),            // 0
-            this.FindControl<Panel>("SidebarProjects"),        // 1
-            this.FindControl<Panel>("SidebarSkills"),          // 2
-            this.FindControl<Panel>("SidebarAgents"),          // 3
-            this.FindControl<Panel>("SidebarMemories"),        // 4
-            this.FindControl<Panel>("SidebarMcpServers"),      // 5
-            this.FindControl<Panel>("SidebarSettings"),        // 6
+            this.FindControl<Panel>("SidebarJobs"),            // 1
+            this.FindControl<Panel>("SidebarProjects"),        // 2
+            this.FindControl<Panel>("SidebarSkills"),          // 3
+            this.FindControl<Panel>("SidebarAgents"),          // 4
+            this.FindControl<Panel>("SidebarMemories"),        // 5
+            this.FindControl<Panel>("SidebarMcpServers"),      // 6
+            this.FindControl<Panel>("SidebarSettings"),        // 7
         ];
 
         _navButtons =
         [
             this.FindControl<Button>("NavChat"),
+            this.FindControl<Button>("NavJobs"),
             this.FindControl<Button>("NavProjects"),
             this.FindControl<Button>("NavSkills"),
             this.FindControl<Button>("NavAgents"),
@@ -288,6 +292,7 @@ public partial class MainWindow : Window
             shortcutLabel.Text = "⌘K";
 
         _browserHost = this.FindControl<ContentControl>("BrowserHost");
+        _jobsHost = this.FindControl<ContentControl>("PageJobsHost");
         _projectsHost = this.FindControl<ContentControl>("PageProjectsHost");
         _skillsHost = this.FindControl<ContentControl>("PageSkillsHost");
         _agentsHost = this.FindControl<ContentControl>("PageAgentsHost");
@@ -313,17 +318,18 @@ public partial class MainWindow : Window
     {
         AutomationProperties.SetName(this, "Lumi main window");
         AutomationProperties.SetHelpText(this,
-            "Agent map: navigation indices are Chat=0, Projects=1, Skills=2, Lumis=3, Memories=4, MCP Servers=5, Settings=6.");
+            "Agent map: navigation indices are Chat=0, Jobs=1, Projects=2, Skills=3, Lumis=4, Memories=5, MCP Servers=6, Settings=7.");
 
         var navNames = new[]
         {
             "NavChat - navigation index 0 - Chat",
-            "NavProjects - navigation index 1 - Projects",
-            "NavSkills - navigation index 2 - Skills",
-            "NavAgents - navigation index 3 - Lumis",
-            "NavMemories - navigation index 4 - Memories",
-            "NavMcpServers - navigation index 5 - MCP Servers",
-            "NavSettings - navigation index 6 - Settings",
+            "NavJobs - navigation index 1 - Background Jobs",
+            "NavProjects - navigation index 2 - Projects",
+            "NavSkills - navigation index 3 - Skills",
+            "NavAgents - navigation index 4 - Lumis",
+            "NavMemories - navigation index 5 - Memories",
+            "NavMcpServers - navigation index 6 - MCP Servers",
+            "NavSettings - navigation index 7 - Settings",
         };
         for (var i = 0; i < _navButtons.Length && i < navNames.Length; i++)
         {
@@ -338,12 +344,13 @@ public partial class MainWindow : Window
         {
             ("ChatContentGrid", "Page 0 Chat content grid"),
             ("PageChat", "Page 0 Chat view"),
-            ("PageProjects", "Page 1 Projects"),
-            ("PageSkills", "Page 2 Skills"),
-            ("PageAgents", "Page 3 Lumis"),
-            ("PageMemories", "Page 4 Memories"),
-            ("PageMcpServers", "Page 5 MCP Servers"),
-            ("PageSettings", "Page 6 Settings"),
+            ("PageJobs", "Page 1 Background Jobs"),
+            ("PageProjects", "Page 2 Projects"),
+            ("PageSkills", "Page 3 Skills"),
+            ("PageAgents", "Page 4 Lumis"),
+            ("PageMemories", "Page 5 Memories"),
+            ("PageMcpServers", "Page 6 MCP Servers"),
+            ("PageSettings", "Page 7 Settings"),
             ("AgentDebugMap", "Debug-only agent map and fixture launcher"),
         };
         foreach (var (controlName, name) in pageNames)
@@ -622,12 +629,12 @@ public partial class MainWindow : Window
         // ── Ctrl+, — Settings ──
         if (ctrl && !shift && e.Key == Key.OemComma)
         {
-            vm.SelectedNavIndex = 6;
+            vm.SelectedNavIndex = 7;
             e.Handled = true;
             return;
         }
 
-        // ── Ctrl+1..7 — Tab navigation ──
+        // ── Ctrl+1..8 — Tab navigation ──
         if (ctrl && !shift)
         {
             var tabIndex = e.Key switch
@@ -639,6 +646,7 @@ public partial class MainWindow : Window
                 Key.D5 => 4,
                 Key.D6 => 5,
                 Key.D7 => 6,
+                Key.D8 => 7,
                 _ => -1
             };
             if (tabIndex >= 0)
@@ -2663,7 +2671,7 @@ public partial class MainWindow : Window
     /// <summary>Sets the chat count TextBlock for each project in the sidebar.</summary>
     private void ApplyProjectChatCounts(MainViewModel vm)
     {
-        var sidebarProjects = _sidebarPanels.Length > 1 ? _sidebarPanels[1] : null;
+        var sidebarProjects = _sidebarPanels.Length > 2 ? _sidebarPanels[2] : null;
         if (sidebarProjects is null) return;
 
         foreach (var item in sidebarProjects.GetVisualDescendants().OfType<ListBoxItem>())
@@ -2722,6 +2730,10 @@ public partial class MainWindow : Window
                     vm.MemoriesVM.SelectedMemory = memory;
                     break;
 
+                case BackgroundJob job:
+                    vm.JobsVM.SelectedJob = job;
+                    break;
+
                 case McpServer server:
                     vm.McpServersVM.SelectedServer = server;
                     break;
@@ -2748,26 +2760,30 @@ public partial class MainWindow : Window
         switch (index)
         {
             case 1:
+                if (_jobsHost is not null && _jobsHost.Content is null)
+                    _jobsHost.Content = new BackgroundJobsView { DataContext = vm.JobsVM };
+                break;
+            case 2:
                 if (_projectsHost is not null && _projectsHost.Content is null)
                     _projectsHost.Content = new ProjectsView { DataContext = vm.ProjectsVM };
                 break;
-            case 2:
+            case 3:
                 if (_skillsHost is not null && _skillsHost.Content is null)
                     _skillsHost.Content = new SkillsView { DataContext = vm.SkillsVM };
                 break;
-            case 3:
+            case 4:
                 if (_agentsHost is not null && _agentsHost.Content is null)
                     _agentsHost.Content = new AgentsView { DataContext = vm.AgentsVM };
                 break;
-            case 4:
+            case 5:
                 if (_memoriesHost is not null && _memoriesHost.Content is null)
                     _memoriesHost.Content = new MemoriesView { DataContext = vm.MemoriesVM };
                 break;
-            case 5:
+            case 6:
                 if (_mcpServersHost is not null && _mcpServersHost.Content is null)
                     _mcpServersHost.Content = new McpServersView { DataContext = vm.McpServersVM };
                 break;
-            case 6:
+            case 7:
                 if (_settingsHost is not null && _settingsHost.Content is null)
                 {
                     _settingsView = new SettingsView { DataContext = vm.SettingsVM };

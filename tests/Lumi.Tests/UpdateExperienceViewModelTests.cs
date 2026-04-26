@@ -9,6 +9,8 @@ namespace Lumi.Tests;
 
 public sealed class UpdateExperienceViewModelTests
 {
+    private const int SettingsNavIndex = 7;
+
     private static MainViewModel CreateMainViewModel()
     {
         Loc.Load("en");
@@ -96,9 +98,9 @@ public sealed class UpdateExperienceViewModelTests
         vm.SettingsVM.ShouldAutoNavigateToUpdateCenter = true;
         vm.SettingsVM.SelectedPageIndex = 1;
 
-        vm.SetNavCommand.Execute("6");
+        vm.SetNavCommand.Execute(SettingsNavIndex.ToString());
 
-        Assert.Equal(6, vm.SelectedNavIndex);
+        Assert.Equal(SettingsNavIndex, vm.SelectedNavIndex);
         Assert.Equal(SettingsViewModel.AboutPageIndex, vm.SettingsVM.SelectedPageIndex);
         Assert.False(vm.SettingsVM.ShouldAutoNavigateToUpdateCenter);
     }
@@ -115,7 +117,7 @@ public sealed class UpdateExperienceViewModelTests
 
         vm.OpenUpdateCenterCommand.Execute(null);
 
-        Assert.Equal(6, vm.SelectedNavIndex);
+        Assert.Equal(SettingsNavIndex, vm.SelectedNavIndex);
         Assert.Equal(SettingsViewModel.AboutPageIndex, vm.SettingsVM.SelectedPageIndex);
         Assert.False(vm.IsGlobalUpdateBannerVisible);
     }

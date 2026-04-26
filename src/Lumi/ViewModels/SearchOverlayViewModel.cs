@@ -54,6 +54,7 @@ public partial class SearchOverlayViewModel : ObservableObject
     private const int FullSearchDelayMs = 90;
 
     private const string IconChat = "M4 4h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H7l-4 3V6a2 2 0 0 1 2-2z";
+    private const string IconClock = "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 5h-2v6l5 3 .9-1.6-3.9-2.3V7z";
     private const string IconFolder = "M2 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6z";
     private const string IconBolt = "M21.64 3.64l-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72z M14 7l3 3 M5 6v4 M19 14v4 M10 2v2 M7 8H3 M21 16h-4 M11 3H9";
     private const string IconSparkle = "M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z M20 2v4 M22 4h-4 M4 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4z";
@@ -361,6 +362,7 @@ public partial class SearchOverlayViewModel : ObservableObject
     private static string GetCategoryLabel(GlobalSearchCategory category) => category switch
     {
         GlobalSearchCategory.Chats => "Chats",
+        GlobalSearchCategory.BackgroundJobs => "Jobs",
         GlobalSearchCategory.Projects => "Projects",
         GlobalSearchCategory.Skills => "Skills",
         GlobalSearchCategory.Lumis => "Lumis",
@@ -373,6 +375,7 @@ public partial class SearchOverlayViewModel : ObservableObject
     private static string GetCategoryIcon(GlobalSearchCategory category) => category switch
     {
         GlobalSearchCategory.Chats => IconChat,
+        GlobalSearchCategory.BackgroundJobs => IconClock,
         GlobalSearchCategory.Projects => IconFolder,
         GlobalSearchCategory.Skills => IconBolt,
         GlobalSearchCategory.Lumis => IconSparkle,

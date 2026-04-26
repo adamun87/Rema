@@ -14,14 +14,42 @@ public partial class ChatViewModel
 
     private void ReleaseChatCancellation(Guid chatId, bool cancel)
     {
-        if (!_ctsSources.TryGetValue(chatId, out var cts))
+        if (!_ctsSources.Remove(chatId, out var cts))
             return;
 
-        if (cancel)
-            cts.Cancel();
+        try
+        {
+            if (cancel)
+                cts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
 
-        cts.Dispose();
+        try
+        {
+            cts.Dispose();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+
+    private bool ReleasePreviousTurnCancellation(Guid chatId)
+    {
+        if (!_ctsSources.ContainsKey(chatId))
+            return false;
+
+        if (IsChatRuntimeActive(chatId))
+        {
+            ReleaseChatCancellation(chatId, cancel: true);
+            return true;
+        }
+
+        // The Copilot SDK may still hold the token after an idle turn. Drop our
+        // reference, but don't cancel/dispose it while the session is being reused.
         _ctsSources.Remove(chatId);
+        return false;
     }
 
     private void DisposeSessionSubscription(Guid chatId)

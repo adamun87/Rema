@@ -12,7 +12,8 @@ namespace Lumi.Services;
 public static class SystemPromptBuilder
 {
     public static string Build(UserSettings settings, LumiAgent? agent, Project? project,
-        List<Skill> allSkills, List<Skill> activeSkills, List<Memory> memories)
+        List<Skill> allSkills, List<Skill> activeSkills, List<Memory> memories,
+        List<BackgroundJob>? backgroundJobs = null)
     {
         var userName = settings.UserName ?? "there";
         var timeOfDay = GetTimeOfDay();
@@ -314,11 +315,29 @@ public static class SystemPromptBuilder
             Don't overuse this — only ask when the choice genuinely affects the outcome. For simple yes/no or when the user's intent is clear, just proceed.
 
             ## Managing Lumi Itself
-            You also have dedicated management tools for Lumi's own data: projects, skills, Lumis, MCP servers, and memories.
-            These are only for explicit user requests about Lumi itself — for example: "create a skill from this conversation", "show my projects", "edit that Lumi", "add an MCP server", or "delete this memory".
-            The relevant tools are `manage_projects`, `manage_skills`, `manage_lumis`, `manage_mcps`, and `manage_memories`.
+            You also have dedicated management tools for Lumi's own data: projects, skills, Lumis, MCP servers, background jobs, and memories.
+            These are only for explicit user requests about Lumi itself — for example: "create a skill from this conversation", "show my projects", "edit that Lumi", "add an MCP server", "monitor this every morning", or "delete this memory".
+            The relevant tools are `manage_projects`, `manage_skills`, `manage_lumis`, `manage_mcps`, `manage_jobs`, and `manage_memories`.
             Do NOT use these tools for normal task work, vague requests, or automatic saving.
             When the user explicitly asks to manage Lumi itself, fetch the `Lumi Feature Manager` skill first and then use the relevant `manage_*` tool.
+
+            ## Background Jobs
+            Lumi can keep working for the user in the background by creating jobs attached to the current chat. A job automatically invokes Lumi later with the original chat context.
+
+            **When to suggest a job:**
+            - The user is tracking something over time, waiting for a long process, monitoring prices/builds/feeds, or wants a recurring digest or reminder.
+            - Suggest it conversationally first unless the user already asked for automation.
+            - Keep it chat-native: explain what Lumi will watch, how often, when it will reply, and that jobs can be paused from the Jobs tab.
+
+            **Job types:**
+            - Time jobs can run once, every interval, daily, weekly, monthly, or with a five-field cron expression (`minute hour day-of-month month day-of-week`).
+            - Script jobs are one-shot wake scripts. Write a small script that waits, polls, or blocks until something worth attention happens, then exits. Lumi receives stdout, stderr, and the exit code in the linked chat. If the work should keep watching, create another script job after you reply.
+            - Use time jobs for recurring reminders and planning. Use script jobs for "sleep until condition" workflows like polling a PR, watching a feed, or monitoring a price.
+
+            **Safety:**
+            - Do not create background jobs silently. Create or update a job only after the user asks for it or clearly accepts your suggestion.
+            - Make script jobs inspectable and minimal. Prefer read-only checks unless the user explicitly asks for actions.
+            - Do not write endless scripts unless the user intentionally wants a long-running watcher; the normal pattern is poll, exit with useful output, reply, then create a fresh wake script if continued monitoring is needed.
 
             ## Memory
             Lumi keeps persistent memories about the user across conversations.
@@ -425,6 +444,35 @@ public static class SystemPromptBuilder
                 promptBuilder.Append('[').Append(group.Key).Append("]\n");
                 foreach (var memory in group)
                     promptBuilder.Append("- ").Append(memory.Key).Append('\n');
+            }
+        }
+
+        if (backgroundJobs is { Count: > 0 })
+        {
+            var jobs = backgroundJobs
+                .Where(static job => job.IsEnabled || job.LastRunAt.HasValue)
+                .OrderBy(static job => job.NextRunAt ?? DateTimeOffset.MaxValue)
+                .ThenBy(static job => job.Name, StringComparer.OrdinalIgnoreCase)
+                .Take(20)
+                .ToList();
+
+            if (jobs.Count > 0)
+            {
+                promptBuilder.Append("\n\n--- Background Jobs ---\n");
+                foreach (var job in jobs)
+                {
+                    promptBuilder.Append("- ")
+                        .Append(job.IsEnabled ? "enabled" : "paused")
+                        .Append(" | ")
+                        .Append(job.Name)
+                        .Append(" | ")
+                        .Append(BackgroundJobSchedule.Describe(job))
+                        .Append(" | next: ")
+                        .Append(job.NextRunAt?.ToLocalTime().ToString("g") ?? "(none)")
+                        .Append(" | last: ")
+                        .Append(string.IsNullOrWhiteSpace(job.LastRunStatus) ? BackgroundJobRunStatuses.Idle : job.LastRunStatus)
+                        .Append('\n');
+                }
             }
         }
 

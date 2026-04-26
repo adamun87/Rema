@@ -53,6 +53,7 @@ public partial class App : Application
             desktop.ShutdownRequested += (_, _) =>
             {
                 updateService.Dispose();
+                vm.Dispose();
                 Task.Run(async () =>
                 {
                     try

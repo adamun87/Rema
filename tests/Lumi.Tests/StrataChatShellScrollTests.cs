@@ -3,7 +3,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
-using Avalonia.Headless;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using StrataTheme.Controls;
@@ -17,7 +16,7 @@ public sealed class StrataChatShellScrollTests
     [Fact]
     public async Task SmallUserScrollAway_DisablesFollowModeUntilJumpToLatest()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {
@@ -95,7 +94,7 @@ public sealed class StrataChatShellScrollTests
     [Fact]
     public async Task ProgrammaticBottomLanding_DoesNotReenterFollowMode()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {
@@ -170,7 +169,7 @@ public sealed class StrataChatShellScrollTests
     [Fact]
     public async Task ProgrammaticBottomLanding_HidesScrollButtonAtBottom()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {
@@ -242,7 +241,7 @@ public sealed class StrataChatShellScrollTests
     [Fact]
     public async Task SmallManualReturnToBottom_ReentersFollowMode()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {
@@ -310,7 +309,7 @@ public sealed class StrataChatShellScrollTests
     [Fact]
     public async Task ManualReturnToBottom_ReentersFollowMode()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {

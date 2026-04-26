@@ -103,6 +103,76 @@ public class AppDataSnapshotFactoryTests
     }
 
     [Fact]
+    public void AppDataJsonContext_SerializesBackgroundJobs()
+    {
+        var chatId = Guid.NewGuid();
+        var jobId = Guid.NewGuid();
+        var data = new AppData
+        {
+            BackgroundJobs =
+            [
+                new BackgroundJob
+                {
+                    Id = jobId,
+                    ChatId = chatId,
+                    Name = "Hotel monitor",
+                    Prompt = "Watch London hotel prices.",
+                    TriggerType = BackgroundJobTriggerTypes.Time,
+                    ScheduleType = BackgroundJobScheduleTypes.Daily,
+                    DailyTime = "08:00",
+                    IsEnabled = true
+                }
+            ]
+        };
+
+        var json = JsonSerializer.Serialize(data, AppDataJsonContext.Default.AppData);
+        using var document = JsonDocument.Parse(json);
+
+        var job = document.RootElement.GetProperty("backgroundJobs")[0];
+        Assert.Equal(jobId, job.GetProperty("id").GetGuid());
+        Assert.Equal("Hotel monitor", job.GetProperty("name").GetString());
+    }
+
+    [Fact]
+    public void CreateIndexSnapshot_PreservesBackgroundJobs()
+    {
+        var chatId = Guid.NewGuid();
+        var jobId = Guid.NewGuid();
+        var source = new AppData
+        {
+            BackgroundJobs =
+            [
+                new BackgroundJob
+                {
+                    Id = jobId,
+                    ChatId = chatId,
+                    Name = "PR watcher",
+                    Description = "Wait for a PR check.",
+                    Prompt = "Wake when CI finishes.",
+                    TriggerType = BackgroundJobTriggerTypes.Script,
+                    ScriptContent = "Write-Output done",
+                    ScriptLanguage = BackgroundJobScriptLanguages.PowerShell,
+                    IsEnabled = true,
+                    IsTemporary = true,
+                    LastRunStatus = BackgroundJobRunStatuses.Watching,
+                    LastRunSummary = "Watching...",
+                    RunCount = 2
+                }
+            ]
+        };
+
+        var snapshot = InvokeCreateIndexSnapshot(source);
+
+        var job = Assert.Single(snapshot.BackgroundJobs);
+        Assert.Equal(jobId, job.Id);
+        Assert.Equal(chatId, job.ChatId);
+        Assert.Equal("PR watcher", job.Name);
+        Assert.Equal(BackgroundJobTriggerTypes.Script, job.TriggerType);
+        Assert.Equal("Write-Output done", job.ScriptContent);
+        Assert.Equal(2, job.RunCount);
+    }
+
+    [Fact]
     public void MergeChatIndexChanges_PreservesPersistedChat_WhenLocalChatWasNotMarkedDirty()
     {
         var chatId = Guid.NewGuid();
@@ -318,6 +388,47 @@ public class AppDataSnapshotFactoryTests
         Assert.Equal(200, chat.TotalOutputTokens);
     }
 
+    [Fact]
+    public void MergeChatIndexChanges_PreservesPersistedBackgroundJobs_WhenJobsWereNotChangedLocally()
+    {
+        var chatId = Guid.NewGuid();
+        var persistedJob = CreateJob(chatId, "Persisted watcher");
+        var currentSnapshot = new AppData
+        {
+            Chats = [CreateChat(chatId, "Chat", null, new DateTimeOffset(2026, 3, 20, 11, 0, 0, TimeSpan.Zero))]
+        };
+        var persistedSnapshot = new AppData
+        {
+            Chats = [CreateChat(chatId, "Chat", null, new DateTimeOffset(2026, 3, 20, 11, 0, 0, TimeSpan.Zero))],
+            BackgroundJobs = [persistedJob]
+        };
+
+        var merged = InvokeMergeChatIndexChanges(currentSnapshot, persistedSnapshot, [], [], backgroundJobsDirty: false);
+
+        var job = Assert.Single(merged.BackgroundJobs);
+        Assert.Equal(persistedJob.Id, job.Id);
+        Assert.Equal("Persisted watcher", job.Name);
+    }
+
+    [Fact]
+    public void MergeChatIndexChanges_AllowsClearingBackgroundJobs_WhenJobsWereChangedLocally()
+    {
+        var chatId = Guid.NewGuid();
+        var currentSnapshot = new AppData
+        {
+            Chats = [CreateChat(chatId, "Chat", null, new DateTimeOffset(2026, 3, 20, 11, 0, 0, TimeSpan.Zero))]
+        };
+        var persistedSnapshot = new AppData
+        {
+            Chats = [CreateChat(chatId, "Chat", null, new DateTimeOffset(2026, 3, 20, 11, 0, 0, TimeSpan.Zero))],
+            BackgroundJobs = [CreateJob(chatId, "Deleted watcher")]
+        };
+
+        var merged = InvokeMergeChatIndexChanges(currentSnapshot, persistedSnapshot, [], [], backgroundJobsDirty: true);
+
+        Assert.Empty(merged.BackgroundJobs);
+    }
+
     private static Chat CreateChat(
         Guid id,
         string title,
@@ -347,6 +458,22 @@ public class AppDataSnapshotFactoryTests
         };
     }
 
+    private static BackgroundJob CreateJob(Guid chatId, string name)
+    {
+        return new BackgroundJob
+        {
+            Id = Guid.NewGuid(),
+            ChatId = chatId,
+            Name = name,
+            Prompt = "Watch something.",
+            TriggerType = BackgroundJobTriggerTypes.Time,
+            ScheduleType = BackgroundJobScheduleTypes.Interval,
+            IntervalMinutes = 60,
+            IsEnabled = true,
+            NextRunAt = new DateTimeOffset(2026, 3, 20, 12, 0, 0, TimeSpan.Zero)
+        };
+    }
+
     private static AppData InvokeCreateIndexSnapshot(AppData source)
     {
         var factoryType = typeof(DataStore).Assembly.GetType("Lumi.Services.AppDataSnapshotFactory")
@@ -364,7 +491,8 @@ public class AppDataSnapshotFactoryTests
         AppData currentSnapshot,
         AppData persistedSnapshot,
         IReadOnlyCollection<Guid> dirtyChatIds,
-        IReadOnlyCollection<Guid> deletedChatIds)
+        IReadOnlyCollection<Guid> deletedChatIds,
+        bool backgroundJobsDirty = false)
     {
         var factoryType = typeof(DataStore).Assembly.GetType("Lumi.Services.AppDataSnapshotFactory")
             ?? throw new InvalidOperationException("AppDataSnapshotFactory type was not found.");
@@ -374,7 +502,7 @@ public class AppDataSnapshotFactoryTests
             ?? throw new InvalidOperationException("MergeChatIndexChanges method was not found.");
         return (AppData)(mergeMethod.Invoke(
             null,
-            [currentSnapshot, persistedSnapshot, new HashSet<Guid>(dirtyChatIds), new HashSet<Guid>(deletedChatIds)])
+            [currentSnapshot, persistedSnapshot, new HashSet<Guid>(dirtyChatIds), new HashSet<Guid>(deletedChatIds), backgroundJobsDirty])
             ?? throw new InvalidOperationException("MergeChatIndexChanges returned null."));
     }
 }

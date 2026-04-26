@@ -1031,6 +1031,7 @@ public partial class ChatView : UserControl
                 var content = item switch
                 {
                     UserMessageItem u => u.Content,
+                    JobWakeItem j => j.SearchText,
                     AssistantMessageItem a => a.Content,
                     ErrorMessageItem err => err.Content,
                     ReasoningItem r => r.Content,

@@ -2,7 +2,6 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
-using Avalonia.Headless;
 using Avalonia.Threading;
 using Lumi.Models;
 using Lumi.Services;
@@ -19,7 +18,7 @@ public sealed class ChatViewScrollBehaviorTests
     [Fact]
     public async Task CurrentChatMetadataRefresh_DoesNotReenterFollowMode()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {
@@ -84,7 +83,7 @@ public sealed class ChatViewScrollBehaviorTests
     [Fact]
     public async Task MountedTurnsRemovedWhileBusy_RehydratesViewportCoverage()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {

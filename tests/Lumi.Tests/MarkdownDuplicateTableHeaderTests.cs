@@ -2,7 +2,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
-using Avalonia.Headless;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using StrataTheme.Controls;
@@ -16,7 +15,7 @@ public sealed class MarkdownDuplicateTableHeaderTests
     [Fact]
     public async Task TwoTablesWithSameHeader_BothRender()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {
@@ -61,7 +60,7 @@ public sealed class MarkdownDuplicateTableHeaderTests
     [Fact]
     public async Task TwoTablesWithDifferentHeaders_BothRender()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {

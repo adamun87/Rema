@@ -2,7 +2,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
-using Avalonia.Headless;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Lumi.Models;
@@ -20,7 +19,7 @@ public sealed class TranscriptTextContentHeadlessTests
     [Fact]
     public async Task StreamingMarkdown_UsesPlainTextUntilStreamingEnds()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {
@@ -44,7 +43,7 @@ public sealed class TranscriptTextContentHeadlessTests
     [Fact]
     public async Task StreamingReasoningMarkdown_CanRenderMarkdownWhenEnabled()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(() =>
         {
@@ -62,7 +61,7 @@ public sealed class TranscriptTextContentHeadlessTests
     [Fact]
     public async Task StreamingMarkdown_HeadingFollowedByBody_RendersSeparateHeadingAndParagraph()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {
@@ -107,7 +106,7 @@ public sealed class TranscriptTextContentHeadlessTests
     [Fact]
     public async Task AssistantTemplate_RendersMarkdownWhileStreaming()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {
@@ -149,7 +148,7 @@ public sealed class TranscriptTextContentHeadlessTests
     [Fact]
     public async Task ReasoningTemplate_RendersMarkdownWhileStreaming()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {

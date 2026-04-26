@@ -35,6 +35,8 @@
     <StreamGeometry x:Key="Icon.Browse">M4 4h4v4H4V4zm6 0h4v4h-4V4zm6 0h4v4h-4V4zM4 10h4v4H4v-4zm6 0h4v4h-4v-4zm6 0h4v4h-4v-4zM4 16h4v4H4v-4zm6 0h4v4h-4v-4zm6 0h4v4h-4v-4z</StreamGeometry>
     <StreamGeometry x:Key="Icon.Dismiss">M6.4 6.4a1 1 0 0 1 1.4 0L12 10.6l4.2-4.2a1 1 0 1 1 1.4 1.4L13.4 12l4.2 4.2a1 1 0 0 1-1.4 1.4L12 13.4l-4.2 4.2a1 1 0 0 1-1.4-1.4L10.6 12 6.4 7.8a1 1 0 0 1 0-1.4z</StreamGeometry>
     <StreamGeometry x:Key="Icon.Check">M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z</StreamGeometry>
+    <StreamGeometry x:Key="Icon.Clock">M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 5h-2v6l5 3 .9-1.6-3.9-2.3V7z</StreamGeometry>
+    <StreamGeometry x:Key="Icon.Play">M8 5v14l11-7L8 5z</StreamGeometry>
   </Window.Resources>
 
   <Window.Styles>
@@ -376,9 +378,17 @@
                               VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextSecondary}" />
                     <TextBlock Classes="nav-label" Text="{loc:Str NavLabel_Chats}" />
                   </StackPanel>
+                 </Button>
+                <Button Classes="subtle nav-icon" x:Name="NavJobs"
+                        Command="{Binding SetNavCommand}" CommandParameter="1">
+                  <StackPanel Orientation="Horizontal">
+                    <PathIcon Data="{StaticResource Icon.Clock}" Width="14" Height="14"
+                              VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextSecondary}" />
+                    <TextBlock Classes="nav-label" Text="{loc:Str NavLabel_Jobs}" />
+                  </StackPanel>
                 </Button>
                 <Button Classes="subtle nav-icon" x:Name="NavProjects"
-                        Command="{Binding SetNavCommand}" CommandParameter="1">
+                        Command="{Binding SetNavCommand}" CommandParameter="2">
                   <StackPanel Orientation="Horizontal">
                     <PathIcon Data="{StaticResource Icon.Folder}" Width="14" Height="14"
                               VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextSecondary}" />
@@ -386,7 +396,7 @@
                   </StackPanel>
                 </Button>
                 <Button Classes="subtle nav-icon" x:Name="NavSkills"
-                        Command="{Binding SetNavCommand}" CommandParameter="2">
+                        Command="{Binding SetNavCommand}" CommandParameter="3">
                   <StackPanel Orientation="Horizontal">
                     <PathIcon Data="{StaticResource Icon.Bolt}" Width="14" Height="14"
                               VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextSecondary}" />
@@ -394,7 +404,7 @@
                   </StackPanel>
                 </Button>
                 <Button Classes="subtle nav-icon" x:Name="NavAgents"
-                        Command="{Binding SetNavCommand}" CommandParameter="3">
+                        Command="{Binding SetNavCommand}" CommandParameter="4">
                   <StackPanel Orientation="Horizontal">
                     <PathIcon Data="{StaticResource Icon.Sparkle}" Width="14" Height="14"
                               VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextSecondary}" />
@@ -402,7 +412,7 @@
                   </StackPanel>
                 </Button>
                 <Button Classes="subtle nav-icon label-left" x:Name="NavMemories"
-                        Command="{Binding SetNavCommand}" CommandParameter="4">
+                        Command="{Binding SetNavCommand}" CommandParameter="5">
                   <StackPanel Orientation="Horizontal">
                     <TextBlock Classes="nav-label" Text="{loc:Str NavLabel_Memories}" />
                     <PathIcon Data="{StaticResource Icon.Memory}" Width="14" Height="14"
@@ -410,7 +420,7 @@
                   </StackPanel>
                 </Button>
                 <Button Classes="subtle nav-icon label-left" x:Name="NavMcpServers"
-                        Command="{Binding SetNavCommand}" CommandParameter="5">
+                        Command="{Binding SetNavCommand}" CommandParameter="6">
                   <StackPanel Orientation="Horizontal">
                     <TextBlock Classes="nav-label" Text="{loc:Str NavLabel_McpServers}" />
                     <PathIcon Data="{StaticResource Icon.Plug}" Width="14" Height="14"
@@ -418,7 +428,7 @@
                   </StackPanel>
                 </Button>
                 <Button Classes="subtle nav-icon label-left" x:Name="NavSettings"
-                        Command="{Binding SetNavCommand}" CommandParameter="6">
+                        Command="{Binding SetNavCommand}" CommandParameter="7">
                   <StackPanel Orientation="Horizontal">
                     <TextBlock Classes="nav-label" Text="{loc:Str NavLabel_Settings}" />
                     <Panel>
@@ -634,7 +644,102 @@
             </DockPanel>
           </Panel>
 
-          <!-- ── 1: Projects sidebar ── -->
+          <!-- ── 1: Jobs sidebar ── -->
+          <Panel x:Name="SidebarJobs" IsVisible="False" DataContext="{Binding JobsVM}" x:DataType="vm:BackgroundJobsViewModel">
+            <DockPanel>
+              <DockPanel DockPanel.Dock="Top" Margin="16,8,16,0">
+                <Button DockPanel.Dock="Right" Classes="subtle" Padding="7,5" MinHeight="0"
+                        CornerRadius="{DynamicResource Radius.Base}"
+                        Command="{Binding NewJobCommand}" ToolTip.Tip="{loc:Str Sidebar_NewJobTooltip}">
+                  <PathIcon Data="{StaticResource Icon.Plus}" Width="14" Height="14"
+                            Foreground="{DynamicResource Brush.TextSecondary}" />
+                </Button>
+                <TextBlock Text="{loc:Str Sidebar_Jobs}" FontSize="{DynamicResource Font.SizeBody}" FontWeight="SemiBold"
+                           Foreground="{DynamicResource Brush.TextSecondary}"
+                           VerticalAlignment="Center" Margin="6,0,0,0" />
+              </DockPanel>
+              <Border DockPanel.Dock="Top"
+                      Classes="project-switcher-search"
+                      Margin="16,8,16,0">
+                <DockPanel>
+                  <PathIcon DockPanel.Dock="Left"
+                            Data="{StaticResource Icon.Search}"
+                            Width="12" Height="12"
+                            Foreground="{DynamicResource Brush.TextTertiary}"
+                            VerticalAlignment="Center"
+                            Margin="0,0,7,0" />
+                  <TextBox Classes="project-switcher-search-box"
+                           Text="{Binding SearchQuery}"
+                           PlaceholderText="{loc:Str Sidebar_Search_Short}" />
+                </DockPanel>
+              </Border>
+              <ListBox Classes="sidebar-list" Margin="8,8,8,8"
+                       ItemsSource="{Binding Jobs}"
+                       SelectedItem="{Binding SelectedJob, Mode=TwoWay}"
+                       SelectionMode="Single">
+                <ListBox.ItemTemplate>
+                  <DataTemplate x:DataType="models:BackgroundJob">
+                    <Panel Background="Transparent">
+                      <Panel.ContextMenu>
+                        <ContextMenu x:CompileBindings="False">
+                          <MenuItem Header="{loc:Str Jobs_RunNow}"
+                                    Command="{Binding $parent[Window].DataContext.JobsVM.RunNowCommand}"
+                                    CommandParameter="{Binding}">
+                            <MenuItem.Icon>
+                              <PathIcon Data="{StaticResource Icon.Play}" Width="14" Height="14" />
+                            </MenuItem.Icon>
+                          </MenuItem>
+                          <MenuItem Header="{loc:Str Jobs_FieldEnabled}"
+                                    Command="{Binding $parent[Window].DataContext.JobsVM.ToggleJobCommand}"
+                                    CommandParameter="{Binding}">
+                            <MenuItem.Icon>
+                              <PathIcon Data="{StaticResource Icon.Check}" Width="14" Height="14" />
+                            </MenuItem.Icon>
+                          </MenuItem>
+                          <Separator />
+                          <MenuItem Header="{loc:Str Menu_Delete}"
+                                    Command="{Binding $parent[Window].DataContext.JobsVM.DeleteJobCommand}"
+                                    CommandParameter="{Binding}">
+                            <MenuItem.Icon>
+                              <PathIcon Data="{StaticResource Icon.Trash}" Width="14" Height="14" />
+                            </MenuItem.Icon>
+                          </MenuItem>
+                        </ContextMenu>
+                      </Panel.ContextMenu>
+                      <DockPanel>
+                        <Ellipse DockPanel.Dock="Left" Width="6" Height="6"
+                                 VerticalAlignment="Center" Margin="0,0,8,0"
+                                 Fill="{DynamicResource Brush.SuccessDefault}"
+                                 IsVisible="{Binding IsEnabled}" />
+                        <Ellipse DockPanel.Dock="Left" Width="6" Height="6"
+                                 VerticalAlignment="Center" Margin="0,0,8,0"
+                                 Fill="{DynamicResource Brush.TextTertiary}" Opacity="0.4"
+                                 IsVisible="{Binding !IsEnabled}" />
+                        <StackPanel Spacing="1">
+                          <DockPanel>
+                            <TextBlock Text="{Binding StatusDisplay}"
+                                       DockPanel.Dock="Right"
+                                       Classes="caption tertiary"
+                                       Margin="8,0,0,0" />
+                            <TextBlock Text="{Binding Name}" FontSize="{DynamicResource Font.SizeBody}"
+                                       TextTrimming="CharacterEllipsis" />
+                          </DockPanel>
+                          <TextBlock Text="{Binding Description}" FontSize="{DynamicResource Font.SizeCaption}"
+                                     Foreground="{DynamicResource Brush.TextTertiary}"
+                                     TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
+                          <TextBlock Text="{Binding TriggerDisplay}" FontSize="{DynamicResource Font.SizeCaption}"
+                                     Foreground="{DynamicResource Brush.TextTertiary}"
+                                     TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
+                        </StackPanel>
+                      </DockPanel>
+                    </Panel>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+            </DockPanel>
+          </Panel>
+
+          <!-- ── 2: Projects sidebar ── -->
           <Panel x:Name="SidebarProjects" IsVisible="False" DataContext="{Binding ProjectsVM}" x:DataType="vm:ProjectsViewModel">
             <DockPanel>
                <DockPanel DockPanel.Dock="Top" Margin="16,8,16,0">
@@ -1242,6 +1347,13 @@
         </Grid>
 
         <!-- ── Full-width pages with island treatment (visible when not on Chat tab) ── -->
+        <Border x:Name="PageJobs" IsVisible="False"
+                CornerRadius="{DynamicResource Radius.Overlay}"
+                Background="{DynamicResource Brush.SurfaceCard}"
+                BorderBrush="{DynamicResource Brush.BorderSubtle}" BorderThickness="1"
+                BoxShadow="0 0 24 0 #1A000000, 0 0 4 0 #08000000" ClipToBounds="True">
+          <ContentControl x:Name="PageJobsHost" />
+        </Border>
         <Border x:Name="PageProjects" IsVisible="False"
                 CornerRadius="{DynamicResource Radius.Overlay}"
                 Background="{DynamicResource Brush.SurfaceCard}"

@@ -36,7 +36,7 @@ public sealed class TranscriptPagingHeadlessTests
     [Fact]
     public async Task OpeningLongTranscript_RealizesOnlyMountedTurns()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {
@@ -79,7 +79,7 @@ public sealed class TranscriptPagingHeadlessTests
     [Fact]
     public async Task PrependingOlderPage_RestoresVisibleAnchor()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {
@@ -138,7 +138,7 @@ public sealed class TranscriptPagingHeadlessTests
     [Fact]
     public async Task DetachedTurnControl_DoesNotProcessChangesUntilReattached()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {
@@ -277,7 +277,7 @@ public sealed class TranscriptPagingHeadlessTests
     [Fact]
     public async Task HeightChangeAboveViewport_CompensatedByScrollOffset()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {

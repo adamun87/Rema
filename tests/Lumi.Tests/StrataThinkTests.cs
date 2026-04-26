@@ -3,7 +3,6 @@ using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
-using Avalonia.Headless;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using StrataTheme.Controls;
@@ -17,7 +16,7 @@ public sealed class StrataThinkTests
     [Fact]
     public async Task ExpandingNearViewportBottom_BringsContentIntoView()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {
@@ -72,7 +71,7 @@ public sealed class StrataThinkTests
     [Fact]
     public async Task HostScrolling_DoesNotDisableExpandedThinkScroller()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {
@@ -142,7 +141,7 @@ public sealed class StrataThinkTests
     [Fact]
     public async Task ExpandedInsideNarrowHost_UsesAvailableHostWidth()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {
@@ -198,7 +197,7 @@ public sealed class StrataThinkTests
     [Fact]
     public async Task ExpandedInsideStretchPresenter_RefreshesToPresenterWidth()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {

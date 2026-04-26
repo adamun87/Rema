@@ -106,6 +106,9 @@ internal static class AppDataSnapshotFactory
                     CreatedAt = s.CreatedAt
                 })
                 .ToList(),
+            BackgroundJobs = source.BackgroundJobs
+                .Select(CloneBackgroundJob)
+                .ToList(),
             Memories = source.Memories
                 .Select(static m => new Memory
                 {
@@ -126,10 +129,15 @@ internal static class AppDataSnapshotFactory
         AppData currentSnapshot,
         AppData persistedSnapshot,
         ISet<Guid> dirtyChatIds,
-        ISet<Guid> deletedChatIds)
+        ISet<Guid> deletedChatIds,
+        bool backgroundJobsDirty)
     {
         if (currentSnapshot.Chats.Count == 0 && persistedSnapshot.Chats.Count == 0)
+        {
+            if (!backgroundJobsDirty)
+                currentSnapshot.BackgroundJobs = persistedSnapshot.BackgroundJobs.Select(CloneBackgroundJob).ToList();
             return currentSnapshot;
+        }
 
         var currentChatsById = currentSnapshot.Chats.ToDictionary(static c => c.Id);
         var persistedChatIds = new HashSet<Guid>();
@@ -166,7 +174,44 @@ internal static class AppDataSnapshotFactory
         }
 
         currentSnapshot.Chats = mergedChats;
+        if (!backgroundJobsDirty)
+            currentSnapshot.BackgroundJobs = persistedSnapshot.BackgroundJobs.Select(CloneBackgroundJob).ToList();
+
         return currentSnapshot;
+    }
+
+    private static BackgroundJob CloneBackgroundJob(BackgroundJob source)
+    {
+        return new BackgroundJob
+        {
+            Id = source.Id,
+            ChatId = source.ChatId,
+            Name = source.Name,
+            Description = source.Description,
+            Prompt = source.Prompt,
+            TriggerType = source.TriggerType,
+            ScheduleType = source.ScheduleType,
+            IntervalMinutes = source.IntervalMinutes,
+            DailyTime = source.DailyTime,
+            DaysOfWeek = source.DaysOfWeek,
+            MonthlyDay = source.MonthlyDay,
+            CronExpression = source.CronExpression,
+            RunAt = source.RunAt,
+            ScriptContent = source.ScriptContent,
+            ScriptLanguage = source.ScriptLanguage,
+            IsEnabled = source.IsEnabled,
+            IsTemporary = source.IsTemporary,
+            CreatedAt = source.CreatedAt,
+            UpdatedAt = source.UpdatedAt,
+            LastRunStartedAt = source.LastRunStartedAt,
+            LastRunAt = source.LastRunAt,
+            NextRunAt = source.NextRunAt,
+            LastRunStatus = source.LastRunStatus,
+            LastRunSummary = source.LastRunSummary,
+            LastScriptOutput = source.LastScriptOutput,
+            LastScriptExitCode = source.LastScriptExitCode,
+            RunCount = source.RunCount
+        };
     }
 
     private static Chat CloneChatIndex(Chat source)

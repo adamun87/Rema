@@ -127,6 +127,368 @@ public sealed class LumiFeatureManager
         };
     }
 
+    public FeatureChangeResult ManageJobs(
+        string action,
+        string? identifier = null,
+        string? name = null,
+        string? description = null,
+        string? prompt = null,
+        string? chatIdentifier = null,
+        string? triggerType = null,
+        string? scheduleType = null,
+        int? intervalMinutes = null,
+        string? dailyTime = null,
+        string? daysOfWeek = null,
+        int? monthlyDay = null,
+        string? cronExpression = null,
+        string? runAt = null,
+        string? scriptContent = null,
+        string? scriptLanguage = null,
+        bool? isTemporary = null,
+        bool? isEnabled = null,
+        bool? runNow = null,
+        string? query = null,
+        Guid? defaultChatId = null)
+    {
+        var normalizedAction = NormalizeOrNull(action)?.ToLowerInvariant() ?? "";
+        return normalizedAction switch
+        {
+            "list" or "show" or "search" => new FeatureChangeResult(ListJobs(query ?? identifier)),
+            "create" or "add" or "new" => CreateJob(name, description, prompt, chatIdentifier, triggerType, scheduleType,
+                intervalMinutes, dailyTime, daysOfWeek, monthlyDay, cronExpression, runAt, scriptContent, scriptLanguage,
+                isTemporary, isEnabled, runNow, defaultChatId),
+            "update" or "edit" or "rename" or "modify" => UpdateJob(identifier, name, description, prompt, chatIdentifier,
+                triggerType, scheduleType, intervalMinutes, dailyTime, daysOfWeek, monthlyDay, cronExpression, runAt,
+                scriptContent, scriptLanguage, isTemporary, isEnabled, runNow, defaultChatId),
+            "delete" or "remove" => DeleteJob(identifier),
+            "pause" or "disable" => SetJobEnabled(identifier, enabled: false),
+            "resume" or "enable" => SetJobEnabled(identifier, enabled: true),
+            "run" or "run_now" or "run-now" => RunJobSoon(identifier),
+            _ => InvalidAction("background jobs", action)
+        };
+    }
+
+    private FeatureChangeResult CreateJob(
+        string? name,
+        string? description,
+        string? prompt,
+        string? chatIdentifier,
+        string? triggerType,
+        string? scheduleType,
+        int? intervalMinutes,
+        string? dailyTime,
+        string? daysOfWeek,
+        int? monthlyDay,
+        string? cronExpression,
+        string? runAt,
+        string? scriptContent,
+        string? scriptLanguage,
+        bool? isTemporary,
+        bool? isEnabled,
+        bool? runNow,
+        Guid? defaultChatId)
+    {
+        var normalizedName = NormalizeOrNull(name);
+        var normalizedPrompt = NormalizeOrNull(prompt);
+        if (normalizedName is null)
+            return Failure("Background job name is required.");
+        if (normalizedPrompt is null)
+            return Failure("Background job prompt/instructions are required.");
+        var jobs = _dataStore.SnapshotBackgroundJobs();
+        if (HasConflictingLabel(jobs, normalizedName, static job => job.Name, static job => job.Id))
+            return Failure($"A background job named \"{normalizedName}\" already exists.");
+
+        var chatLookup = ResolveChat(chatIdentifier, defaultChatId);
+        if (!chatLookup.Success)
+            return Failure(chatLookup.Error!);
+
+        var normalizedTriggerType = triggerType is null && !string.IsNullOrWhiteSpace(scriptContent)
+            ? BackgroundJobTriggerTypes.Script
+            : BackgroundJobSchedule.NormalizeTriggerType(triggerType);
+        var job = new BackgroundJob
+        {
+            Name = normalizedName,
+            Description = NormalizeOrNull(description) ?? "",
+            Prompt = normalizedPrompt,
+            ChatId = chatLookup.Item!.Id,
+            TriggerType = normalizedTriggerType,
+            ScheduleType = scheduleType ?? BackgroundJobScheduleTypes.Interval,
+            IntervalMinutes = intervalMinutes ?? 1440,
+            DailyTime = NormalizeOrNull(dailyTime) ?? "08:00",
+            DaysOfWeek = NormalizeOrNull(daysOfWeek) ?? "Mon,Tue,Wed,Thu,Fri",
+            MonthlyDay = monthlyDay ?? 1,
+            CronExpression = NormalizeOrNull(cronExpression) ?? "0 8 * * *",
+            ScriptContent = NormalizeOrNull(scriptContent) ?? "",
+            ScriptLanguage = NormalizeOrNull(scriptLanguage) ?? BackgroundJobScriptLanguages.PowerShell,
+            IsTemporary = normalizedTriggerType == BackgroundJobTriggerTypes.Script || isTemporary == true,
+            IsEnabled = isEnabled ?? true
+        };
+
+        if (!TrySetRunAt(job, runAt, out var runAtError))
+            return Failure(runAtError!);
+
+        if (!TryValidateJobConfiguration(job, out var configurationError))
+            return Failure(configurationError!);
+        BackgroundJobSchedule.Normalize(job);
+
+        var now = DateTimeOffset.Now;
+        job.NextRunAt = job.IsEnabled
+            ? job.TriggerType == BackgroundJobTriggerTypes.Script || runNow == true
+                ? now
+                : BackgroundJobSchedule.ComputeNextRun(job, now, afterRun: false)
+            : null;
+
+        _dataStore.AddBackgroundJob(job);
+        return Success($"Background job created.\n{DescribeJob(job)}");
+    }
+
+    private FeatureChangeResult UpdateJob(
+        string? identifier,
+        string? name,
+        string? description,
+        string? prompt,
+        string? chatIdentifier,
+        string? triggerType,
+        string? scheduleType,
+        int? intervalMinutes,
+        string? dailyTime,
+        string? daysOfWeek,
+        int? monthlyDay,
+        string? cronExpression,
+        string? runAt,
+        string? scriptContent,
+        string? scriptLanguage,
+        bool? isTemporary,
+        bool? isEnabled,
+        bool? runNow,
+        Guid? defaultChatId)
+    {
+        var lookup = ResolveByIdOrLabel(
+            _dataStore.SnapshotBackgroundJobs(),
+            identifier,
+            static job => job.Id,
+            static job => job.Name,
+            "background job");
+        if (!lookup.Success)
+            return Failure(lookup.Error!);
+
+        if (name is null && description is null && prompt is null && chatIdentifier is null
+            && triggerType is null && scheduleType is null && intervalMinutes is null && dailyTime is null
+            && daysOfWeek is null && monthlyDay is null && cronExpression is null && runAt is null
+            && scriptContent is null && scriptLanguage is null
+            && isTemporary is null && isEnabled is null && runNow is null)
+            return Failure("No background job changes were provided.");
+
+        var job = lookup.Item!;
+
+        lock (job.SyncRoot)
+        {
+        if (name is not null)
+        {
+            var normalizedName = NormalizeOrNull(name);
+            if (normalizedName is null)
+                return Failure("Background job name cannot be empty.");
+            if (HasConflictingLabel(_dataStore.SnapshotBackgroundJobs(), normalizedName, static item => item.Name, static item => item.Id, job.Id))
+                return Failure($"A background job named \"{normalizedName}\" already exists.");
+            job.Name = normalizedName;
+        }
+
+        if (description is not null)
+            job.Description = NormalizeOrNull(description) ?? "";
+
+        if (prompt is not null)
+        {
+            var normalizedPrompt = NormalizeOrNull(prompt);
+            if (normalizedPrompt is null)
+                return Failure("Background job prompt cannot be empty.");
+            job.Prompt = normalizedPrompt;
+        }
+
+        if (chatIdentifier is not null)
+        {
+            var chatLookup = ResolveChat(chatIdentifier, defaultChatId);
+            if (!chatLookup.Success)
+                return Failure(chatLookup.Error!);
+            job.ChatId = chatLookup.Item!.Id;
+        }
+
+        if (triggerType is not null)
+            job.TriggerType = triggerType;
+        if (scheduleType is not null)
+            job.ScheduleType = scheduleType;
+        if (intervalMinutes.HasValue)
+            job.IntervalMinutes = intervalMinutes.Value;
+        if (dailyTime is not null)
+            job.DailyTime = NormalizeOrNull(dailyTime) ?? "08:00";
+        if (daysOfWeek is not null)
+            job.DaysOfWeek = NormalizeOrNull(daysOfWeek) ?? "Mon,Tue,Wed,Thu,Fri";
+        if (monthlyDay.HasValue)
+            job.MonthlyDay = monthlyDay.Value;
+        if (cronExpression is not null)
+            job.CronExpression = NormalizeOrNull(cronExpression) ?? "0 8 * * *";
+        if (scriptContent is not null)
+            job.ScriptContent = NormalizeOrNull(scriptContent) ?? "";
+        if (scriptLanguage is not null)
+            job.ScriptLanguage = NormalizeOrNull(scriptLanguage) ?? BackgroundJobScriptLanguages.PowerShell;
+        if (isTemporary.HasValue)
+            job.IsTemporary = isTemporary.Value;
+        if (isEnabled.HasValue)
+            job.IsEnabled = isEnabled.Value;
+
+        if (!TrySetRunAt(job, runAt, out var runAtError))
+            return Failure(runAtError!);
+
+        if (!TryValidateJobConfiguration(job, out var configurationError))
+            return Failure(configurationError!);
+        BackgroundJobSchedule.Normalize(job);
+        if (job.TriggerType == BackgroundJobTriggerTypes.Script)
+            job.IsTemporary = true;
+
+        var now = DateTimeOffset.Now;
+        job.NextRunAt = job.IsEnabled
+            ? job.TriggerType == BackgroundJobTriggerTypes.Script || runNow == true
+                ? now
+                : BackgroundJobSchedule.ComputeNextRun(job, now, afterRun: false)
+            : null;
+        job.UpdatedAt = now;
+        }
+
+        _dataStore.MarkBackgroundJobsChanged();
+
+        return Success($"Background job updated.\n{DescribeJob(job)}");
+    }
+
+    private static bool TryValidateJobConfiguration(BackgroundJob job, out string? error)
+    {
+        error = null;
+        var triggerType = BackgroundJobSchedule.NormalizeTriggerType(job.TriggerType);
+        var scheduleType = BackgroundJobSchedule.NormalizeScheduleType(job.ScheduleType);
+
+        if (triggerType == BackgroundJobTriggerTypes.Script)
+        {
+            if (string.IsNullOrWhiteSpace(job.ScriptContent))
+            {
+                error = "Script background jobs require scriptContent.";
+                return false;
+            }
+
+            return true;
+        }
+
+        if ((scheduleType == BackgroundJobScheduleTypes.Daily
+             || scheduleType == BackgroundJobScheduleTypes.Weekly
+             || scheduleType == BackgroundJobScheduleTypes.Monthly)
+            && !BackgroundJobSchedule.TryValidateDailyTime(job.DailyTime, out var timeError))
+        {
+            error = timeError;
+            return false;
+        }
+
+        if (scheduleType == BackgroundJobScheduleTypes.Weekly
+            && !BackgroundJobSchedule.TryValidateDaysOfWeek(job.DaysOfWeek, out var daysError))
+        {
+            error = daysError;
+            return false;
+        }
+
+        if (scheduleType == BackgroundJobScheduleTypes.Monthly
+            && (job.MonthlyDay < 1 || job.MonthlyDay > 31))
+        {
+            error = "Monthly day must be between 1 and 31.";
+            return false;
+        }
+
+        if (scheduleType == BackgroundJobScheduleTypes.Cron
+            && !BackgroundJobSchedule.TryValidateCronExpression(job.CronExpression, out var cronError))
+        {
+            error = cronError;
+            return false;
+        }
+
+        return true;
+    }
+
+    private FeatureChangeResult DeleteJob(string? identifier)
+    {
+        var lookup = ResolveByIdOrLabel(
+            _dataStore.SnapshotBackgroundJobs(),
+            identifier,
+            static job => job.Id,
+            static job => job.Name,
+            "background job");
+        if (!lookup.Success)
+            return Failure(lookup.Error!);
+
+        var job = lookup.Item!;
+        _dataStore.RemoveBackgroundJob(job);
+        return Success($"Background job deleted: {job.Name}.");
+    }
+
+    private FeatureChangeResult SetJobEnabled(string? identifier, bool enabled)
+    {
+        var lookup = ResolveByIdOrLabel(
+            _dataStore.SnapshotBackgroundJobs(),
+            identifier,
+            static job => job.Id,
+            static job => job.Name,
+            "background job");
+        if (!lookup.Success)
+            return Failure(lookup.Error!);
+
+        var job = lookup.Item!;
+        lock (job.SyncRoot)
+        {
+            job.IsEnabled = enabled;
+            job.NextRunAt = enabled ? BackgroundJobSchedule.ComputeNextRun(job, DateTimeOffset.Now, afterRun: false) : null;
+            job.UpdatedAt = DateTimeOffset.Now;
+        }
+
+        _dataStore.MarkBackgroundJobsChanged();
+        return Success(enabled ? $"Background job resumed.\n{DescribeJob(job)}" : $"Background job paused.\n{DescribeJob(job)}");
+    }
+
+    private FeatureChangeResult RunJobSoon(string? identifier)
+    {
+        var lookup = ResolveByIdOrLabel(
+            _dataStore.SnapshotBackgroundJobs(),
+            identifier,
+            static job => job.Id,
+            static job => job.Name,
+            "background job");
+        if (!lookup.Success)
+            return Failure(lookup.Error!);
+
+        var job = lookup.Item!;
+        lock (job.SyncRoot)
+        {
+            job.IsEnabled = true;
+            job.NextRunAt = DateTimeOffset.Now;
+            job.UpdatedAt = DateTimeOffset.Now;
+        }
+
+        _dataStore.MarkBackgroundJobsChanged();
+        return Success($"Background job queued to run now.\n{DescribeJob(job)}");
+    }
+
+    private string ListJobs(string? query)
+    {
+        var jobs = FilterByQuery(
+                _dataStore.SnapshotBackgroundJobs(),
+                query,
+                job => job.Name,
+                job => job.Description,
+                job => job.Prompt,
+                job => job.LastRunSummary)
+            .OrderBy(job => job.NextRunAt ?? DateTimeOffset.MaxValue)
+            .ThenBy(job => job.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (jobs.Count == 0)
+            return string.IsNullOrWhiteSpace(query) ? "No background jobs found." : $"No background jobs matched \"{query}\".";
+
+        return "Background jobs:\n" + string.Join("\n", jobs.Select(DescribeJob));
+    }
+
     private FeatureChangeResult CreateProject(string? name, string? instructions, string? workingDirectory)
     {
         var normalizedName = NormalizeOrNull(name);
@@ -854,6 +1216,18 @@ public sealed class LumiFeatureManager
         return $"- {memory.Id} | {memory.Key} | category: {memory.Category} | updated: {memory.UpdatedAt:yyyy-MM-dd HH:mm} | {Preview(memory.Content)}";
     }
 
+    private string DescribeJob(BackgroundJob job)
+    {
+        lock (job.SyncRoot)
+        {
+            var chatTitle = _dataStore.Data.Chats.FirstOrDefault(chat => chat.Id == job.ChatId)?.Title ?? "(missing chat)";
+            var next = job.NextRunAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "(none)";
+            var last = job.LastRunAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "(never)";
+            var exit = job.LastScriptExitCode.HasValue ? $" | exit: {job.LastScriptExitCode}" : "";
+            return $"- {job.Id} | {job.Name} | {(job.IsEnabled ? "enabled" : "paused")} | {BackgroundJobSchedule.Describe(job)} | chat: {chatTitle} | temporary: {job.IsTemporary} | next: {next} | last: {last} | status: {job.LastRunStatus}{exit} | {Preview(job.Description)}";
+        }
+    }
+
     private static string ResolveNames<T>(
         IReadOnlyCollection<Guid> ids,
         IEnumerable<T> items,
@@ -996,6 +1370,54 @@ public sealed class LumiFeatureManager
             static server => server.Id,
             static server => server.Name,
             "MCP server");
+    }
+
+    private LookupResult<Chat> ResolveChat(string? identifier, Guid? defaultChatId)
+    {
+        var normalizedIdentifier = NormalizeOrNull(identifier);
+        if (normalizedIdentifier is null && defaultChatId.HasValue)
+        {
+            var defaultChat = _dataStore.Data.Chats.FirstOrDefault(chat => chat.Id == defaultChatId.Value);
+            return defaultChat is null
+                ? LookupResult<Chat>.Fail($"chat not found: {defaultChatId.Value}")
+                : LookupResult<Chat>.Ok(defaultChat);
+        }
+
+        return ResolveByIdOrLabel(
+            _dataStore.Data.Chats,
+            normalizedIdentifier,
+            static chat => chat.Id,
+            static chat => chat.Title,
+            "chat");
+    }
+
+    private static bool TrySetRunAt(BackgroundJob job, string? runAt, out string? error)
+    {
+        error = null;
+        if (runAt is null)
+            return true;
+
+        var normalizedRunAt = NormalizeOrNull(runAt);
+        if (normalizedRunAt is null)
+        {
+            job.RunAt = null;
+            return true;
+        }
+
+        if (DateTimeOffset.TryParse(normalizedRunAt, out var parsed))
+        {
+            job.RunAt = parsed;
+            return true;
+        }
+
+        if (DateTime.TryParse(normalizedRunAt, out var localDateTime))
+        {
+            job.RunAt = new DateTimeOffset(localDateTime, TimeZoneInfo.Local.GetUtcOffset(localDateTime));
+            return true;
+        }
+
+        error = $"Could not parse runAt value \"{runAt}\". Use a local date/time like 2026-04-25 08:00.";
+        return false;
     }
 
     private static LookupManyResult ResolveIds<T>(

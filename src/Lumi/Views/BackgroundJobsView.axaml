@@ -1,0 +1,362 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Lumi.ViewModels"
+             xmlns:models="using:Lumi.Models"
+             xmlns:sc="using:StrataTheme.Controls"
+             xmlns:loc="using:Lumi.Localization"
+             x:Class="Lumi.Views.BackgroundJobsView"
+             x:DataType="vm:BackgroundJobsViewModel"
+             x:CompileBindings="True">
+
+  <UserControl.Styles>
+    <Style Selector="TextBlock.field-label">
+      <Setter Property="FontSize" Value="{DynamicResource Font.SizeCaption}" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}" />
+      <Setter Property="Margin" Value="0,0,0,4" />
+    </Style>
+    <Style Selector="TextBox.mono">
+      <Setter Property="FontFamily" Value="Consolas, Cascadia Code, Menlo, monospace" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="Border.job-section">
+      <Setter Property="Background" Value="{DynamicResource Brush.SurfaceRaised}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderSubtle}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="18" />
+      <Setter Property="Padding" Value="16" />
+    </Style>
+    <Style Selector="Border.job-side-card">
+      <Setter Property="Background" Value="{DynamicResource Brush.Surface2}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderSubtle}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="18" />
+      <Setter Property="Padding" Value="14" />
+    </Style>
+    <Style Selector="Border.step-pill">
+      <Setter Property="Background" Value="{DynamicResource Brush.AccentSubtle}" />
+      <Setter Property="CornerRadius" Value="999" />
+      <Setter Property="Width" Value="26" />
+      <Setter Property="Height" Value="26" />
+    </Style>
+    <Style Selector="TextBlock.section-title">
+      <Setter Property="FontSize" Value="{DynamicResource Font.SizeBody}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="RadioButton.trigger-card">
+      <Setter Property="Background" Value="{DynamicResource Brush.Surface2}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderSubtle}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="14" />
+      <Setter Property="Padding" Value="12" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="RadioButton.trigger-card:checked">
+      <Setter Property="Background" Value="{DynamicResource Brush.AccentSubtle}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.AccentDefault}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Panel>
+    <ScrollViewer IsVisible="{Binding IsEditing}"
+                  HorizontalScrollBarVisibility="Disabled"
+                  VerticalScrollBarVisibility="Auto">
+      <StackPanel Spacing="16" Margin="24,20,24,28">
+        <DockPanel Margin="0,0,0,16">
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+            <Button x:Name="JobsSaveButton" Classes="accent" Content="{loc:Str Common_Save}" Padding="18,7" MinHeight="0"
+                    Command="{Binding SaveJobCommand}" />
+            <Button x:Name="JobsCancelButton" Classes="subtle" Content="{loc:Str Common_Cancel}" Padding="18,7" MinHeight="0"
+                    Command="{Binding CancelEditCommand}" />
+            <Button x:Name="JobsRunNowButton" Classes="subtle" Padding="10,7" MinHeight="0"
+                    Command="{Binding RunNowCommand}"
+                    CommandParameter="{Binding SelectedJob}"
+                    IsVisible="{Binding SelectedJob, Converter={x:Static ObjectConverters.IsNotNull}}"
+                    ToolTip.Tip="{loc:Str Jobs_RunNow}">
+              <PathIcon Data="{StaticResource Icon.Play}" Width="14" Height="14"
+                        Foreground="{DynamicResource Brush.TextTertiary}" />
+            </Button>
+            <Button x:Name="JobsOpenChatButton" Classes="subtle" Padding="12,7" MinHeight="0"
+                    Content="{loc:Str Jobs_OpenChat}"
+                    Command="{Binding OpenChatCommand}"
+                    CommandParameter="{Binding SelectedJob}"
+                    IsVisible="{Binding SelectedJob, Converter={x:Static ObjectConverters.IsNotNull}}" />
+            <Button x:Name="JobsDeleteButton" Classes="subtle" Padding="10,7" MinHeight="0"
+                    Command="{Binding DeleteJobCommand}"
+                    CommandParameter="{Binding SelectedJob}"
+                    IsVisible="{Binding SelectedJob, Converter={x:Static ObjectConverters.IsNotNull}}"
+                    ToolTip.Tip="{loc:Str Menu_Delete}">
+              <PathIcon Data="{StaticResource Icon.Trash}" Width="14" Height="14"
+                        Foreground="{DynamicResource Brush.TextTertiary}" />
+            </Button>
+          </StackPanel>
+          <StackPanel Spacing="2">
+            <TextBlock Text="{loc:Str Jobs_EditorTitle}" Classes="subtitle" />
+            <TextBlock Text="{loc:Str Jobs_EditorSubtitle}" Classes="caption tertiary" />
+          </StackPanel>
+        </DockPanel>
+
+        <Border IsVisible="{Binding ValidationMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                Background="{DynamicResource Brush.DangerSubtle}"
+                BorderBrush="{DynamicResource Brush.BorderSubtle}"
+                BorderThickness="1"
+                CornerRadius="10"
+                Padding="10,8"
+                Margin="0,0,0,12">
+          <TextBlock Text="{Binding ValidationMessage}" Classes="caption"
+                     Foreground="{DynamicResource Brush.DangerDefault}" />
+        </Border>
+
+        <StackPanel Spacing="14">
+            <Border Classes="job-section">
+              <StackPanel Spacing="12">
+                <DockPanel>
+                  <Border DockPanel.Dock="Left" Classes="step-pill" Margin="0,0,10,0">
+                    <TextBlock Text="1" HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Foreground="{DynamicResource Brush.AccentDefault}" FontWeight="SemiBold" />
+                  </Border>
+                  <StackPanel Spacing="1">
+                    <TextBlock Text="{loc:Str Jobs_SectionBasics}" Classes="section-title" />
+                    <TextBlock Text="{loc:Str Jobs_SectionBasicsDescription}" Classes="caption tertiary" />
+                  </StackPanel>
+                </DockPanel>
+
+                <TextBlock Text="{loc:Str Field_Name}" Classes="field-label" />
+                <TextBox Text="{Binding EditName}" PlaceholderText="{loc:Str Jobs_WatermarkName}" />
+
+                <TextBlock Text="{loc:Str Jobs_FieldPrompt}" Classes="field-label" />
+                <TextBox Text="{Binding EditPrompt}"
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         MinHeight="72"
+                         MaxHeight="220"
+                         VerticalContentAlignment="Top"
+                         PlaceholderText="{loc:Str Jobs_WatermarkPrompt}" />
+
+                <Expander Header="{loc:Str Jobs_OptionalDetails}">
+                  <StackPanel Spacing="10" Margin="0,8,0,0">
+                    <TextBlock Text="{loc:Str Field_Description}" Classes="field-label" />
+                    <TextBox Text="{Binding EditDescription}" PlaceholderText="{loc:Str Jobs_WatermarkDescription}" />
+
+                    <TextBlock Text="{loc:Str Jobs_FieldChat}" Classes="field-label" />
+                    <ComboBox ItemsSource="{Binding AvailableChats}"
+                              SelectedItem="{Binding EditChat}"
+                              HorizontalAlignment="Stretch">
+                      <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="models:Chat">
+                          <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                        </DataTemplate>
+                      </ComboBox.ItemTemplate>
+                    </ComboBox>
+                  </StackPanel>
+                </Expander>
+              </StackPanel>
+            </Border>
+
+            <Border Classes="job-section">
+              <StackPanel Spacing="12">
+                <DockPanel>
+                  <Border DockPanel.Dock="Left" Classes="step-pill" Margin="0,0,10,0">
+                    <TextBlock Text="2" HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Foreground="{DynamicResource Brush.AccentDefault}" FontWeight="SemiBold" />
+                  </Border>
+                  <StackPanel Spacing="1">
+                    <TextBlock Text="{loc:Str Jobs_SectionTrigger}" Classes="section-title" />
+                    <TextBlock Text="{loc:Str Jobs_FieldTriggerDescription}" Classes="caption tertiary" />
+                  </StackPanel>
+                </DockPanel>
+
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                  <RadioButton Classes="trigger-card"
+                               GroupName="JobTriggerType"
+                               IsChecked="{Binding EditUsesTimeTrigger, Mode=TwoWay}">
+                    <StackPanel Spacing="4">
+                      <TextBlock Text="{loc:Str Jobs_TriggerTime}" FontWeight="SemiBold" />
+                      <TextBlock Text="{loc:Str Jobs_TriggerTimeDescription}" Classes="caption tertiary" TextWrapping="Wrap" />
+                    </StackPanel>
+                  </RadioButton>
+                  <RadioButton Grid.Column="1"
+                               Classes="trigger-card"
+                               GroupName="JobTriggerType"
+                               IsChecked="{Binding EditUsesScriptTrigger, Mode=TwoWay}">
+                    <StackPanel Spacing="4">
+                      <TextBlock Text="{loc:Str Jobs_TriggerScript}" FontWeight="SemiBold" />
+                      <TextBlock Text="{loc:Str Jobs_TriggerScriptDescription}" Classes="caption tertiary" TextWrapping="Wrap" />
+                    </StackPanel>
+                  </RadioButton>
+                </Grid>
+
+                <Expander Header="{loc:Str Jobs_ActivationDetails}">
+                  <sc:StrataSettingGroup Margin="0,8,0,0">
+                    <sc:StrataSetting Header="{loc:Str Jobs_FieldEnabled}" Description="{loc:Str Jobs_FieldEnabledDescription}">
+                      <ToggleSwitch IsChecked="{Binding EditIsEnabled}" OnContent="" OffContent="" />
+                    </sc:StrataSetting>
+                    <sc:StrataSetting Header="{loc:Str Jobs_FieldTemporary}" Description="{loc:Str Jobs_FieldTemporaryDescription}"
+                                       IsVisible="{Binding CanUseTemporaryToggle}">
+                      <ToggleSwitch IsChecked="{Binding EditIsTemporary}" OnContent="" OffContent="" />
+                    </sc:StrataSetting>
+                  </sc:StrataSettingGroup>
+                </Expander>
+              </StackPanel>
+            </Border>
+
+            <Border Classes="job-section" IsVisible="{Binding IsTimeTrigger}">
+              <StackPanel Spacing="12">
+                <DockPanel>
+                  <Border DockPanel.Dock="Left" Classes="step-pill" Margin="0,0,10,0">
+                    <TextBlock Text="3" HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Foreground="{DynamicResource Brush.AccentDefault}" FontWeight="SemiBold" />
+                  </Border>
+                  <StackPanel Spacing="1">
+                    <TextBlock Text="{loc:Str Jobs_SectionSchedule}" Classes="section-title" />
+                    <TextBlock Text="{loc:Str Jobs_SectionScheduleDescription}" Classes="caption tertiary" />
+                  </StackPanel>
+                </DockPanel>
+
+                <TextBlock Text="{loc:Str Jobs_FieldSchedule}" Classes="field-label" />
+                <ComboBox SelectedIndex="{Binding EditScheduleTypeIndex}" Width="240" HorizontalAlignment="Left">
+                  <ComboBoxItem Content="{loc:Str Jobs_ScheduleInterval}" />
+                  <ComboBoxItem Content="{loc:Str Jobs_ScheduleDaily}" />
+                  <ComboBoxItem Content="{loc:Str Jobs_ScheduleWeekly}" />
+                  <ComboBoxItem Content="{loc:Str Jobs_ScheduleMonthly}" />
+                  <ComboBoxItem Content="{loc:Str Jobs_ScheduleOnce}" />
+                  <ComboBoxItem Content="{loc:Str Jobs_ScheduleCron}" />
+                </ComboBox>
+
+                <Expander Header="{loc:Str Jobs_ScheduleDetails}">
+                  <StackPanel Spacing="10" Margin="0,8,0,0">
+                    <StackPanel Spacing="0" IsVisible="{Binding IsIntervalSchedule}">
+                      <TextBlock Text="{loc:Str Jobs_FieldIntervalMinutes}" Classes="field-label" />
+                      <TextBox Text="{Binding EditIntervalMinutes}" Width="160" HorizontalAlignment="Left" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="0" IsVisible="{Binding IsDailySchedule}">
+                      <TextBlock Text="{loc:Str Jobs_FieldDailyTime}" Classes="field-label" />
+                      <TextBox Text="{Binding EditDailyTime}" Width="160" HorizontalAlignment="Left" PlaceholderText="08:00" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="0" IsVisible="{Binding IsWeeklySchedule}">
+                      <TextBlock Text="{loc:Str Jobs_FieldDaysOfWeek}" Classes="field-label" />
+                      <TextBox Text="{Binding EditDaysOfWeek}" Width="280" HorizontalAlignment="Left" PlaceholderText="{loc:Str Jobs_WatermarkDaysOfWeek}" Margin="0,0,0,10" />
+                      <TextBlock Text="{loc:Str Jobs_FieldDailyTime}" Classes="field-label" />
+                      <TextBox Text="{Binding EditDailyTime}" Width="160" HorizontalAlignment="Left" PlaceholderText="08:00" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="0" IsVisible="{Binding IsMonthlySchedule}">
+                      <TextBlock Text="{loc:Str Jobs_FieldMonthlyDay}" Classes="field-label" />
+                      <TextBox Text="{Binding EditMonthlyDay}" Width="160" HorizontalAlignment="Left" PlaceholderText="1" Margin="0,0,0,10" />
+                      <TextBlock Text="{loc:Str Jobs_FieldDailyTime}" Classes="field-label" />
+                      <TextBox Text="{Binding EditDailyTime}" Width="160" HorizontalAlignment="Left" PlaceholderText="08:00" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="0" IsVisible="{Binding IsOnceSchedule}">
+                      <TextBlock Text="{loc:Str Jobs_FieldRunAt}" Classes="field-label" />
+                      <TextBox Text="{Binding EditRunAt}" Width="220" HorizontalAlignment="Left" PlaceholderText="2026-04-25 08:00" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="0" IsVisible="{Binding IsCronSchedule}">
+                      <TextBlock Text="{loc:Str Jobs_FieldCron}" Classes="field-label" />
+                      <TextBox Text="{Binding EditCronExpression}" Width="280" HorizontalAlignment="Left" PlaceholderText="0 8 * * Mon-Fri" Margin="0,0,0,4" />
+                      <TextBlock Text="{loc:Str Jobs_FieldCronDescription}" Classes="caption tertiary" />
+                    </StackPanel>
+                  </StackPanel>
+                </Expander>
+              </StackPanel>
+            </Border>
+
+            <Border Classes="job-section" IsVisible="{Binding IsScriptTrigger}">
+              <StackPanel Spacing="12">
+                <DockPanel>
+                  <Border DockPanel.Dock="Left" Classes="step-pill" Margin="0,0,10,0">
+                    <TextBlock Text="3" HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Foreground="{DynamicResource Brush.AccentDefault}" FontWeight="SemiBold" />
+                  </Border>
+                  <StackPanel Spacing="1">
+                    <TextBlock Text="{loc:Str Jobs_SectionWakeScript}" Classes="section-title" />
+                    <TextBlock Text="{loc:Str Jobs_SectionWakeScriptDescription}" Classes="caption tertiary" TextWrapping="Wrap" />
+                  </StackPanel>
+                </DockPanel>
+
+                <TextBlock Text="{loc:Str Jobs_FieldScriptLanguage}" Classes="field-label" />
+                <ComboBox SelectedIndex="{Binding EditScriptLanguageIndex}" Width="180" HorizontalAlignment="Left">
+                  <ComboBoxItem Content="{loc:Str Jobs_ScriptPowerShell}" />
+                  <ComboBoxItem Content="{loc:Str Jobs_ScriptPython}" />
+                  <ComboBoxItem Content="{loc:Str Jobs_ScriptNode}" />
+                  <ComboBoxItem Content="{loc:Str Jobs_ScriptCommand}" />
+                </ComboBox>
+
+                <Expander Header="{loc:Str Jobs_ScriptBody}">
+                  <StackPanel Spacing="10" Margin="0,8,0,0">
+                    <TextBlock Text="{loc:Str Jobs_ScriptWakeDescription}" Classes="caption tertiary" TextWrapping="Wrap" />
+                    <TextBlock Text="{loc:Str Jobs_FieldScript}" Classes="field-label" />
+                    <TextBox Classes="mono"
+                             Text="{Binding EditScriptContent}"
+                             AcceptsReturn="True"
+                             TextWrapping="NoWrap"
+                             MinHeight="220"
+                             MaxHeight="420"
+                             VerticalContentAlignment="Top"
+                             PlaceholderText="{loc:Str Jobs_WatermarkScript}" />
+                  </StackPanel>
+                </Expander>
+              </StackPanel>
+            </Border>
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+            <Border Classes="job-side-card">
+              <StackPanel Spacing="8">
+                <TextBlock Text="{loc:Str Jobs_PreviewTitle}" Classes="section-title" />
+                <TextBlock Text="{loc:Str Jobs_PreviewTime}" Classes="caption tertiary" TextWrapping="Wrap"
+                           IsVisible="{Binding IsTimeTrigger}" />
+                <TextBlock Text="{loc:Str Jobs_PreviewScript}" Classes="caption tertiary" TextWrapping="Wrap"
+                           IsVisible="{Binding IsScriptTrigger}" />
+              </StackPanel>
+            </Border>
+
+            <Border Grid.Column="1" Classes="job-side-card">
+              <StackPanel Spacing="8">
+                <TextBlock Text="{loc:Str Jobs_ResultTitle}" Classes="section-title" />
+                <TextBlock Text="{Binding SelectedRunStatus}" FontWeight="SemiBold"
+                           IsVisible="{Binding HasSelectedJob}" />
+                <TextBlock Text="{loc:Str Jobs_ResultNoRun}" Classes="caption tertiary" TextWrapping="Wrap"
+                           IsVisible="{Binding !HasSelectedJob}" />
+                <TextBlock Text="{Binding SelectedNextRunText, StringFormat='Next {0}'}"
+                           Classes="caption tertiary"
+                           IsVisible="{Binding HasSelectedNextRun}" />
+                <TextBlock Text="{Binding SelectedStartedText, StringFormat='Started {0}'}"
+                           Classes="caption tertiary"
+                           IsVisible="{Binding HasSelectedStarted}" />
+                <TextBlock Text="{Binding SelectedExitCodeText, StringFormat='Exit code {0}'}"
+                           Classes="caption tertiary"
+                           IsVisible="{Binding HasSelectedExitCode}" />
+                <TextBlock Text="{Binding SelectedLastRunSummary}"
+                           Classes="caption tertiary"
+                           TextWrapping="Wrap"
+                           IsVisible="{Binding HasSelectedLastRunSummary}" />
+                <TextBlock Text="{Binding SelectedScriptOutput}"
+                           Classes="caption tertiary"
+                           FontFamily="Consolas, Cascadia Code, Menlo, monospace"
+                           TextWrapping="Wrap"
+                           MaxHeight="140"
+                           IsVisible="{Binding HasSelectedScriptOutput}" />
+              </StackPanel>
+            </Border>
+          </Grid>
+        </StackPanel>
+      </StackPanel>
+    </ScrollViewer>
+
+    <StackPanel IsVisible="{Binding !IsEditing}"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Spacing="10"
+                Opacity="0.45">
+      <PathIcon Data="{StaticResource Icon.Clock}" Width="30" Height="30"
+                Foreground="{DynamicResource Brush.TextSecondary}"
+                HorizontalAlignment="Center" />
+      <StackPanel Spacing="2" HorizontalAlignment="Center">
+        <TextBlock Text="{loc:Str Jobs_EmptyTitle}" HorizontalAlignment="Center" />
+        <TextBlock Text="{loc:Str Jobs_EmptySubtitle}" Classes="caption tertiary" HorizontalAlignment="Center" />
+      </StackPanel>
+    </StackPanel>
+  </Panel>
+</UserControl>

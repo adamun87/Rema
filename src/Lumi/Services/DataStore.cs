@@ -19,7 +19,7 @@ public sealed record UserPromptHistoryItem(
 public class DataStore
 {
     private static readonly string AppDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Lumi");
+        ResolveAppDataRoot(), "Lumi");
     private static readonly string DataFile = Path.Combine(AppDir, "data.json");
     private static readonly string IndexLockFile = Path.Combine(AppDir, "data.lock");
 
@@ -34,9 +34,12 @@ public class DataStore
     private readonly object _chatSearchCacheSync = new();
     private readonly Dictionary<Guid, CachedChatSearchSnapshot> _chatSearchCache = [];
     private readonly object _chatChangeSync = new();
+    private readonly object _backgroundJobsSync = new();
     private readonly Dictionary<Guid, long> _dirtyChatVersions = [];
     private readonly Dictionary<Guid, long> _deletedChatVersions = [];
     private readonly bool _usesPersistentStorage = true;
+    private long _nextBackgroundJobsChangeVersion;
+    private long _dirtyBackgroundJobsVersion;
     private int? _activeSkillSyncHash;
     private string? _activeSkillSyncDirectory;
     private long _nextChatChangeVersion;
@@ -61,6 +64,15 @@ public class DataStore
 
     public AppData Data => _data;
 
+    private static string ResolveAppDataRoot()
+    {
+        var overrideRoot = Environment.GetEnvironmentVariable("LUMI_APPDATA_DIR");
+        if (!string.IsNullOrWhiteSpace(overrideRoot))
+            return Path.GetFullPath(Environment.ExpandEnvironmentVariables(overrideRoot));
+
+        return Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+    }
+
     /// <summary>Marks a chat as needing persistence. Does not change <see cref="Chat.UpdatedAt"/>
     /// — callers that represent real user/assistant activity should bump the timestamp themselves.</summary>
     public void MarkChatChanged(Chat chat)
@@ -83,6 +95,60 @@ public class DataStore
             _dirtyChatVersions.Remove(chatId);
             _deletedChatVersions[chatId] = version;
         }
+    }
+
+    public void MarkBackgroundJobsChanged()
+    {
+        var version = Interlocked.Increment(ref _nextBackgroundJobsChangeVersion);
+        Interlocked.Exchange(ref _dirtyBackgroundJobsVersion, version);
+    }
+
+    public List<BackgroundJob> SnapshotBackgroundJobs()
+    {
+        lock (_backgroundJobsSync)
+        {
+            return _data.BackgroundJobs.ToList();
+        }
+    }
+
+    public void AddBackgroundJob(BackgroundJob job)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+
+        lock (_backgroundJobsSync)
+        {
+            _data.BackgroundJobs.Add(job);
+        }
+
+        MarkBackgroundJobsChanged();
+    }
+
+    public bool RemoveBackgroundJob(BackgroundJob job)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+
+        bool removed;
+        lock (_backgroundJobsSync)
+        {
+            removed = _data.BackgroundJobs.Remove(job);
+        }
+
+        if (removed)
+            MarkBackgroundJobsChanged();
+        return removed;
+    }
+
+    public int RemoveBackgroundJobsForChat(Guid chatId)
+    {
+        int removed;
+        lock (_backgroundJobsSync)
+        {
+            removed = _data.BackgroundJobs.RemoveAll(job => job.ChatId == chatId);
+        }
+
+        if (removed > 0)
+            MarkBackgroundJobsChanged();
+        return removed;
     }
 
     /// <summary>
@@ -110,12 +176,18 @@ public class DataStore
         FileStream? indexLock = null;
         Dictionary<Guid, long>? dirtyChatVersions = null;
         Dictionary<Guid, long>? deletedChatVersions = null;
+        long backgroundJobsChangeVersion = 0;
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
             indexLock = await AcquireIndexLockAsync(cancellationToken).ConfigureAwait(false);
             (dirtyChatVersions, deletedChatVersions) = SnapshotChatChangeVersions();
-            var snapshot = AppDataSnapshotFactory.CreateIndexSnapshot(_data);
+            backgroundJobsChangeVersion = SnapshotBackgroundJobsChangeVersion();
+            AppData snapshot;
+            lock (_backgroundJobsSync)
+            {
+                snapshot = AppDataSnapshotFactory.CreateIndexSnapshot(_data);
+            }
             var persistedSnapshot = TryLoadIndexSnapshot();
             if (persistedSnapshot is not null)
             {
@@ -123,7 +195,8 @@ public class DataStore
                     snapshot,
                     persistedSnapshot,
                     new HashSet<Guid>(dirtyChatVersions.Keys),
-                    new HashSet<Guid>(deletedChatVersions.Keys));
+                    new HashSet<Guid>(deletedChatVersions.Keys),
+                    backgroundJobsChangeVersion > 0);
             }
 
             await using var stream = new FileStream(
@@ -141,6 +214,7 @@ public class DataStore
                 cancellationToken).ConfigureAwait(false);
 
             AcknowledgeChatChangeVersions(dirtyChatVersions, deletedChatVersions);
+            AcknowledgeBackgroundJobsChangeVersion(backgroundJobsChangeVersion);
         }
         finally
         {
@@ -1313,10 +1387,43 @@ public class DataStore
 
     private void EnsureFeatureManagerSkill()
     {
-        if (_data.Skills.Any(s => s.Name.Equals("Lumi Feature Manager", StringComparison.OrdinalIgnoreCase)))
+        var desired = CreateFeatureManagerSkill();
+        var existing = _data.Skills.FirstOrDefault(s =>
+            s.Name.Equals(desired.Name, StringComparison.OrdinalIgnoreCase));
+
+        if (existing is null)
+        {
+            _data.Skills.Add(desired);
+            Save();
+            SyncSkillFiles();
+            return;
+        }
+
+        if (!existing.IsBuiltIn)
             return;
 
-        _data.Skills.Add(CreateFeatureManagerSkill());
+        var changed = false;
+        if (existing.Description != desired.Description)
+        {
+            existing.Description = desired.Description;
+            changed = true;
+        }
+
+        if (existing.IconGlyph != desired.IconGlyph)
+        {
+            existing.IconGlyph = desired.IconGlyph;
+            changed = true;
+        }
+
+        if (existing.Content != desired.Content)
+        {
+            existing.Content = desired.Content;
+            changed = true;
+        }
+
+        if (!changed)
+            return;
+
         Save();
         SyncSkillFiles();
     }
@@ -1326,13 +1433,13 @@ public class DataStore
         return new Skill
         {
             Name = "Lumi Feature Manager",
-            Description = "Manages Lumi's projects, skills, Lumis, MCP servers, and memories when explicitly asked",
+            Description = "Manages Lumi's projects, skills, Lumis, MCP servers, background jobs, and memories when explicitly asked",
             IconGlyph = "🛠",
             IsBuiltIn = true,
             Content = """
                 # Lumi Feature Manager
 
-                Use this skill only when the user explicitly asks to manage Lumi itself — its projects, skills, Lumis, MCP servers, or memories.
+                Use this skill only when the user explicitly asks to manage Lumi itself — its projects, skills, Lumis, MCP servers, background jobs, or memories.
 
                 ## When This Skill Applies
 
@@ -1341,6 +1448,8 @@ public class DataStore
                 - "Show me my Lumi projects"
                 - "Edit the Daily Planner Lumi"
                 - "Add an MCP server"
+                - "Create a background job to monitor hotel prices"
+                - "Pause the morning planning job"
                 - "Delete that memory"
 
                 Do **not** use this skill for normal task work, implicit preferences, or automatic saving.
@@ -1351,6 +1460,7 @@ public class DataStore
                 - `manage_skills` — List, create, update, or delete Lumi skills
                 - `manage_lumis` — List, create, update, or delete Lumi agents
                 - `manage_mcps` — List, create, update, or delete MCP servers
+                - `manage_jobs` — List, create, update, pause, resume, run, or delete Lumi background jobs
                 - `manage_memories` — List, create, update, or delete memories
 
                 ## Working Rules
@@ -1359,8 +1469,9 @@ public class DataStore
                 2. Only mutate Lumi data after the user explicitly asks for that change.
                 3. Use exact names or IDs from list results when there is any ambiguity.
                 4. For skill edits, use `fetch_skill` when you need the full content of an existing skill before changing it.
-                5. For memories, prefer normal conversation plus auto-save unless the user explicitly asks to create, edit, or delete a memory.
-                6. After every successful mutation, clearly summarize what changed.
+                5. For background jobs, link the job to the current chat unless the user names another chat. Time jobs can recur; script jobs are one-shot wake scripts that wait/poll/block and wake the linked chat when the process exits with output.
+                6. For memories, prefer normal conversation plus auto-save unless the user explicitly asks to create, edit, or delete a memory.
+                7. After every successful mutation, clearly summarize what changed.
                 """
         };
     }
@@ -1381,6 +1492,9 @@ public class DataStore
             return (new(_dirtyChatVersions), new(_deletedChatVersions));
         }
     }
+
+    private long SnapshotBackgroundJobsChangeVersion()
+        => Volatile.Read(ref _dirtyBackgroundJobsVersion);
 
     private void AcknowledgeChatChangeVersions(
         IReadOnlyDictionary<Guid, long> dirtyChatVersions,
@@ -1406,6 +1520,14 @@ public class DataStore
                 }
             }
         }
+    }
+
+    private void AcknowledgeBackgroundJobsChangeVersion(long version)
+    {
+        if (version <= 0)
+            return;
+
+        Interlocked.CompareExchange(ref _dirtyBackgroundJobsVersion, 0, version);
     }
 
     private static AppData? TryLoadIndexSnapshot()

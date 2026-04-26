@@ -58,6 +58,7 @@ internal static class TranscriptPageWeightEstimator
         {
             AssistantMessageItem assistant => EstimateTextWeight(assistant.Content, 3),
             UserMessageItem user => EstimateTextWeight(user.Content, 2),
+            JobWakeItem jobWake => Math.Max(5, EstimateTextWeight(jobWake.SearchText, 4)),
             ErrorMessageItem error => EstimateTextWeight(error.Content, 2),
             ReasoningItem reasoning => EstimateTextWeight(reasoning.Content, 4),
             SubagentToolCallItem subagent => Math.Max(

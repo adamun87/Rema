@@ -7,6 +7,68 @@ namespace Lumi.Tests;
 public sealed class LumiFeatureManagerTests
 {
     [Fact]
+    public void ManageJobs_CreateScriptJob_CreatesOneShotWakeJob()
+    {
+        var chat = new Chat
+        {
+            Id = Guid.NewGuid(),
+            Title = "Watch chat"
+        };
+        var data = new AppData();
+        data.Chats.Add(chat);
+        var store = new DataStore(data);
+        var manager = new LumiFeatureManager(store);
+
+        var result = manager.ManageJobs(
+            "create",
+            name: "Watch price",
+            prompt: "Wake me when the price drops.",
+            triggerType: BackgroundJobTriggerTypes.Script,
+            scriptContent: "Write-Output price-dropped",
+            defaultChatId: chat.Id);
+
+        Assert.True(result.DataChanged);
+        var job = Assert.Single(data.BackgroundJobs);
+        Assert.Equal(chat.Id, job.ChatId);
+        Assert.Equal(BackgroundJobTriggerTypes.Script, job.TriggerType);
+        Assert.True(job.IsTemporary);
+        Assert.True(job.IsEnabled);
+        Assert.NotNull(job.NextRunAt);
+    }
+
+    [Fact]
+    public void ManageJobs_CreateIntervalTimeJob_CanBeOngoing()
+    {
+        var chat = new Chat
+        {
+            Id = Guid.NewGuid(),
+            Title = "Daily plan"
+        };
+        var data = new AppData();
+        data.Chats.Add(chat);
+        var store = new DataStore(data);
+        var manager = new LumiFeatureManager(store);
+
+        var result = manager.ManageJobs(
+            "create",
+            name: "Daily plan",
+            prompt: "Summarize my day.",
+            triggerType: BackgroundJobTriggerTypes.Time,
+            scheduleType: BackgroundJobScheduleTypes.Interval,
+            intervalMinutes: 60,
+            isTemporary: false,
+            defaultChatId: chat.Id);
+
+        Assert.True(result.DataChanged);
+        var job = Assert.Single(data.BackgroundJobs);
+        Assert.Equal(BackgroundJobTriggerTypes.Time, job.TriggerType);
+        Assert.Equal(BackgroundJobScheduleTypes.Interval, job.ScheduleType);
+        Assert.False(job.IsTemporary);
+        Assert.True(job.IsEnabled);
+        Assert.NotNull(job.NextRunAt);
+    }
+
+    [Fact]
     public void ManageSkills_Delete_RemovesLinkedReferences()
     {
         var skill = new Skill

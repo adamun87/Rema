@@ -51,6 +51,37 @@
       <Setter Property="TextTrimming" Value="CharacterEllipsis" />
       <Setter Property="MaxLines" Value="1" />
     </Style>
+    <Style Selector="Border.job-wake-card">
+      <Setter Property="Background" Value="{DynamicResource Brush.SurfaceRaised}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderSubtle}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="16" />
+      <Setter Property="ClipToBounds" Value="True" />
+    </Style>
+    <Style Selector="Border.job-wake-accent">
+      <Setter Property="Background" Value="{DynamicResource Brush.AccentDefault}" />
+    </Style>
+    <Style Selector="Border.job-wake-icon">
+      <Setter Property="Background" Value="{DynamicResource Brush.AccentSubtle}" />
+      <Setter Property="CornerRadius" Value="13" />
+      <Setter Property="Width" Value="26" />
+      <Setter Property="Height" Value="26" />
+    </Style>
+    <Style Selector="Border.job-wake-signal">
+      <Setter Property="Background" Value="{DynamicResource Brush.Surface2}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderSubtle}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Padding" Value="10,8" />
+    </Style>
+    <Style Selector="Border.job-wake-pill">
+      <Setter Property="Background" Value="{DynamicResource Brush.SurfaceSubtle}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderSubtle}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="999" />
+      <Setter Property="Padding" Value="8,4" />
+      <Setter Property="Margin" Value="0,0,6,6" />
+    </Style>
     <Style Selector="Button#BrowserToggleButton.open">
       <Setter Property="Background" Value="{DynamicResource Brush.AccentSubtle}" />
     </Style>
@@ -295,6 +326,83 @@
   </UserControl.Styles>
 
   <UserControl.DataTemplates>
+
+    <!-- ── Background job wake event ─────────────────── -->
+    <DataTemplate DataType="vm:JobWakeItem">
+      <Border Classes="job-wake-card"
+              HorizontalAlignment="Left"
+              MaxWidth="700"
+              AutomationProperties.Name="JobWakeCard">
+        <Grid ColumnDefinitions="3,*">
+          <Border Classes="job-wake-accent" />
+          <StackPanel Grid.Column="1" Spacing="8" Margin="12,10,12,10">
+            <DockPanel>
+              <Border DockPanel.Dock="Left" Classes="job-wake-icon" Margin="0,0,10,0">
+                <PathIcon Data="{StaticResource Icon.Clock}"
+                          Width="13"
+                          Height="13"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Center"
+                          Foreground="{DynamicResource Brush.AccentDefault}" />
+              </Border>
+              <TextBlock DockPanel.Dock="Right"
+                         Text="{Binding TimestampText}"
+                         Classes="caption tertiary"
+                         VerticalAlignment="Center" />
+              <StackPanel Spacing="0">
+                <TextBlock Text="{loc:Str Jobs_ChatWakeEyebrow}"
+                           Classes="caption"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource Brush.AccentDefault}" />
+                <TextBlock Text="{Binding JobName}"
+                           FontSize="{DynamicResource Font.SizeCaption}"
+                           FontWeight="SemiBold"
+                           TextTrimming="CharacterEllipsis" />
+              </StackPanel>
+            </DockPanel>
+
+            <TextBlock Text="{Binding WakeSignal}"
+                       Classes="caption tertiary"
+                       TextWrapping="Wrap"
+                       MaxLines="2" />
+
+            <Expander Header="{loc:Str Jobs_Details}">
+              <StackPanel Spacing="10" Margin="0,4,0,0">
+                <WrapPanel>
+                  <Border Classes="job-wake-pill" IsVisible="{Binding HasExitCode}">
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                      <TextBlock Text="{loc:Str Jobs_ResultExitCode}" Classes="caption tertiary" />
+                      <TextBlock Text="{Binding ExitCode}" Classes="caption" FontWeight="SemiBold" />
+                    </StackPanel>
+                  </Border>
+                  <Border Classes="job-wake-pill" IsVisible="{Binding HasStarted}">
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                      <TextBlock Text="{loc:Str Jobs_ResultStarted}" Classes="caption tertiary" />
+                      <TextBlock Text="{Binding StartedText}" Classes="caption" />
+                    </StackPanel>
+                  </Border>
+                  <Border Classes="job-wake-pill" IsVisible="{Binding HasCompleted}">
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                      <TextBlock Text="{loc:Str Jobs_ResultCompleted}" Classes="caption tertiary" />
+                      <TextBlock Text="{Binding CompletedText}" Classes="caption" />
+                    </StackPanel>
+                  </Border>
+                </WrapPanel>
+                <TextBlock Text="{Binding OutputText}"
+                           Classes="caption tertiary"
+                           FontFamily="Consolas, Cascadia Code, Menlo, monospace"
+                           TextWrapping="Wrap"
+                           IsVisible="{Binding HasOutput}" />
+                <TextBlock Text="{Binding Instructions}"
+                           Classes="caption tertiary"
+                           TextWrapping="Wrap"
+                           IsVisible="{Binding HasInstructions}" />
+              </StackPanel>
+            </Expander>
+          </StackPanel>
+        </Grid>
+      </Border>
+    </DataTemplate>
 
     <!-- ── User message ─────────────────────────────── -->
     <DataTemplate DataType="vm:UserMessageItem">

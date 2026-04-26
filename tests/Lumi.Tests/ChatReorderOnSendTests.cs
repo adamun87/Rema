@@ -1,6 +1,5 @@
 using System.Threading;
 using System.Threading.Tasks;
-using Avalonia.Headless;
 using Avalonia.Threading;
 using Lumi.Models;
 using Lumi.Services;
@@ -145,7 +144,7 @@ public class ChatReorderOnSendTests
     [Fact]
     public async Task LoadChatAsync_DoesNotBumpChatWhenOnlyMetadataChanges()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {

@@ -12,6 +12,7 @@ namespace Lumi.Services;
 public enum GlobalSearchCategory
 {
     Chats,
+    BackgroundJobs,
     Projects,
     Skills,
     Lumis,
@@ -133,6 +134,7 @@ public sealed class GlobalSearchService
         var results = new List<GlobalSearchMatch>();
 
         SearchChats(snapshot, query, executionMode, results, cancellationToken);
+        SearchJobs(snapshot, query, results, cancellationToken);
         SearchProjects(snapshot, query, results, cancellationToken);
         SearchSkills(snapshot, query, results, cancellationToken);
         SearchAgents(snapshot, query, results, cancellationToken);
@@ -232,13 +234,52 @@ public sealed class GlobalSearchService
                 Category = GlobalSearchCategory.Projects,
                 Title = project.Name,
                 Subtitle = BuildSecondarySubtitle(defaultSubtitle, evaluation.BestContentSnippet),
-                NavIndex = 1,
+                NavIndex = 2,
                 Item = project,
                 Score = evaluation.BaseScore
                         + GetTitleBonus(titleField.Prepared.Normalized, query.NormalizedPhrase)
                         + GetRecencyBoost(sortTimestamp, multiplier: 0.8),
                 IsContentMatch = contentMatch,
                 SortTimestamp = sortTimestamp
+            });
+        }
+    }
+
+    private void SearchJobs(
+        SearchSnapshot snapshot,
+        CompiledQuery query,
+        ICollection<GlobalSearchMatch> results,
+        CancellationToken cancellationToken)
+    {
+        foreach (var job in snapshot.BackgroundJobs)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var titleField = new PreparedSearchField(job.Name, 3.5);
+            var descriptionField = new PreparedSearchField(job.Description, 1.8);
+            var promptField = new PreparedSearchField(job.Prompt, 1.1, isContent: true);
+            var statusField = new PreparedSearchField(job.LastRunSummary, 0.9);
+            var evaluation = EvaluateFields([titleField, descriptionField, promptField, statusField], query);
+
+            if (!evaluation.IsCompleteMatch)
+                continue;
+
+            var status = job.IsEnabled ? "Enabled" : "Paused";
+            var next = job.NextRunAt.HasValue ? $" · next {FormatRelativeTime(job.NextRunAt.Value)}" : "";
+            var subtitle = $"{status}{next} · {BackgroundJobSchedule.Describe(job)}";
+
+            results.Add(new GlobalSearchMatch
+            {
+                Category = GlobalSearchCategory.BackgroundJobs,
+                Title = job.Name,
+                Subtitle = BuildSecondarySubtitle(subtitle, evaluation.BestContentSnippet),
+                NavIndex = 1,
+                Item = job,
+                Score = evaluation.BaseScore
+                        + GetTitleBonus(titleField.Prepared.Normalized, query.NormalizedPhrase)
+                        + GetRecencyBoost(job.UpdatedAt, multiplier: 0.6),
+                IsContentMatch = !string.IsNullOrWhiteSpace(evaluation.BestContentSnippet),
+                SortTimestamp = job.UpdatedAt
             });
         }
     }
@@ -268,7 +309,7 @@ public sealed class GlobalSearchService
                 Category = GlobalSearchCategory.Skills,
                 Title = skill.Name,
                 Subtitle = BuildSecondarySubtitle(skill.Description, evaluation.BestContentSnippet),
-                NavIndex = 2,
+                NavIndex = 3,
                 Item = skill,
                 Score = evaluation.BaseScore
                         + GetTitleBonus(titleField.Prepared.Normalized, query.NormalizedPhrase)
@@ -304,7 +345,7 @@ public sealed class GlobalSearchService
                 Category = GlobalSearchCategory.Lumis,
                 Title = agent.Name,
                 Subtitle = BuildSecondarySubtitle(agent.Description, evaluation.BestContentSnippet),
-                NavIndex = 3,
+                NavIndex = 4,
                 Item = agent,
                 Score = evaluation.BaseScore
                         + GetTitleBonus(titleField.Prepared.Normalized, query.NormalizedPhrase)
@@ -343,7 +384,7 @@ public sealed class GlobalSearchService
                 Category = GlobalSearchCategory.Memories,
                 Title = memory.Key,
                 Subtitle = BuildSecondarySubtitle(defaultSubtitle, evaluation.BestContentSnippet),
-                NavIndex = 4,
+                NavIndex = 5,
                 Item = memory,
                 Score = evaluation.BaseScore
                         + GetTitleBonus(titleField.Prepared.Normalized, query.NormalizedPhrase)
@@ -382,7 +423,7 @@ public sealed class GlobalSearchService
                 Category = GlobalSearchCategory.McpServers,
                 Title = server.Name,
                 Subtitle = BuildSecondarySubtitle(server.Description, evaluation.BestContentSnippet),
-                NavIndex = 5,
+                NavIndex = 6,
                 Item = server,
                 Score = evaluation.BaseScore
                         + GetTitleBonus(titleField.Prepared.Normalized, query.NormalizedPhrase)
@@ -414,7 +455,7 @@ public sealed class GlobalSearchService
                 Category = GlobalSearchCategory.Settings,
                 Title = setting.Name,
                 Subtitle = setting.Page,
-                NavIndex = 6,
+                NavIndex = 7,
                 Score = evaluation.BaseScore + GetTitleBonus(titleField.Prepared.Normalized, query.NormalizedPhrase),
                 SettingsPageIndex = setting.PageIndex
             });
@@ -440,6 +481,22 @@ public sealed class GlobalSearchService
             });
         }
 
+        foreach (var job in snapshot.BackgroundJobs.OrderByDescending(static job => job.UpdatedAt).Take(4))
+        {
+            var status = job.IsEnabled ? "Enabled" : "Paused";
+            var next = job.NextRunAt.HasValue ? $" · next {FormatRelativeTime(job.NextRunAt.Value)}" : "";
+            results.Add(new GlobalSearchMatch
+            {
+                Category = GlobalSearchCategory.BackgroundJobs,
+                Title = job.Name,
+                Subtitle = $"{status}{next} · {BackgroundJobSchedule.Describe(job)}",
+                NavIndex = 1,
+                Item = job,
+                Score = 920 + GetRecencyBoost(job.UpdatedAt, multiplier: 0.7),
+                SortTimestamp = job.UpdatedAt
+            });
+        }
+
         foreach (var project in snapshot.Projects
                      .OrderByDescending(project => snapshot.ProjectLastActivity.TryGetValue(project.Id, out var activity)
                          ? activity
@@ -456,7 +513,7 @@ public sealed class GlobalSearchService
                 Subtitle = chatCount == 0
                     ? "No chats"
                     : $"{chatCount} chat{(chatCount == 1 ? "" : "s")} · {FormatRelativeTime(sortTimestamp)}",
-                NavIndex = 1,
+                NavIndex = 2,
                 Item = project,
                 Score = 900 + GetRecencyBoost(sortTimestamp, multiplier: 0.9),
                 SortTimestamp = sortTimestamp
@@ -470,7 +527,7 @@ public sealed class GlobalSearchService
                 Category = GlobalSearchCategory.Skills,
                 Title = skill.Name,
                 Subtitle = skill.Description,
-                NavIndex = 2,
+                NavIndex = 3,
                 Item = skill,
                 Score = 800 + GetRecencyBoost(skill.CreatedAt, multiplier: 0.45),
                 SortTimestamp = skill.CreatedAt
@@ -484,7 +541,7 @@ public sealed class GlobalSearchService
                 Category = GlobalSearchCategory.Lumis,
                 Title = agent.Name,
                 Subtitle = agent.Description,
-                NavIndex = 3,
+                NavIndex = 4,
                 Item = agent,
                 Score = 780 + GetRecencyBoost(agent.CreatedAt, multiplier: 0.45),
                 SortTimestamp = agent.CreatedAt
@@ -500,7 +557,7 @@ public sealed class GlobalSearchService
                 Subtitle = string.IsNullOrWhiteSpace(memory.Category)
                     ? TrimForSubtitle(memory.Content)
                     : $"[{memory.Category}] {TrimForSubtitle(memory.Content)}",
-                NavIndex = 4,
+                NavIndex = 5,
                 Item = memory,
                 Score = 760 + GetRecencyBoost(memory.UpdatedAt, multiplier: 0.7),
                 SortTimestamp = memory.UpdatedAt
@@ -514,7 +571,7 @@ public sealed class GlobalSearchService
                 Category = GlobalSearchCategory.McpServers,
                 Title = server.Name,
                 Subtitle = server.Description,
-                NavIndex = 5,
+                NavIndex = 6,
                 Item = server,
                 Score = 740 + GetRecencyBoost(server.CreatedAt, multiplier: 0.4),
                 SortTimestamp = server.CreatedAt
@@ -940,6 +997,7 @@ public sealed class GlobalSearchService
         var agents = data.Agents.ToArray();
         var memories = data.Memories.ToArray();
         var servers = data.McpServers.ToArray();
+        var backgroundJobs = data.BackgroundJobs.ToArray();
 
         var projectNames = projects.ToDictionary(static project => project.Id, static project => project.Name);
         var projectChatCounts = chats
@@ -957,6 +1015,7 @@ public sealed class GlobalSearchService
             projects,
             skills,
             agents,
+            backgroundJobs,
             memories,
             servers,
             projectNames,
@@ -1050,6 +1109,7 @@ public sealed class GlobalSearchService
         Project[] projects,
         Skill[] skills,
         LumiAgent[] agents,
+        BackgroundJob[] backgroundJobs,
         Memory[] memories,
         McpServer[] mcpServers,
         IReadOnlyDictionary<Guid, string> projectNames,
@@ -1060,6 +1120,7 @@ public sealed class GlobalSearchService
         public Project[] Projects { get; } = projects;
         public Skill[] Skills { get; } = skills;
         public LumiAgent[] Agents { get; } = agents;
+        public BackgroundJob[] BackgroundJobs { get; } = backgroundJobs;
         public Memory[] Memories { get; } = memories;
         public McpServer[] McpServers { get; } = mcpServers;
         public IReadOnlyDictionary<Guid, string> ProjectNames { get; } = projectNames;

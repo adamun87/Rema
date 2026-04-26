@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Lumi.Localization;
@@ -18,12 +19,13 @@ public class ChatGroup
     public ObservableCollection<Chat> Chats { get; set; } = [];
 }
 
-public partial class MainViewModel : ObservableObject
+public partial class MainViewModel : ObservableObject, IDisposable
 {
     private readonly DataStore _dataStore;
     private readonly CopilotService _copilotService;
     /// <summary>A dedicated BrowserService for Settings cookie import/clear (not tied to any chat).</summary>
     private readonly BrowserService _settingsBrowserService;
+    private readonly BackgroundJobService _backgroundJobService;
     private bool _isRefreshingCopilotState;
     private bool _isSyncingDefaultModelSelectionFromChat;
     private readonly ChatNavigationHistory _chatNavigationHistory = new();
@@ -47,7 +49,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _isSidebarCollapsed;
 
     public bool IsGlobalUpdateBannerVisible => SettingsVM.ShouldShowUpdateBanner
-        && (SelectedNavIndex != 6 || SettingsVM.SelectedPageIndex != SettingsViewModel.AboutPageIndex);
+        && (SelectedNavIndex != 7 || SettingsVM.SelectedPageIndex != SettingsViewModel.AboutPageIndex);
 
     public bool IsAgentDebugMapVisible
     {
@@ -64,18 +66,19 @@ public partial class MainViewModel : ObservableObject
     public string AgentDebugCurrentPage => SelectedNavIndex switch
     {
         0 => "0 Chat (#PageChat, #Composer, #Transcript)",
-        1 => "1 Projects (#PageProjects)",
-        2 => "2 Skills (#PageSkills)",
-        3 => "3 Lumis (#PageAgents)",
-        4 => "4 Memories (#PageMemories)",
-        5 => "5 MCP Servers (#PageMcpServers)",
-        6 => "6 Settings (#PageSettings)",
+        1 => "1 Jobs (#PageJobs)",
+        2 => "2 Projects (#PageProjects)",
+        3 => "3 Skills (#PageSkills)",
+        4 => "4 Lumis (#PageAgents)",
+        5 => "5 Memories (#PageMemories)",
+        6 => "6 MCP Servers (#PageMcpServers)",
+        7 => "7 Settings (#PageSettings)",
         _ => $"{SelectedNavIndex} Unknown"
     };
 
     public string AgentDebugMapText =>
         "Debug-only agent map\n" +
-        "Nav: #NavChat=0, #NavProjects=1, #NavSkills=2, #NavAgents=3, #NavMemories=4, #NavMcpServers=5, #NavSettings=6\n" +
+        "Nav: #NavChat=0, #NavJobs=1, #NavProjects=2, #NavSkills=3, #NavAgents=4, #NavMemories=5, #NavMcpServers=6, #NavSettings=7\n" +
         "Chat controls: #PageChat, #ChatShell, #Transcript, #Composer, #SearchInput\n" +
         "CLI: --debug-agent-harness opens fixture, --test-chat-stress runs real Copilot stress check";
 
@@ -83,6 +86,11 @@ public partial class MainViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(IsGlobalUpdateBannerVisible));
         OnPropertyChanged(nameof(AgentDebugCurrentPage));
+        if (value == 1)
+        {
+            JobsVM.SetPreferredChat(ChatVM.CurrentChat);
+            JobsVM.RefreshFromStore();
+        }
     }
 
     [RelayCommand]
@@ -92,6 +100,7 @@ public partial class MainViewModel : ObservableObject
 
     // Sub-ViewModels
     public ChatViewModel ChatVM { get; }
+    public BackgroundJobsViewModel JobsVM { get; }
     public SkillsViewModel SkillsVM { get; }
     public AgentsViewModel AgentsVM { get; }
     public ProjectsViewModel ProjectsVM { get; }
@@ -107,6 +116,8 @@ public partial class MainViewModel : ObservableObject
 
     /// <summary>The application data store.</summary>
     public DataStore DataStore => _dataStore;
+
+    public BackgroundJobService BackgroundJobService => _backgroundJobService;
 
     // Grouped chat list for sidebar
     public ObservableCollection<ChatGroup> ChatGroups { get; } = [];
@@ -156,6 +167,8 @@ public partial class MainViewModel : ObservableObject
         OnboardingVM.ThemeChanged += isDark => IsDarkTheme = isDark;
 
         ChatVM = new ChatViewModel(dataStore, copilotService);
+        _backgroundJobService = new BackgroundJobService(dataStore, ChatVM);
+        JobsVM = new BackgroundJobsViewModel(dataStore, _backgroundJobService);
         SkillsVM = new SkillsViewModel(dataStore);
         AgentsVM = new AgentsViewModel(dataStore);
         ProjectsVM = new ProjectsViewModel(dataStore);
@@ -238,6 +251,17 @@ public partial class MainViewModel : ObservableObject
             RefreshFeatureManagementUi();
         };
 
+        JobsVM.JobsChanged += () =>
+        {
+            _backgroundJobService.Reschedule();
+            RefreshFeatureManagementUi();
+        };
+        JobsVM.OpenChatRequested += jobChatId => _ = OpenChatByIdAsync(jobChatId);
+        _backgroundJobService.JobsChanged += () =>
+        {
+            Dispatcher.UIThread.Post(RefreshFeatureManagementUi);
+        };
+
         SettingsVM.SettingsChanged += () =>
         {
             RefreshChatList();
@@ -266,7 +290,11 @@ public partial class MainViewModel : ObservableObject
             ChatVM.RefreshComposerCatalogs();
             RefreshFeatureManagementUi();
         };
-        ChatVM.FeatureManagementStateChanged += RefreshFeatureManagementUi;
+        ChatVM.FeatureManagementStateChanged += () =>
+        {
+            _backgroundJobService.Reschedule();
+            RefreshFeatureManagementUi();
+        };
 
         ChatVM.ComposerProjectFilterRequested += projectId =>
         {
@@ -288,6 +316,7 @@ public partial class MainViewModel : ObservableObject
         SubscribeChatRunningState();
         RefreshChatList();
         ChatVM.RefreshComposerCatalogs();
+        _backgroundJobService.Start();
 
 #if DEBUG
         if (openAgentDebugHarness)
@@ -301,6 +330,11 @@ public partial class MainViewModel : ObservableObject
     private async Task InitializeAsync()
     {
         await RefreshCopilotStateAsync(refreshAuthStatus: true);
+    }
+
+    public void Dispose()
+    {
+        _backgroundJobService.Dispose();
     }
 
     private async Task RefreshCopilotStateAsync(bool refreshAuthStatus)
@@ -372,6 +406,7 @@ public partial class MainViewModel : ObservableObject
     private void RefreshFeatureManagementUi()
     {
         LoadProjects();
+        JobsVM.RefreshFromStore();
         ProjectsVM.RefreshFromStore();
         SkillsVM.RefreshFromStore();
         AgentsVM.RefreshFromStore();
@@ -646,6 +681,8 @@ public partial class MainViewModel : ObservableObject
 
         ChatVM.CleanupSession(chat.Id);
         _dataStore.Data.Chats.Remove(chat);
+        _dataStore.RemoveBackgroundJobsForChat(chat.Id);
+        _backgroundJobService.Reschedule();
         _chatNavigationHistory.RemoveChat(chat.Id);
         _dataStore.MarkChatDeleted(chat.Id);
         _dataStore.DeleteChatFile(chat.Id);
@@ -706,7 +743,7 @@ public partial class MainViewModel : ObservableObject
     {
         if (int.TryParse(indexStr, out var idx))
         {
-            if (idx == 6 && SettingsVM.ShouldAutoNavigateToUpdateCenter)
+            if (idx == 7 && SettingsVM.ShouldAutoNavigateToUpdateCenter)
                 SettingsVM.OpenUpdateCenter();
 
             SelectedNavIndex = idx;
@@ -717,7 +754,7 @@ public partial class MainViewModel : ObservableObject
     private void OpenUpdateCenter()
     {
         SettingsVM.OpenUpdateCenter();
-        SelectedNavIndex = 6;
+        SelectedNavIndex = 7;
     }
 
     [RelayCommand]

@@ -1,5 +1,4 @@
 using System.Threading;
-using Avalonia.Headless;
 using Lumi.Models;
 using Lumi.Services;
 using Lumi.ViewModels;
@@ -36,7 +35,7 @@ public sealed class NotificationNavigationTests
     [Fact]
     public async Task OpenChatByIdAsync_LoadsRequestedChatAndShowsChatTab()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp), AvaloniaTestIsolationLevel.PerTest);
+        using var session = HeadlessTestSession.Start();
 
         await session.Dispatch(async () =>
         {

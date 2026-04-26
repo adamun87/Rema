@@ -51,48 +51,69 @@ public partial class ChatViewModel
     private CancellationToken GetCurrentCancellationToken()
     {
         if (CurrentChat is { } chat && _ctsSources.TryGetValue(chat.Id, out var cts))
-            return cts.Token;
+        {
+            try { return cts.Token; }
+            catch (ObjectDisposedException)
+            {
+                _ctsSources.Remove(chat.Id);
+            }
+        }
+
         return CancellationToken.None;
     }
 
     private bool ActiveAgentAllows(HashSet<string> toolGroup)
+        => AgentAllows(ActiveAgent, toolGroup);
+
+    private static bool AgentAllows(LumiAgent? agent, HashSet<string> toolGroup)
     {
         // No active agent or no restrictions → allow everything
-        if (ActiveAgent is not { ToolNames.Count: > 0 } agent) return true;
+        if (agent is not { ToolNames.Count: > 0 }) return true;
         return agent.ToolNames.Exists(toolGroup.Contains);
     }
 
-    private List<AIFunction> BuildCustomTools(Guid chatId)
+    private List<AIFunction> BuildCustomTools(Guid chatId, LumiAgent? activeAgent)
     {
         var tools = new List<AIFunction>();
         tools.AddRange(BuildMemoryTools());
         tools.Add(BuildAnnounceFileTool());
         tools.Add(BuildFetchSkillTool());
         tools.Add(BuildAskQuestionTool(chatId));
-        tools.AddRange(BuildLumiManagementTools());
+        tools.AddRange(BuildLumiManagementTools(chatId));
         tools.AddRange(BuildWebTools());
-        if (ActiveAgentAllows(BrowserToolNames))
+        if (AgentAllows(activeAgent, BrowserToolNames))
             tools.AddRange(BuildBrowserTools(chatId));
-        if (ActiveAgentAllows(CodingToolNames))
+        if (AgentAllows(activeAgent, CodingToolNames))
             tools.AddRange(_codingToolService.BuildCodingTools());
-        if (OperatingSystem.IsWindows() && ActiveAgentAllows(UIToolNames))
+        if (OperatingSystem.IsWindows() && AgentAllows(activeAgent, UIToolNames))
             tools.AddRange(BuildUIAutomationTools());
         return tools;
     }
 
-    private async Task<Dictionary<string, object>?> BuildMcpServersAsync(string workDir, CancellationToken ct)
+    private async Task<Dictionary<string, object>?> BuildMcpServersAsync(
+        string workDir,
+        Chat chat,
+        LumiAgent? activeAgent,
+        CancellationToken ct)
     {
         var allServers = _dataStore.Data.McpServers.Where(s => s.IsEnabled).ToList();
 
-        // Always respect explicit composer selection first — if the user deselected
-        // all MCPs, ActiveMcpServerNames is empty and we should send none.
-        allServers = allServers.Where(s => ActiveMcpServerNames.Contains(s.Name)).ToList();
+        var selectedServerNames = chat.ActiveMcpServerNames;
+        if (CurrentChat?.Id == chat.Id)
+            selectedServerNames = ActiveMcpServerNames;
+
+        // Existing chats without saved MCP selections default to all enabled servers,
+        // matching the composer state restored when the chat is opened.
+        if (selectedServerNames.Count > 0)
+            allServers = allServers.Where(s => selectedServerNames.Contains(s.Name)).ToList();
+        else if (CurrentChat?.Id == chat.Id)
+            allServers.Clear();
 
         // If an active agent restricts MCP servers, apply that as an intersection
         // with the user's current selection rather than overriding it.
-        if (ActiveAgent is { McpServerIds.Count: > 0 })
+        if (activeAgent is { McpServerIds.Count: > 0 })
         {
-            var agentServerIds = ActiveAgent.McpServerIds;
+            var agentServerIds = activeAgent.McpServerIds;
             allServers = allServers.Where(s => agentServerIds.Contains(s.Id)).ToList();
         }
 
@@ -617,7 +638,7 @@ public partial class ChatViewModel
             tcs.TrySetResult(answer);
     }
 
-    private List<AIFunction> BuildLumiManagementTools()
+    private List<AIFunction> BuildLumiManagementTools(Guid chatId)
     {
         return
         [
@@ -702,6 +723,38 @@ public partial class ChatViewModel
 
             AIFunctionFactory.Create(
                 async (
+                    [Description("Action: list, create, update, delete, pause, resume, or run_now")] string action,
+                    [Description("Background job ID or exact name for update/delete/pause/resume/run_now. Omit for create/list.")] string? identifier = null,
+                    [Description("Job name for create, or the new name for update.")] string? name = null,
+                    [Description("Short human-readable purpose shown in the Jobs tab.")] string? description = null,
+                    [Description("The prompt/instructions Lumi should receive whenever this job invokes the chat. Required for create.")] string? prompt = null,
+                    [Description("Optional target chat ID or exact title. If omitted, uses the current chat.")] string? chatIdentifier = null,
+                    [Description("Trigger type: time or script.")] string? triggerType = null,
+                    [Description("For time triggers: interval, daily, weekly, monthly, once, or cron.")] string? scheduleType = null,
+                    [Description("For interval time triggers: minutes between runs.")] int? intervalMinutes = null,
+                    [Description("For daily time triggers: local HH:mm time, e.g. 08:00.")] string? dailyTime = null,
+                    [Description("For weekly time triggers: days like Mon,Wed,Fri, weekdays, weekends, or daily.")] string? daysOfWeek = null,
+                    [Description("For monthly time triggers: day of month, 1-31. Short months use the last valid day.")] int? monthlyDay = null,
+                    [Description("For advanced time triggers: five-field cron expression: minute hour day-of-month month day-of-week. Example: 0 8 * * Mon-Fri.")] string? cronExpression = null,
+                    [Description("For once time triggers: local date/time, e.g. 2026-04-25 08:00.")] string? runAt = null,
+                    [Description("For script triggers: one-shot script content. Lumi starts it once, waits until the process exits, then wakes the linked chat with stdout, stderr, and exit code. For continued monitoring, create another script job after the wake.")] string? scriptContent = null,
+                    [Description("For script triggers: powershell, python, node, or command.")] string? scriptLanguage = null,
+                    [Description("True for a temporary time job that pauses after a successful invocation. Script jobs are always one-shot.")] bool? isTemporary = null,
+                    [Description("Whether the job should be enabled.")] bool? isEnabled = null,
+                    [Description("Set true to queue the job immediately.")] bool? runNow = null,
+                    [Description("Optional text query for list filtering.")] string? query = null) =>
+                {
+                    var result = FeatureManager.ManageJobs(action, identifier, name, description, prompt, chatIdentifier,
+                        triggerType, scheduleType, intervalMinutes, dailyTime, daysOfWeek, monthlyDay, cronExpression, runAt,
+                        scriptContent, scriptLanguage, isTemporary, isEnabled, runNow, query, defaultChatId: chatId);
+                    return await ApplyFeatureChangeAsync(result);
+                },
+                "manage_jobs",
+                "List, create, update, delete, pause, resume, or run Lumi background jobs. Use when the user explicitly asks Lumi to monitor, remind, wait for a condition, follow up, or automate a recurring/temporary task in the background. Script jobs are one-shot wake scripts: the script waits/polls, exits when attention is needed, and Lumi wakes the linked chat with the script output.",
+                Lumi.Models.AppDataJsonContext.Default.Options),
+
+            AIFunctionFactory.Create(
+                async (
                     [Description("Action: list, create, update, or delete")] string action,
                     [Description("Memory ID or exact key for update/delete. Omit for create/list.")] string? identifier = null,
                     [Description("Memory key for create, or the new key for update.")] string? key = null,
@@ -726,21 +779,21 @@ public partial class ChatViewModel
         if (result.SyncSkillFiles)
             _dataStore.SyncSkillFiles();
 
-        _ = SaveIndexAsync();
+        await SaveIndexAsync();
 
-         Dispatcher.UIThread.Post(() =>
-         {
-             RefreshComposerCatalogs(syncWorkspaceMcpSelections: false);
-             var chatMetadataChanged = RefreshCurrentChatFeatureState(result);
-             if (chatMetadataChanged)
+        Dispatcher.UIThread.Post(() =>
+        {
+            RefreshComposerCatalogs(syncWorkspaceMcpSelections: false);
+            var chatMetadataChanged = RefreshCurrentChatFeatureState(result);
+            if (chatMetadataChanged)
                 _ = SaveIndexAsync();
 
-             if (CurrentChat?.CopilotSessionId is not null)
-             {
-                 _pendingSessionInvalidations.Add(CurrentChat.Id);
-                 _pendingSkillInjections.Clear();
-                 _activeExternalSkillNames.Clear();
-             }
+            if (CurrentChat?.CopilotSessionId is not null)
+            {
+                _pendingSessionInvalidations.Add(CurrentChat.Id);
+                _pendingSkillInjections.Clear();
+                _activeExternalSkillNames.Clear();
+            }
             else
             {
                 PrunePendingSkillInjections();
