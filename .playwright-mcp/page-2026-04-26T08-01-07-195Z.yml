@@ -1,0 +1,589 @@
+- generic [ref=e3]:
+  - generic [ref=e5]:
+    - navigation "Site header" [ref=e6]:
+      - button "Skip to Main Content" [ref=e7] [cursor=pointer]
+      - generic [ref=e8]:
+        - button "Applications" [ref=e10] [cursor=pointer]:
+          - img [ref=e11]
+          - generic [ref=e13]: Applications
+        - link "IcM" [ref=e14] [cursor=pointer]:
+          - /url: /imp
+          - generic "Incident Management" [ref=e15]: IcM
+      - menu [ref=e16]:
+        - text: 
+        - menuitem " Search" [ref=e17]:
+          - generic [ref=e19]:
+            - textbox "Incident search bar input" [ref=e20]:
+              - /placeholder: Search by incident ID or other fields...
+            - button " Search" [ref=e21] [cursor=pointer]:
+              - generic [ref=e22]: 
+              - generic [ref=e23]: Search
+        - menuitem "IcM Assistant" [ref=e24]:
+          - button "IcM Assistant" [ref=e25] [cursor=pointer]:
+            - img [ref=e26]
+            - generic [ref=e33]: IcM Assistant
+        - menuitem "Help & Support " [ref=e34]:
+          - generic [ref=e35]:
+            - button "Help & Support " [ref=e36] [cursor=pointer]:
+              - generic [ref=e37]: Help & Support
+              - generic [ref=e38]: 
+            - text:  
+        - menuitem "Report a Bug " [ref=e39]:
+          - link "Report a Bug " [ref=e40] [cursor=pointer]:
+            - /url: https://aka.ms/icmbug
+            - generic [ref=e41]: Report a Bug
+            - generic [ref=e42]: 
+        - menuitem " Toggle feedback" [ref=e43]:
+          - generic [ref=e45]:
+            - button " Toggle feedback" [ref=e46] [cursor=pointer]:
+              - generic [ref=e47]: 
+              - generic [ref=e48]: Toggle feedback
+            - text:  
+        - menuitem "Time zone preferences. Currently displaying times in IST" [ref=e49]:
+          - generic [ref=e50]:
+            - button "Time zone preferences. Currently displaying times in IST" [ref=e51] [cursor=pointer]:
+              - generic [ref=e52]: 
+              - generic [ref=e53]: Time zone preferences. Currently displaying times in
+              - generic [ref=e54]: IST
+            - text: 
+        - menuitem " Breaking News 1" [ref=e55]:
+          - generic [ref=e57]:
+            - button " Breaking News 1" [ref=e58] [cursor=pointer]:
+              - generic [ref=e59]: 
+              - generic [ref=e60]: Breaking News
+              - generic [ref=e62]: "1"
+            - text:   
+        - menuitem "My Profile Adam Ungar" [ref=e63]:
+          - generic [ref=e65]:
+            - button "My Profile Adam Ungar" [ref=e66] [cursor=pointer]:
+              - generic [ref=e67]: My Profile
+              - generic:
+                - generic:
+                  - generic: Adam Ungar
+            - text: 
+    - generic [ref=e70]:
+      - generic [ref=e72]:
+        - generic [ref=e73]:
+          - generic [ref=e74]:
+            - generic [ref=e75]: 
+            - generic [ref=e76]: Breaking News
+          - strong [ref=e77]:
+            - text: Outage
+            - link "712035447" [ref=e78] [cursor=pointer]:
+              - /url: /imp/v3/outages/details/712035447/home?ref=breakingNews
+            - text: ": PHX.GBL domain decomm started April 22 at1600 UTC. DNS queries to PHX.GBL will fail during scream test."
+          - time [ref=e82]: 2026-04-22 19:05 GMT+3
+        - link "Add Impacted Service" [ref=e85] [cursor=pointer]:
+          - /url: outages/details/712035447/home?ref=breakingNews&focus=internalImpact
+      - button " Dismiss" [ref=e86] [cursor=pointer]:
+        - generic [ref=e87]: 
+        - generic [ref=e88]: Dismiss
+    - generic: 
+  - generic [ref=e89]:
+    - navigation "Main left navigation" [ref=e91]:
+      - button " Expand menu" [ref=e92] [cursor=pointer]:
+        - generic [ref=e93]: 
+        - generic [ref=e94]: Expand menu
+      - menu [ref=e95]:
+        - menuitem "Dashboard" [ref=e96] [cursor=pointer]:
+          - img [ref=e98]
+          - generic [ref=e100]: Dashboard
+        - menuitem "Incidents" [ref=e101] [cursor=pointer]:
+          - img [ref=e103]
+          - generic [ref=e105]: Incidents
+          - text: 
+        - menuitem "Outages" [ref=e106] [cursor=pointer]:
+          - img [ref=e108]
+          - generic [ref=e110]: Outages
+          - text: 
+        - menuitem "Retrospectives" [ref=e111] [cursor=pointer]:
+          - img [ref=e113]
+          - generic [ref=e115]: Retrospectives
+        - menuitem "On call lists" [ref=e116] [cursor=pointer]:
+          - img [ref=e118]
+          - generic [ref=e120]: On call lists
+          - text: 
+        - menuitem "Agent Studio (Automation)" [ref=e121] [cursor=pointer]:
+          - img [ref=e123]
+          - generic [ref=e125]: Agent Studio (Automation)
+        - menuitem "Reporting" [ref=e126] [cursor=pointer]:
+          - img [ref=e128]
+          - generic [ref=e130]: Reporting
+          - text: 
+        - menuitem "Administration" [ref=e131] [cursor=pointer]:
+          - img [ref=e133]
+          - generic [ref=e135]: Administration
+          - text: 
+        - menuitem "Playbooks" [ref=e136] [cursor=pointer]:
+          - img [ref=e138]
+          - generic [ref=e140]: Playbooks
+    - main [ref=e142]:
+      - generic [ref=e144]:
+        - generic [ref=e145]:
+          - region [ref=e146]:
+            - generic [ref=e147]:
+              - generic [ref=e149]: 
+              - alert [ref=e150]:
+                - generic [ref=e153]:
+                  - text: Welcome to the new IcM experience!
+                  - link "Learn more" [ref=e154] [cursor=pointer]:
+                    - /url: https://aka.ms/VoyagerGuide
+              - button "Dismiss message bar" [ref=e156] [cursor=pointer]:
+                - generic [ref=e158]: 
+          - generic [ref=e164]:
+            - img [ref=e165]
+            - dialog [ref=e167] [cursor=pointer]
+        - generic "Top card" [ref=e168]:
+          - generic [ref=e170]:
+            - heading "Incident 784865182 created by monitor View monitor with ID AnalysisDeliveryCountExceeded (10901)" [level=3] [ref=e173]:
+              - text: Incident 784865182
+              - generic [ref=e174]:
+                - separator
+              - text: created by monitor
+              - link "View monitor with ID AnalysisDeliveryCountExceeded (10901)" [ref=e175] [cursor=pointer]:
+                - /url: https://portal.microsoftgeneva.com/settings/mdm?page=settings&mode=mdm&account=SmartAlerts&tab=monitors&namespace=SmartAlertsProd&metric=Alert+Rule+Analysis+Delivery+Count+Has+Exceeded&monitor=AnalysisDeliveryCountExceeded+%2810901%29
+                - text: AnalysisDeliveryCountExceeded (10901)
+            - generic [ref=e176]:
+              - button "Copy" [ref=e178] [cursor=pointer]:
+                - generic [ref=e179]:
+                  - generic [ref=e180]: 
+                  - generic [ref=e182]: Copy
+              - status
+            - button "Collapse" [ref=e184] [cursor=pointer]:
+              - generic [ref=e186]: 
+          - heading "editable-input" [level=2] [ref=e189]: "[AnalysisDeliveryCountExceeded (10901)] Smart Alerts Rule Engine Analysis Processing - PROD Sev2 [Ring2][Ring2] is unhealthy."
+          - generic [ref=e191]:
+            - generic [ref=e192]:
+              - generic [ref=e193]: Status
+              - generic [ref=e194]: Mitigated
+            - generic:
+              - separator
+            - generic [ref=e195]:
+              - generic [ref=e196]: Severity
+              - button "Severity 2" [ref=e197] [cursor=pointer]:
+                - generic [ref=e198]:
+                  - generic [ref=e199]: "2"
+                  - generic [ref=e200]: 
+            - generic:
+              - separator
+            - generic [ref=e201]:
+              - generic [ref=e202]: Duration
+              - generic "Duration" [ref=e203]:
+                - time [ref=e204]: 02h 09m 57s
+                - generic [ref=e205]: 
+            - generic:
+              - separator
+            - generic [ref=e206]:
+              - generic [ref=e207]: Owning service
+              - button "Transfer Ownership Owning service Azure Monitor AIOps" [ref=e208] [cursor=pointer]:
+                - generic [ref=e209]:
+                  - generic [ref=e210]: Azure Monitor AIOps
+                  - generic [ref=e211]: 
+            - generic:
+              - separator
+            - generic [ref=e212]:
+              - generic [ref=e213]: Owning team
+              - button "Transfer Ownership Owning team AzMon AIOps On Call" [ref=e215] [cursor=pointer]:
+                - generic [ref=e216]:
+                  - generic [ref=e217]: AzMon AIOps On Call
+                  - generic [ref=e218]: 
+                  - generic [ref=e219]: 
+            - generic:
+              - separator
+            - generic [ref=e220]:
+              - generic [ref=e221]: Owner
+              - generic [ref=e223]:
+                - 'generic "Contact: Anatoly Prokupets" [ref=e224]':
+                  - generic [ref=e226]: Anatoly Prokupets
+                - generic [ref=e227]:
+                  - 'combobox "Owner: Anatoly Prokupets (anprokup)" [ref=e229] [cursor=pointer]':
+                    - generic [ref=e230]:
+                      - generic [ref=e231]: Anatoly Prokupets (anprokup)
+                      - generic [ref=e232]: 
+                  - status
+            - generic:
+              - separator
+            - generic [ref=e235]:
+              - generic:
+                - status
+              - list [ref=e237]:
+                - listitem [ref=e238]:
+                  - button "Add tag" [ref=e239] [cursor=pointer]:
+                    - generic [ref=e242]: Add tag
+        - generic "action-bar" [ref=e244]:
+          - generic [ref=e245]:
+            - generic [ref=e247]:
+              - button "Find" [ref=e248] [cursor=pointer]:
+                - generic [ref=e249]:
+                  - generic [ref=e250]: 
+                  - generic [ref=e252]: Find
+              - button "More actions" [ref=e255] [cursor=pointer]:
+                - generic [ref=e256]:
+                  - generic [ref=e257]: 
+                  - generic [ref=e259]: More actions
+            - generic [ref=e262]:
+              - button "Resolve" [ref=e263] [cursor=pointer]:
+                - generic [ref=e266]: Resolve
+              - button "More lifecycle actions" [ref=e267] [cursor=pointer]:
+                - generic [ref=e269]: 
+        - generic [ref=e270]:
+          - tablist "Incident details tabs" [ref=e272]:
+            - tab "Summary & discussion" [selected] [ref=e273] [cursor=pointer]:
+              - generic [ref=e276]: Summary & discussion
+            - tab "Impact assessment" [ref=e277] [cursor=pointer]:
+              - generic [ref=e280]: Impact assessment
+            - tab "Troubleshooting" [ref=e281] [cursor=pointer]:
+              - generic [ref=e284]: Troubleshooting
+            - tab "Mitigation & resolution" [ref=e285] [cursor=pointer]:
+              - generic [ref=e288]: Mitigation & resolution
+            - tab "Retrospective" [ref=e289] [cursor=pointer]:
+              - generic [ref=e292]: Retrospective
+            - tab "Custom fields" [ref=e293] [cursor=pointer]:
+              - generic [ref=e296]: Custom fields
+            - tab "More tabs" [ref=e297] [cursor=pointer]:
+              - generic [ref=e299]: 
+          - tabpanel "Summary & discussion" [ref=e300]:
+            - generic [ref=e301]:
+              - region "AI summary by IcM Assistant" [ref=e304]:
+                - generic [ref=e305]:
+                  - generic [ref=e307]:
+                    - img [ref=e309]
+                    - heading "AI summary by IcM Assistant" [level=3] [ref=e317]
+                  - menubar "Widget actions" [ref=e322]:
+                    - group [ref=e323]:
+                      - menuitem "Refresh" [ref=e324] [cursor=pointer]:
+                        - generic [ref=e326]: 
+                    - group [ref=e327]:
+                      - menuitem "Set AI summary by IcM Assistant full screen" [ref=e328] [cursor=pointer]:
+                        - generic [ref=e330]: 
+                      - menuitem "Collapse AI summary by IcM Assistant" [ref=e331] [cursor=pointer]:
+                        - generic [ref=e333]: 
+                - generic [ref=e336]:
+                  - generic [ref=e337]: Updating summary using Azure OpenAI...
+                  - progressbar "Updating summary using Azure OpenAI..." [ref=e340]
+                - status
+              - generic [ref=e346] [cursor=pointer]:
+                - heading "Authored summary" [level=3] [ref=e350]
+                - generic [ref=e353]:
+                  - button "Edit" [ref=e354]:
+                    - generic [ref=e355]:
+                      - generic [ref=e356]: 
+                      - generic [ref=e358]: Edit
+                  - button "Fullscreen" [ref=e361]:
+                    - generic [ref=e363]: 
+                  - button "Expand" [ref=e364]:
+                    - generic [ref=e366]: 
+              - generic [ref=e369]:
+                - generic [ref=e371] [cursor=pointer]:
+                  - heading "Discussion" [level=3] [ref=e375]
+                  - generic [ref=e378]:
+                    - button "Refresh" [ref=e379]:
+                      - generic [ref=e381]: 
+                    - button "Fullscreen" [ref=e382]:
+                      - generic [ref=e384]: 
+                    - button "Collapse" [ref=e385]:
+                      - generic [ref=e387]: 
+                - generic [ref=e389]:
+                  - generic [ref=e390]:
+                    - generic [ref=e391]:
+                      - 'generic "Contact: Adam Ungar" [ref=e393]':
+                        - generic [ref=e395]: Adam Ungar
+                      - generic [ref=e396]:
+                        - generic [ref=e397]:
+                          - textbox "Discussion Do not enter personally identifiable information (PII)!" [ref=e398]
+                          - menubar [ref=e402]
+                        - generic [ref=e403]: Do not enter personally identifiable information (PII)!
+                    - generic [ref=e404]:
+                      - button "Cancel" [disabled] [ref=e405]:
+                        - generic [ref=e406]:
+                          - generic [ref=e407]: 
+                          - generic [ref=e409]: Cancel
+                      - button "Save" [disabled] [ref=e410]:
+                        - generic [ref=e411]:
+                          - generic [ref=e412]: 
+                          - generic [ref=e414]: Save
+                  - generic [ref=e416]:
+                    - generic [ref=e419]:
+                      - generic [ref=e423]:
+                        - textbox "User keywords to search the discussion thread" [ref=e424]
+                        - generic: 
+                      - button "Add filter" [ref=e430] [cursor=pointer]:
+                        - generic [ref=e431]:
+                          - generic [ref=e432]: 
+                          - generic [ref=e434]: Add filter
+                    - list [ref=e436]:
+                      - listitem [ref=e437]:
+                        - generic [ref=e439]:
+                          - 'generic "Contact: MDM Health Management Service" [ref=e441]':
+                            - generic [ref=e442]:
+                              - text: MM
+                              - generic [ref=e443]: MDM Health Management Service
+                          - generic [ref=e444]:
+                            - generic [ref=e448]:
+                              - 'generic "Contact: MDM Health Management Service" [ref=e449]':
+                                - generic [ref=e450]: MDM Health Management Service
+                              - generic [ref=e451]: Submitted at 2026-04-23 19:38:13 GMT+3
+                            - generic [ref=e454]: Incident is mitigated by the monitor AnalysisDeliveryCountExceeded (10901) because the watchdogs associated with this incident have reported healthy at least 24 times in last 114.9 mins for resource resource://SmartAlerts/Smart Alerts Rule Engine Analysis Processing - PROD Sev2/Ring2.
+                            - generic [ref=e456]:
+                              - generic [ref=e460]:
+                                - generic [ref=e461]:
+                                  - button "Like" [ref=e463] [cursor=pointer]:
+                                    - generic [ref=e465]: 
+                                  - generic [ref=e466]: "0"
+                                - generic [ref=e467]:
+                                  - button "Dislike" [ref=e469] [cursor=pointer]:
+                                    - generic [ref=e471]: 
+                                  - generic [ref=e472]: "0"
+                              - generic [ref=e476]: Enrichment
+                      - listitem [ref=e477]:
+                        - generic [ref=e479]:
+                          - 'generic "Contact: Anatoly Prokupets" [ref=e481]':
+                            - generic [ref=e483]: Anatoly Prokupets
+                          - generic [ref=e484]:
+                            - generic [ref=e488]:
+                              - 'generic "Contact: Anatoly Prokupets" [ref=e489]':
+                                - generic [ref=e490]: Anatoly Prokupets
+                              - generic [ref=e491]: Submitted at 2026-04-23 17:30:03 GMT+3
+                            - generic [ref=e493]: Acknowledging incident
+                            - generic [ref=e495]:
+                              - generic [ref=e499]:
+                                - generic [ref=e500]:
+                                  - button "Like" [ref=e502] [cursor=pointer]:
+                                    - generic [ref=e504]: 
+                                  - generic [ref=e505]: "0"
+                                - generic [ref=e506]:
+                                  - button "Dislike" [ref=e508] [cursor=pointer]:
+                                    - generic [ref=e510]: 
+                                  - generic [ref=e511]: "0"
+                              - generic [ref=e515]: Discussion
+                      - listitem [ref=e516]:
+                        - generic [ref=e518]:
+                          - 'generic "Contact: smartalerts-smartdetection-geneva-prod" [ref=e520]':
+                            - generic [ref=e521]:
+                              - text: s
+                              - generic [ref=e522]: smartalerts-smartdetection-geneva-prod
+                          - generic [ref=e523]:
+                            - generic [ref=e527]:
+                              - generic [ref=e529]:
+                                - 'generic "Contact: smartalerts-smartdetection-geneva-prod" [ref=e530]':
+                                  - generic [ref=e531]: SmartAlerts-SmartDetection-Geneva-PROD
+                                - generic [ref=e532]: "[on behalf of aesvc]"
+                              - generic [ref=e533]: Submitted at 2026-04-23 17:28:23 GMT+3
+                            - generic [ref=e536]:
+                              - table [ref=e537]:
+                                - rowgroup [ref=e538]:
+                                  - row "Jarvis Health Page BRAIN Health Checks" [ref=e539]:
+                                    - cell "Jarvis Health Page BRAIN Health Checks" [ref=e540]:
+                                      - table [ref=e541]:
+                                        - rowgroup [ref=e542]:
+                                          - row "Jarvis Health Page BRAIN Health Checks" [ref=e543]:
+                                            - cell "Jarvis Health Page" [ref=e544]:
+                                              - table [ref=e545]:
+                                                - rowgroup [ref=e546]:
+                                                  - row "Jarvis Health Page" [ref=e547]:
+                                                    - cell "Jarvis Health Page" [ref=e548]:
+                                                      - link "Jarvis Health Page" [ref=e549] [cursor=pointer]:
+                                                        - /url: https://portal.microsoftgeneva.com?layout=%7B%22health3%22%3A%7B%22tenant%22%3A%22SmartAlerts%22%2C%22checkedNodes%22%3A%5B%7B%22dataSourceNode%22%3A%7B%22id%22%3A%7B%22topologyName%22%3A%22SmartAlerts%22%2C%22type%22%3A%22Smart+Alerts+Rule+Engine+Analysis+Processing+-+PROD+Sev2%22%2C%22name%22%3A%22Ring2%22%7D%2C%22monitor%22%3A%22AnalysisDeliveryCountExceeded+(10901)%22%2C%22time%22%3A%222026-04-23T14%3A26%3A04.9630000Z%22%7D%7D%5D%7D%7D&incidentsourceid=82d84e33-cab9-41bd-b7a0-6174f36f6c73
+                                            - cell "BRAIN Health Checks" [ref=e550]:
+                                              - table [ref=e551]:
+                                                - rowgroup [ref=e552]:
+                                                  - row "BRAIN Health Checks" [ref=e553]:
+                                                    - cell "BRAIN Health Checks" [ref=e554]:
+                                                      - link "BRAIN Health Checks" [ref=e555] [cursor=pointer]:
+                                                        - /url: https://portal.microsoftgeneva.com/insights/braintroubleshooting?metricsAccount=SmartAlerts&utcTimestamp=2026-04-23T14:26:04.9630000Z&dimensions=%7B%22Stamp%22%3A%5B%22Ring2%22%5D%7D
+                                    - cell [ref=e556]:
+                                      - table [ref=e557]:
+                                        - rowgroup:
+                                          - row
+                                    - cell [ref=e558]:
+                                      - table [ref=e559]:
+                                        - rowgroup:
+                                          - row
+                                    - cell [ref=e560]:
+                                      - table [ref=e561]:
+                                        - rowgroup:
+                                          - row
+                                    - cell [ref=e562]:
+                                      - table [ref=e563]:
+                                        - rowgroup:
+                                          - row
+                                    - cell [ref=e564]:
+                                      - table [ref=e565]:
+                                        - rowgroup:
+                                          - row
+                                    - cell [ref=e566]:
+                                      - table [ref=e567]:
+                                        - rowgroup:
+                                          - row
+                                    - cell [ref=e568]:
+                                      - table [ref=e569]:
+                                        - rowgroup:
+                                          - row
+                                    - cell [ref=e570]:
+                                      - table [ref=e571]:
+                                        - rowgroup:
+                                          - row
+                              - table [ref=e572]:
+                                - rowgroup [ref=e573]:
+                                  - 'row "Impacted Resource Account: SmartAlerts Report Time: 2026-04-23 14:28:04Z Resource Type: Smart Alerts Rule Engine Analysis Processing - PROD Sev2 Resource: Ring2 (open resource in health page) Current State: unhealthy" [ref=e574]':
+                                    - 'cell "Impacted Resource Account: SmartAlerts Report Time: 2026-04-23 14:28:04Z Resource Type: Smart Alerts Rule Engine Analysis Processing - PROD Sev2 Resource: Ring2 (open resource in health page) Current State: unhealthy" [ref=e575]':
+                                      - heading "Impacted Resource" [level=2] [ref=e576]
+                                      - table [ref=e577]:
+                                        - rowgroup [ref=e578]:
+                                          - 'row "Account: SmartAlerts Report Time: 2026-04-23 14:28:04Z" [ref=e579]':
+                                            - 'cell "Account: SmartAlerts" [ref=e580]':
+                                              - generic [ref=e581]: "Account: SmartAlerts"
+                                            - 'cell "Report Time: 2026-04-23 14:28:04Z" [ref=e582]':
+                                              - generic [ref=e583]: "Report Time: 2026-04-23 14:28:04Z"
+                                          - 'row "Resource Type: Smart Alerts Rule Engine Analysis Processing - PROD Sev2 Resource: Ring2 (open resource in health page)" [ref=e584]':
+                                            - 'cell "Resource Type: Smart Alerts Rule Engine Analysis Processing - PROD Sev2" [ref=e585]':
+                                              - generic [ref=e586]: "Resource Type: Smart Alerts Rule Engine Analysis Processing - PROD Sev2"
+                                            - 'cell "Resource: Ring2 (open resource in health page)" [ref=e587]':
+                                              - generic [ref=e588]:
+                                                - text: "Resource:"
+                                                - generic [ref=e589]:
+                                                  - text: Ring2 (
+                                                  - link "open resource in health page" [ref=e590] [cursor=pointer]:
+                                                    - /url: https://portal.microsoftgeneva.com?layout=%7B%22health3%22%3A%7B%22tenant%22%3A%22SmartAlerts%22%2C%22checkedNodes%22%3A%5B%7B%22dataSourceNode%22%3A%7B%22id%22%3A%7B%22topologyName%22%3A%22SmartAlerts%22%2C%22type%22%3A%22Smart+Alerts+Rule+Engine+Analysis+Processing+-+PROD+Sev2%22%2C%22name%22%3A%22Ring2%22%7D%2C%22monitor%22%3A%22AnalysisDeliveryCountExceeded+(10901)%22%2C%22time%22%3A%222026-04-23T14%3A26%3A04.9630000Z%22%7D%7D%5D%7D%7D&incidentsourceid=82d84e33-cab9-41bd-b7a0-6174f36f6c73
+                                                  - text: )
+                                          - 'row "Current State: unhealthy" [ref=e591]':
+                                            - 'cell "Current State: unhealthy" [ref=e592]':
+                                              - generic [ref=e593]: "Current State: unhealthy"
+                              - heading "Failing Monitor" [level=2] [ref=e594]
+                              - table [ref=e595]:
+                                - rowgroup [ref=e596]:
+                                  - 'row "Account: SmartAlerts Namespace: SmartAlertsProd Metric: Alert Rule Analysis Delivery Count Has Exceeded Monitor: AnalysisDeliveryCountExceeded (10901) (view monitor) Failing watchdog report: Resource is unhealthy. Condition: Sum > 20. Evaluated value: 148. Lookback duration: 15 minutes." [ref=e597]':
+                                    - 'cell "Account: SmartAlerts Namespace: SmartAlertsProd Metric: Alert Rule Analysis Delivery Count Has Exceeded Monitor: AnalysisDeliveryCountExceeded (10901) (view monitor) Failing watchdog report: Resource is unhealthy. Condition: Sum > 20. Evaluated value: 148. Lookback duration: 15 minutes." [ref=e598]':
+                                      - table [ref=e599]:
+                                        - rowgroup [ref=e600]:
+                                          - 'row "Account: SmartAlerts Namespace: SmartAlertsProd" [ref=e601]':
+                                            - 'cell "Account: SmartAlerts" [ref=e602]':
+                                              - generic [ref=e603]: "Account: SmartAlerts"
+                                            - 'cell "Namespace: SmartAlertsProd" [ref=e604]':
+                                              - generic [ref=e605]: "Namespace: SmartAlertsProd"
+                                          - 'row "Metric: Alert Rule Analysis Delivery Count Has Exceeded Monitor: AnalysisDeliveryCountExceeded (10901) (view monitor)" [ref=e606]':
+                                            - 'cell "Metric: Alert Rule Analysis Delivery Count Has Exceeded" [ref=e607]':
+                                              - generic [ref=e608]: "Metric: Alert Rule Analysis Delivery Count Has Exceeded"
+                                            - 'cell "Monitor: AnalysisDeliveryCountExceeded (10901) (view monitor)" [ref=e609]':
+                                              - generic [ref=e610]:
+                                                - text: "Monitor:"
+                                                - generic [ref=e611]:
+                                                  - text: AnalysisDeliveryCountExceeded (10901) (
+                                                  - link "view monitor" [ref=e612] [cursor=pointer]:
+                                                    - /url: https://portal.microsoftgeneva.com/?page=settings&mode=mdm&account=SmartAlerts&namespace=SmartAlertsProd&metric=Alert%20Rule%20Analysis%20Delivery%20Count%20Has%20Exceeded&tab=monitors&monitor=AnalysisDeliveryCountExceeded%20%2810901%29
+                                                  - text: )
+                                      - table [ref=e613]:
+                                        - rowgroup [ref=e614]:
+                                          - row "Failing watchdog report:" [ref=e615]:
+                                            - cell "Failing watchdog report:" [ref=e616]
+                                          - 'row "Resource is unhealthy. Condition: Sum > 20. Evaluated value: 148. Lookback duration: 15 minutes." [ref=e617]':
+                                            - 'cell "Resource is unhealthy. Condition: Sum > 20. Evaluated value: 148. Lookback duration: 15 minutes." [ref=e618]':
+                                              - paragraph [ref=e619]: "Resource is unhealthy. Condition: Sum > 20. Evaluated value: 148. Lookback duration: 15 minutes."
+                              - heading "Additional troubleshooting information" [level=3] [ref=e620]
+                              - table [ref=e621]:
+                                - rowgroup [ref=e622]:
+                                  - row "Icm.TsgId https://eng.ms/docs/cloud-ai-platform/azure/azure-edge-platform/observability-product/smart-alerts/smart-alerts/troubleshooting/engine/analysisdeliverycountexceeded10901" [ref=e623]:
+                                    - rowheader "Icm.TsgId" [ref=e624]
+                                    - cell "https://eng.ms/docs/cloud-ai-platform/azure/azure-edge-platform/observability-product/smart-alerts/smart-alerts/troubleshooting/engine/analysisdeliverycountexceeded10901" [ref=e625]
+                                  - row "Monitor.DataEndTime 2026-04-23 14:26:04Z" [ref=e626]:
+                                    - rowheader "Monitor.DataEndTime" [ref=e627]
+                                    - cell "2026-04-23 14:26:04Z" [ref=e628]
+                                  - row "Monitor.DataStartTime 2026-04-23 14:11:04Z" [ref=e629]:
+                                    - rowheader "Monitor.DataStartTime" [ref=e630]
+                                    - cell "2026-04-23 14:11:04Z" [ref=e631]
+                                  - row "Category Rule Engine" [ref=e632]:
+                                    - rowheader "Category" [ref=e633]
+                                    - cell "Rule Engine" [ref=e634]
+                                  - row "Monitor.MetricData Only upto last 60 minutes [Current] [Sum] [null,null,null,null,null,null,null,null,null,null,18,129,1,null,null]" [ref=e635]:
+                                    - rowheader "Monitor.MetricData" [ref=e636]
+                                    - cell "Only upto last 60 minutes [Current] [Sum] [null,null,null,null,null,null,null,null,null,null,18,129,1,null,null]" [ref=e637]
+                                  - row "alertOnDivideByZeroError False" [ref=e638]:
+                                    - rowheader "alertOnDivideByZeroError" [ref=e639]
+                                    - cell "False" [ref=e640]
+                                  - row "metric Sum" [ref=e641]:
+                                    - rowheader "metric" [ref=e642]
+                                    - cell "Sum" [ref=e643]
+                                  - row "ShouldSendToAutomation False" [ref=e644]:
+                                    - rowheader "ShouldSendToAutomation" [ref=e645]
+                                    - cell "False" [ref=e646]
+                                  - row "HasSerializationVersion True" [ref=e647]:
+                                    - rowheader "HasSerializationVersion" [ref=e648]
+                                    - cell "True" [ref=e649]
+                                  - row "ReportExpirationTime 540" [ref=e650]:
+                                    - rowheader "ReportExpirationTime" [ref=e651]
+                                    - cell "540" [ref=e652]
+                                  - row "Source AD Metrics Monitor" [ref=e653]:
+                                    - rowheader "Source" [ref=e654]
+                                    - cell "AD Metrics Monitor" [ref=e655]
+                                  - row "MonitorDataSourceType Metrics" [ref=e656]:
+                                    - rowheader "MonitorDataSourceType" [ref=e657]
+                                    - cell "Metrics" [ref=e658]
+                                  - row "SourceRegion prod8-red" [ref=e659]:
+                                    - rowheader "SourceRegion" [ref=e660]
+                                    - cell "prod8-red" [ref=e661]
+                                  - row "ReportOrigin DMON" [ref=e662]:
+                                    - rowheader "ReportOrigin" [ref=e663]
+                                    - cell "DMON" [ref=e664]
+                                  - row "Monitor.MetricDataIngestionDelay 31" [ref=e665]:
+                                    - rowheader "Monitor.MetricDataIngestionDelay" [ref=e666]
+                                    - cell "31" [ref=e667]
+                                  - row "Monitor.MonitorExecutionTraceId 9343709b-8a15-40ac-8090-afde2f4b213d" [ref=e668]:
+                                    - rowheader "Monitor.MonitorExecutionTraceId" [ref=e669]
+                                    - cell "9343709b-8a15-40ac-8090-afde2f4b213d" [ref=e670]
+                              - separator [ref=e671]
+                              - paragraph [ref=e672]:
+                                - text: "How to read this page:"
+                                - link "Understand my IcM Incident" [ref=e673] [cursor=pointer]:
+                                  - /url: https://aka.ms/health/ts/understandincident
+                                - text: .
+                              - paragraph [ref=e674]:
+                                - text: "Troubleshooting:"
+                                - link "This is a duplicate incident" [ref=e675] [cursor=pointer]:
+                                  - /url: https://aka.ms/health/ts/duplicates
+                                - text: .
+                              - paragraph [ref=e676]:
+                                - text: "Troubleshooting:"
+                                - link "This is a false alert" [ref=e677] [cursor=pointer]:
+                                  - /url: https://aka.ms/health/ts/monitorincorrect
+                                - text: .
+                              - paragraph [ref=e678]:
+                                - text: "Troubleshooting:"
+                                - link "There is an issue with enrichment" [ref=e679] [cursor=pointer]:
+                                  - /url: https://aka.ms/health/ts/enrichment
+                                - text: .
+                            - generic [ref=e681]:
+                              - generic [ref=e685]:
+                                - generic [ref=e686]:
+                                  - button "Like" [ref=e688] [cursor=pointer]:
+                                    - generic [ref=e690]: 
+                                  - generic [ref=e691]: "0"
+                                - generic [ref=e692]:
+                                  - button "Dislike" [ref=e694] [cursor=pointer]:
+                                    - generic [ref=e696]: 
+                                  - generic [ref=e697]: "0"
+                              - generic [ref=e701]: Enrichment
+                      - listitem [ref=e702]:
+                        - generic [ref=e704]:
+                          - 'generic "Contact: smartalerts-smartdetection-geneva-prod" [ref=e706]':
+                            - generic [ref=e707]:
+                              - text: s
+                              - generic [ref=e708]: smartalerts-smartdetection-geneva-prod
+                          - generic [ref=e709]:
+                            - generic [ref=e713]:
+                              - generic [ref=e715]:
+                                - 'generic "Contact: smartalerts-smartdetection-geneva-prod" [ref=e716]':
+                                  - generic [ref=e717]: SmartAlerts-SmartDetection-Geneva-PROD
+                                - generic [ref=e718]: "[on behalf of AD ROCS/MDM Connector (adrocs)]"
+                              - generic [ref=e719]: Submitted at 2026-04-23 17:28:16 GMT+3
+                            - generic [ref=e722]: Incident created
+                            - generic [ref=e724]:
+                              - generic [ref=e728]:
+                                - generic [ref=e729]:
+                                  - button "Like" [ref=e731] [cursor=pointer]:
+                                    - generic [ref=e733]: 
+                                  - generic [ref=e734]: "0"
+                                - generic [ref=e735]:
+                                  - button "Dislike" [ref=e737] [cursor=pointer]:
+                                    - generic [ref=e739]: 
+                                  - generic [ref=e740]: "0"
+                              - generic [ref=e744]: Enrichment

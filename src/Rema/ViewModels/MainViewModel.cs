@@ -28,6 +28,7 @@ public partial class MainViewModel : ObservableObject
     public SettingsViewModel SettingsVM { get; }
     public OnboardingViewModel OnboardingVM { get; }
     public ServiceProjectsViewModel ServiceProjectsVM { get; }
+    public ChatViewModel ChatVM { get; }
 
     public MainViewModel(DataStore dataStore, CopilotService copilotService)
     {
@@ -41,6 +42,7 @@ public partial class MainViewModel : ObservableObject
         SettingsVM = new SettingsViewModel(dataStore);
         OnboardingVM = new OnboardingViewModel(dataStore, copilotService);
         ServiceProjectsVM = new ServiceProjectsViewModel(dataStore, copilotService);
+        ChatVM = new ChatViewModel(dataStore, copilotService);
 
         OnboardingVM.OnboardingCompleted += () =>
         {

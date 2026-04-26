@@ -1,38 +1,161 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:loc="using:Rema.Localization"
-             x:Class="Rema.Views.ChatView">
+             xmlns:vm="using:Rema.ViewModels"
+             xmlns:sc="using:StrataTheme.Controls"
+             x:Class="Rema.Views.ChatView"
+             x:DataType="vm:ChatViewModel">
 
-  <Grid RowDefinitions="*,Auto">
-    <!-- Chat transcript area -->
-    <ScrollViewer Grid.Row="0" Padding="32">
-      <StackPanel Spacing="8">
-        <TextBlock Text="{loc:Str Nav_Chat}" FontSize="24" FontWeight="Bold"
-                   Foreground="{DynamicResource Brush.TextPrimary}"
-                   Margin="0,0,0,16" />
-        <TextBlock Text="{loc:Str Chat_Placeholder}" Opacity="0.5"
-                   HorizontalAlignment="Center"
-                   Foreground="{DynamicResource Brush.TextSecondary}" />
-      </StackPanel>
-    </ScrollViewer>
+  <!-- Transcript item data templates -->
+  <UserControl.DataTemplates>
+
+    <!-- ═══ User Message ═══ -->
+    <DataTemplate DataType="vm:UserMessageItem">
+      <sc:StrataChatMessage Role="User" HorizontalAlignment="Right"
+                            Author="{Binding Author}"
+                            Timestamp="{Binding TimestampText}">
+        <sc:StrataChatMessage.Content>
+          <SelectableTextBlock Text="{Binding Content}" TextWrapping="Wrap" />
+        </sc:StrataChatMessage.Content>
+      </sc:StrataChatMessage>
+    </DataTemplate>
+
+    <!-- ═══ Assistant Message ═══ -->
+    <DataTemplate DataType="vm:AssistantMessageItem">
+      <sc:StrataChatMessage Role="Assistant" HorizontalAlignment="Left"
+                            IsStreaming="{Binding IsStreaming}"
+                            Author="{Binding Author}"
+                            Timestamp="{Binding TimestampText}">
+        <sc:StrataChatMessage.Content>
+          <sc:StrataMarkdown Markdown="{Binding Content}" IsInline="True" />
+        </sc:StrataChatMessage.Content>
+      </sc:StrataChatMessage>
+    </DataTemplate>
+
+    <!-- ═══ Error Message ═══ -->
+    <DataTemplate DataType="vm:ErrorMessageItem">
+      <Border Background="#30FF4444" CornerRadius="8" Padding="14,10" Margin="0,4">
+        <TextBlock Text="{Binding Content}" TextWrapping="Wrap"
+                   Foreground="#FFFF6666" FontSize="13" />
+      </Border>
+    </DataTemplate>
+
+    <!-- ═══ Reasoning Block ═══ -->
+    <DataTemplate DataType="vm:ReasoningItem">
+      <sc:StrataThink Label="Reasoning"
+                      IsExpanded="{Binding IsExpanded}"
+                      IsActive="{Binding IsActive}">
+        <sc:StrataThink.Content>
+          <sc:StrataMarkdown Markdown="{Binding Content}" IsInline="True" />
+        </sc:StrataThink.Content>
+      </sc:StrataThink>
+    </DataTemplate>
+
+    <!-- ═══ Tool Group (multiple tools) ═══ -->
+    <DataTemplate DataType="vm:ToolGroupItem">
+      <sc:StrataThink Label="{Binding Label}"
+                      Meta="{Binding Meta}"
+                      IsExpanded="{Binding IsExpanded}"
+                      IsActive="{Binding IsActive}"
+                      ProgressValue="{Binding ProgressValue}">
+        <sc:StrataThink.Content>
+          <ItemsControl ItemsSource="{Binding ToolCalls}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <WrapPanel Orientation="Horizontal" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate DataType="vm:ToolCallItem">
+                <sc:StrataAiToolCall ToolName="{Binding ToolName}"
+                                     Status="{Binding Status}"
+                                     DurationMs="{Binding DurationMs}"
+                                     IsExpanded="{Binding IsExpanded}"
+                                     InputParameters="{Binding InputParameters}"
+                                     MoreInfo="{Binding MoreInfo}"
+                                     MaxWidth="420" Margin="0,0,6,6" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </sc:StrataThink.Content>
+      </sc:StrataThink>
+    </DataTemplate>
+
+    <!-- ═══ Single Tool (standalone) ═══ -->
+    <DataTemplate DataType="vm:SingleToolItem">
+      <sc:StrataThink Label="{Binding Label}"
+                      Meta="{Binding Meta}"
+                      IsActive="{Binding IsActive}">
+        <sc:StrataThink.Content>
+          <sc:StrataAiToolCall ToolName="{Binding Label}"
+                               InputParameters="{Binding InputParameters}"
+                               MoreInfo="{Binding MoreInfo}"
+                               MaxWidth="420" />
+        </sc:StrataThink.Content>
+      </sc:StrataThink>
+    </DataTemplate>
+
+    <!-- ═══ Typing Indicator ═══ -->
+    <DataTemplate DataType="vm:TypingIndicatorItem">
+      <sc:StrataTypingIndicator Label="{Binding Label}"
+                                IsActive="{Binding IsActive}" />
+    </DataTemplate>
+
+    <!-- ═══ Turn Model Label ═══ -->
+    <DataTemplate DataType="vm:TurnModelItem">
+      <TextBlock Text="{Binding ModelName}" FontSize="10" Opacity="0.4"
+                 Foreground="{DynamicResource Brush.TextTertiary}"
+                 Margin="0,2,0,0" />
+    </DataTemplate>
+
+  </UserControl.DataTemplates>
+
+  <!-- ═══ Main Layout ═══ -->
+  <sc:StrataChatShell x:Name="ChatShell" IsStreaming="{Binding IsBusy}">
+
+    <!-- Transcript -->
+    <sc:StrataChatShell.Transcript>
+      <Panel>
+        <!-- Welcome panel (shown when no chat active) -->
+        <StackPanel x:Name="WelcomePanel" HorizontalAlignment="Center"
+                    VerticalAlignment="Center" Spacing="8">
+          <TextBlock Text="💬" FontSize="32" HorizontalAlignment="Center" Opacity="0.4" />
+          <TextBlock Text="Ask Rema about deployments, pipelines, or shift status."
+                     FontSize="14" Opacity="0.5" TextAlignment="Center"
+                     Foreground="{DynamicResource Brush.TextSecondary}" />
+        </StackPanel>
+
+        <!-- Transcript items -->
+        <ItemsControl x:Name="TranscriptList"
+                      ItemsSource="{Binding MountedTranscriptTurns}"
+                      Margin="24,20,24,20">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <StackPanel Spacing="12" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate DataType="vm:TranscriptTurn">
+              <ItemsControl ItemsSource="{Binding Items}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <StackPanel Spacing="8" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+              </ItemsControl>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Panel>
+    </sc:StrataChatShell.Transcript>
 
     <!-- Composer -->
-    <Border Grid.Row="1" Padding="16,8"
-            Background="{DynamicResource Brush.Surface1}"
-            BorderBrush="{DynamicResource Brush.BorderSubtle}"
-            BorderThickness="0,1,0,0">
-      <Grid ColumnDefinitions="*,Auto">
-        <TextBox Grid.Column="0"
-                 PlaceholderText="{loc:Str Chat_Placeholder}"
-                 Name="ComposerTextBox"
-                 AcceptsReturn="True"
-                 TextWrapping="Wrap"
-                 MaxHeight="120" />
-        <Button Grid.Column="1" Classes="accent" Content="{loc:Str Chat_Send}"
-                Margin="8,0,0,0" VerticalAlignment="Bottom"
-                Padding="16,8" />
-      </Grid>
-    </Border>
-  </Grid>
+    <sc:StrataChatShell.Composer>
+      <sc:StrataChatComposer x:Name="Composer"
+                             PromptText="{Binding PromptText, Mode=TwoWay}"
+                             IsBusy="{Binding IsBusy}"
+                             Placeholder="Ask Rema…"
+                             CanAttach="False" />
+    </sc:StrataChatShell.Composer>
 
+  </sc:StrataChatShell>
 </UserControl>

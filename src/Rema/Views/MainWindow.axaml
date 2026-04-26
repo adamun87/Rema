@@ -165,7 +165,7 @@
 
       <!-- Chat (index 2) -->
       <Panel x:Name="Page2" IsVisible="False">
-        <views:ChatView />
+        <views:ChatView DataContext="{Binding ChatVM}" />
       </Panel>
 
       <!-- Service Projects (index 3) — detail/editor only (list is in sidebar) -->
