@@ -1,4 +1,6 @@
 using System;
+using System.Threading;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
@@ -43,6 +45,12 @@ public partial class App : Application
                     try
                     {
                         await copilotService.DisposeAsync();
+                    }
+                    catch { }
+
+                    try
+                    {
+                        await vm.PollingService.DisposeAsync();
                     }
                     catch { }
                 }).GetAwaiter().GetResult();

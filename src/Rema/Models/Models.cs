@@ -239,8 +239,8 @@ public class RemaSettings
     public bool ShowToolCalls { get; set; } = true;
 
     // ── AI & Models ──
-    public string PreferredModel { get; set; } = "";
-    public string ReasoningEffort { get; set; } = "";
+    public string PreferredModel { get; set; } = "claude-sonnet-4";
+    public string ReasoningEffort { get; set; } = "medium";
 
     // ── Polling ──
     public int PollingIntervalSeconds { get; set; } = 60;

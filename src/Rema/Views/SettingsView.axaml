@@ -37,7 +37,7 @@
                   IsChecked="{Binding IsCompactDensity, Mode=TwoWay}" />
       </StackPanel>
 
-      <!-- Chat -->
+      <!-- AI / Model -->
       <StackPanel Spacing="12">
         <TextBlock Text="{loc:Str Settings_Chat}"
                    FontSize="16" FontWeight="SemiBold"
@@ -47,6 +47,22 @@
                   IsChecked="{Binding SendWithEnter, Mode=TwoWay}" />
         <CheckBox Content="{loc:Str Settings_ShowToolCalls}"
                   IsChecked="{Binding ShowToolCalls, Mode=TwoWay}" />
+
+        <StackPanel Spacing="4">
+          <TextBlock Text="{loc:Str Settings_Model}" FontSize="12"
+                     Foreground="{DynamicResource Brush.TextSecondary}" />
+          <ComboBox ItemsSource="{Binding AvailableModels}"
+                    SelectedItem="{Binding PreferredModel, Mode=TwoWay}"
+                    HorizontalAlignment="Stretch" />
+        </StackPanel>
+
+        <StackPanel Spacing="4">
+          <TextBlock Text="{loc:Str Settings_ReasoningEffort}" FontSize="12"
+                     Foreground="{DynamicResource Brush.TextSecondary}" />
+          <ComboBox ItemsSource="{Binding AvailableReasoningEfforts}"
+                    SelectedItem="{Binding ReasoningEffort, Mode=TwoWay}"
+                    HorizontalAlignment="Stretch" />
+        </StackPanel>
       </StackPanel>
 
       <!-- Polling -->

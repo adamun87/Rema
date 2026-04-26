@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Rema.Services;
 
@@ -17,6 +18,20 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool _notificationsEnabled;
     [ObservableProperty] private string _preferredModel = "";
     [ObservableProperty] private string _reasoningEffort = "";
+
+    public IReadOnlyList<string> AvailableModels { get; } =
+    [
+        "claude-sonnet-4",
+        "claude-sonnet-4-5",
+        "claude-opus-4",
+        "gpt-4o",
+        "gpt-4.1",
+        "o3",
+        "o4-mini",
+    ];
+
+    public IReadOnlyList<string> AvailableReasoningEfforts { get; } =
+        ["low", "medium", "high"];
 
     public SettingsViewModel(DataStore dataStore)
     {

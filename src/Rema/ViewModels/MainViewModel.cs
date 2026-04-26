@@ -13,6 +13,7 @@ public partial class MainViewModel : ObservableObject
 {
     private readonly DataStore _dataStore;
     private readonly CopilotService _copilotService;
+    private readonly PollingService _pollingService;
     private bool _isRefreshingCopilotState;
 
     [ObservableProperty] private int _selectedNavIndex;
@@ -25,15 +26,18 @@ public partial class MainViewModel : ObservableObject
 
     public DataStore DataStore => _dataStore;
     public CopilotService CopilotService => _copilotService;
+    public PollingService PollingService => _pollingService;
     public SettingsViewModel SettingsVM { get; }
     public OnboardingViewModel OnboardingVM { get; }
     public ServiceProjectsViewModel ServiceProjectsVM { get; }
+    public ShiftsViewModel ShiftsVM { get; }
     public ChatViewModel ChatVM { get; }
 
     public MainViewModel(DataStore dataStore, CopilotService copilotService)
     {
         _dataStore = dataStore;
         _copilotService = copilotService;
+        _pollingService = new PollingService(dataStore);
 
         IsOnboarded = dataStore.Data.Settings.IsOnboarded;
         UserName = dataStore.Data.Settings.UserName;
@@ -42,6 +46,7 @@ public partial class MainViewModel : ObservableObject
         SettingsVM = new SettingsViewModel(dataStore);
         OnboardingVM = new OnboardingViewModel(dataStore, copilotService);
         ServiceProjectsVM = new ServiceProjectsViewModel(dataStore, copilotService);
+        ShiftsVM = new ShiftsViewModel(dataStore);
         ChatVM = new ChatViewModel(dataStore, copilotService);
 
         OnboardingVM.OnboardingCompleted += () =>
@@ -49,7 +54,6 @@ public partial class MainViewModel : ObservableObject
             IsOnboarded = true;
             UserName = dataStore.Data.Settings.UserName;
             _ = _dataStore.SaveAsync();
-            // Trigger connect after onboarding if not already connected
             if (!IsConnected)
                 _ = RefreshCopilotStateAsync(refreshAuthStatus: true);
         };
@@ -60,7 +64,6 @@ public partial class MainViewModel : ObservableObject
                 IsDarkTheme = SettingsVM.IsDarkTheme;
         };
 
-        // React to reconnection events
         _copilotService.Reconnected += () =>
         {
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
@@ -81,6 +84,7 @@ public partial class MainViewModel : ObservableObject
 
     public async Task InitializeAsync()
     {
+        _pollingService.Start();
         await RefreshCopilotStateAsync(refreshAuthStatus: true);
     }
 
