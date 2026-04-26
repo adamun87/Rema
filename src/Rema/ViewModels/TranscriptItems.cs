@@ -103,7 +103,28 @@ public sealed partial class ToolGroupItem : TranscriptItem
 public sealed partial class SingleToolItem : TranscriptItem
 {
     public SingleToolItem(string stableId, ToolCallItemBase inner) : base(stableId)
-        => Inner = inner;
+    {
+        Inner = inner;
+
+        // Forward property changes from inner item to ourselves
+        if (inner is ToolCallItem tc)
+        {
+            tc.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName is nameof(ToolCallItem.ToolName))
+                    OnPropertyChanged(nameof(Label));
+                else if (e.PropertyName is nameof(ToolCallItem.Status))
+                {
+                    OnPropertyChanged(nameof(IsActive));
+                    OnPropertyChanged(nameof(Meta));
+                }
+                else if (e.PropertyName is nameof(ToolCallItem.InputParameters))
+                    OnPropertyChanged(nameof(InputParameters));
+                else if (e.PropertyName is nameof(ToolCallItem.MoreInfo))
+                    OnPropertyChanged(nameof(MoreInfo));
+            };
+        }
+    }
 
     public ToolCallItemBase Inner { get; }
 

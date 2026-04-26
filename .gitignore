@@ -42,3 +42,5 @@ session-store.db-wal
 
 Releases/
 publish/
+.playwright-mcp/
+screenshot-*.png
