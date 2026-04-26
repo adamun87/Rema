@@ -43,7 +43,7 @@ public static class SessionConfigBuilder
             };
         }
 
-        if (!string.IsNullOrEmpty(reasoningEffort))
+        if (!string.IsNullOrEmpty(reasoningEffort) && SupportsReasoningEffort(model))
             config.ReasoningEffort = reasoningEffort;
 
         if (tools is { Count: > 0 })
@@ -85,7 +85,7 @@ public static class SessionConfigBuilder
             };
         }
 
-        if (!string.IsNullOrEmpty(reasoningEffort))
+        if (!string.IsNullOrEmpty(reasoningEffort) && SupportsReasoningEffort(model))
             config.ReasoningEffort = reasoningEffort;
 
         if (tools is { Count: > 0 })
@@ -120,5 +120,14 @@ public static class SessionConfigBuilder
             config.Tools = options.Tools;
 
         return config;
+    }
+
+    // Returns true for models that accept a reasoning_effort parameter.
+    // Claude models and OpenAI o-series reasoning models support it; GPT chat models do not.
+    private static bool SupportsReasoningEffort(string? model)
+    {
+        if (string.IsNullOrEmpty(model)) return false;
+        return model.StartsWith("claude-", StringComparison.OrdinalIgnoreCase)
+            || (model.Length > 1 && model[0] == 'o' && char.IsDigit(model[1]));
     }
 }
