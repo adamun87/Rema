@@ -19,6 +19,14 @@ public sealed record TrackedItemDisplay(TrackedItem Item, string ProjectName, st
         ? "Step counts unavailable"
         : $"{Item.SucceededSteps} succeeded / {Item.FailedSteps} failed / {Item.SkippedSteps} skipped / {Item.PendingSteps} pending";
     public string NextStep => string.IsNullOrWhiteSpace(Item.ExpectedNextStep) ? "Monitor for status changes." : Item.ExpectedNextStep!;
+
+    public bool IsSucceeded => Item.Status.Contains("succeeded", StringComparison.OrdinalIgnoreCase)
+        || Item.Status.Contains("completed", StringComparison.OrdinalIgnoreCase);
+    public bool IsFailed => Item.Status.Contains("failed", StringComparison.OrdinalIgnoreCase)
+        || Item.Status.Contains("canceled", StringComparison.OrdinalIgnoreCase);
+    public bool IsInProgress => Item.Status.Contains("progress", StringComparison.OrdinalIgnoreCase)
+        || Item.Status.Contains("running", StringComparison.OrdinalIgnoreCase)
+        || Item.Status.Contains("inprogress", StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed class PipelineRunOption

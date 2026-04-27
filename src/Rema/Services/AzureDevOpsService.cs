@@ -125,9 +125,19 @@ public sealed class AzureDevOpsService
         var startTime = GetDateTimeOffset(build, "startTime");
         var finishTime = GetDateTimeOffset(build, "finishTime");
 
-        var timeline = buildId > 0
-            ? await GetTimelineSummaryAsync(project, buildId, cancellationToken).ConfigureAwait(false)
-            : TimelineSummary.Empty;
+        var timeline = TimelineSummary.Empty;
+        if (buildId > 0)
+        {
+            try
+            {
+                timeline = await GetTimelineSummaryAsync(project, buildId, cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Timeline is unavailable for queued/not-yet-started builds (HTTP 500).
+                // Fall back to empty summary so the rest of the build info still loads.
+            }
+        }
 
         var statusText = FormatStatus(status, result);
         var (requiresAction, reason, nextStep) = DetermineAction(statusText, timeline);

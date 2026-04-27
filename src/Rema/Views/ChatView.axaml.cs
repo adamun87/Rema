@@ -63,33 +63,15 @@ public partial class ChatView : UserControl
 
     private void OnScrollToEnd()
     {
-        if (_chatShell is null) return;
-        FindScrollViewer(_chatShell)?.ScrollToEnd();
+        // Respects user-scrolled-away state — no-op if the user has scrolled up.
+        _chatShell?.ScrollToEnd();
     }
 
-    private void OnUserMessageSent() => OnScrollToEnd();
-    private void OnTranscriptRebuilt() { }
-
-    private static ScrollViewer? FindScrollViewer(Control control)
+    private void OnUserMessageSent()
     {
-        if (control is ScrollViewer sv) return sv;
-        if (control is ContentControl cc && cc.Content is Control child)
-            return FindScrollViewer(child);
-        if (control is Avalonia.Controls.Presenters.ContentPresenter cp && cp.Child is Control cpChild)
-            return FindScrollViewer(cpChild);
-        if (control is Panel panel)
-        {
-            foreach (var c in panel.Children)
-            {
-                var r = FindScrollViewer(c);
-                if (r is not null) return r;
-            }
-        }
-        foreach (var vc in Avalonia.VisualTree.VisualExtensions.GetVisualChildren(control))
-        {
-            if (vc is ScrollViewer found) return found;
-            if (vc is Control vcc) { var r = FindScrollViewer(vcc); if (r is not null) return r; }
-        }
-        return null;
+        // Force scroll to bottom and re-enter follow-tail mode when the user sends a message.
+        _chatShell?.JumpToLatest();
     }
+
+    private void OnTranscriptRebuilt() { }
 }

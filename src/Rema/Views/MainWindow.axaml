@@ -321,40 +321,48 @@
               <ItemsControl ItemsSource="{Binding ActiveTrackedItems}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="vm:TrackedItemDisplay">
-                    <Border Background="{DynamicResource Brush.Surface}"
-                            BorderBrush="{DynamicResource Brush.Border}"
-                            BorderThickness="1" CornerRadius="10"
-                            Padding="14,12" Margin="0,0,0,8">
-                      <StackPanel Spacing="5">
-                        <DockPanel>
-                          <Border DockPanel.Dock="Right" Background="{DynamicResource Brush.SurfaceVariant}"
-                                  CornerRadius="4" Padding="7,2">
-                            <TextBlock Text="{Binding Item.Status}" FontSize="11"
-                                       Foreground="{DynamicResource Brush.TextSecondary}" />
-                          </Border>
-                          <StackPanel>
-                            <TextBlock Text="{Binding PipelineName}" FontSize="14" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource Brush.TextPrimary}" />
-                            <TextBlock Text="{Binding BuildLabel}" FontSize="12"
-                                       Foreground="{DynamicResource Brush.TextSecondary}" />
-                          </StackPanel>
-                        </DockPanel>
-                        <TextBlock Text="{Binding StepSummary}" FontSize="12"
-                                   Foreground="{DynamicResource Brush.TextSecondary}" />
-                        <TextBlock Text="{Binding NextStep}" FontSize="12"
-                                   Foreground="{DynamicResource Brush.TextTertiary}"
-                                   TextWrapping="Wrap" />
-                        <TextBlock Text="{Binding Item.ActionReason}" FontSize="12"
-                                   Foreground="#D97706" TextWrapping="Wrap"
-                                   IsVisible="{Binding Item.ActionReason, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                        <Button Classes="subtle" HorizontalAlignment="Left" Padding="8,4" MinHeight="0"
-                                IsVisible="{Binding HasAdoLink}"
-                                Command="{Binding $parent[ItemsControl].((vm:ShiftsViewModel)DataContext).OpenTrackedItemCommand}"
-                                CommandParameter="{Binding}">
-                          <TextBlock Text="Open in ADO ↗" />
-                        </Button>
-                      </StackPanel>
-                    </Border>
+                    <Button Padding="0" Margin="0,0,0,8"
+                            HorizontalContentAlignment="Stretch"
+                            Classes="run-card"
+                            IsEnabled="{Binding HasAdoLink}"
+                            Command="{Binding $parent[ItemsControl].((vm:ShiftsViewModel)DataContext).OpenTrackedItemCommand}"
+                            CommandParameter="{Binding}">
+                      <Border Background="{DynamicResource Brush.Surface}"
+                              BorderBrush="{DynamicResource Brush.Border}"
+                              BorderThickness="1" CornerRadius="10"
+                              Padding="14,12">
+                        <StackPanel Spacing="5">
+                          <DockPanel>
+                            <Border DockPanel.Dock="Right"
+                                    Classes="run-status"
+                                    Classes.succeeded="{Binding IsSucceeded}"
+                                    Classes.failed="{Binding IsFailed}"
+                                    Classes.in-progress="{Binding IsInProgress}"
+                                    CornerRadius="4" Padding="7,2">
+                              <TextBlock Text="{Binding Item.Status}" FontSize="11" />
+                            </Border>
+                            <StackPanel>
+                              <TextBlock Text="{Binding PipelineName}" FontSize="14" FontWeight="SemiBold"
+                                         Foreground="{DynamicResource Brush.TextPrimary}" />
+                              <TextBlock Text="{Binding BuildLabel}" FontSize="12"
+                                         Foreground="{DynamicResource Brush.TextSecondary}" />
+                            </StackPanel>
+                          </DockPanel>
+                          <TextBlock Text="{Binding StepSummary}" FontSize="12"
+                                     Foreground="{DynamicResource Brush.TextSecondary}" />
+                          <TextBlock Text="{Binding NextStep}" FontSize="12"
+                                     Foreground="{DynamicResource Brush.TextTertiary}"
+                                     TextWrapping="Wrap" />
+                          <TextBlock Text="{Binding Item.ActionReason}" FontSize="12"
+                                     Foreground="#D97706" TextWrapping="Wrap"
+                                     IsVisible="{Binding Item.ActionReason, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                          <TextBlock Text="Open in ADO ↗" FontSize="11"
+                                     Foreground="{DynamicResource Brush.Accent}"
+                                     IsVisible="{Binding HasAdoLink}"
+                                     HorizontalAlignment="Right" Margin="0,2,0,0" />
+                        </StackPanel>
+                      </Border>
+                    </Button>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
@@ -439,6 +447,56 @@
   </Grid>
 
   <Window.Styles>
+    <!-- Clickable run card button (transparent, no chrome) -->
+    <Style Selector="Button.run-card">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.run-card /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.run-card:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.run-card:pointerover Border">
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
+    </Style>
+    <Style Selector="Button.run-card:pressed /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Opacity" Value="0.8" />
+    </Style>
+    <Style Selector="Button.run-card:disabled">
+      <Setter Property="Cursor" Value="Arrow" />
+    </Style>
+
+    <!-- Status badge colors -->
+    <Style Selector="Border.run-status">
+      <Setter Property="Background" Value="{DynamicResource Brush.SurfaceVariant}" />
+      <Setter Property="VerticalAlignment" Value="Top" />
+    </Style>
+    <Style Selector="Border.run-status TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}" />
+    </Style>
+    <Style Selector="Border.run-status.succeeded">
+      <Setter Property="Background" Value="#DCFCE7" />
+    </Style>
+    <Style Selector="Border.run-status.succeeded TextBlock">
+      <Setter Property="Foreground" Value="#15803D" />
+    </Style>
+    <Style Selector="Border.run-status.failed">
+      <Setter Property="Background" Value="#FEE2E2" />
+    </Style>
+    <Style Selector="Border.run-status.failed TextBlock">
+      <Setter Property="Foreground" Value="#B91C1C" />
+    </Style>
+    <Style Selector="Border.run-status.in-progress">
+      <Setter Property="Background" Value="#DBEAFE" />
+    </Style>
+    <Style Selector="Border.run-status.in-progress TextBlock">
+      <Setter Property="Foreground" Value="#1D4ED8" />
+    </Style>
+
     <!-- Nav pill — horizontal bar at bottom of sidebar -->
     <Style Selector="Border.nav-pill">
       <Setter Property="CornerRadius" Value="18" />
