@@ -13,6 +13,7 @@ public partial class MainViewModel : ObservableObject
 {
     private readonly DataStore _dataStore;
     private readonly CopilotService _copilotService;
+    private readonly AzureDevOpsService _azureDevOpsService;
     private readonly PollingService _pollingService;
     private bool _isRefreshingCopilotState;
 
@@ -32,22 +33,35 @@ public partial class MainViewModel : ObservableObject
     public ServiceProjectsViewModel ServiceProjectsVM { get; }
     public ShiftsViewModel ShiftsVM { get; }
     public ChatViewModel ChatVM { get; }
+    public MemoriesViewModel MemoriesVM { get; }
+    public CapabilitiesViewModel SkillsVM { get; }
+    public CapabilitiesViewModel McpServersVM { get; }
+    public CapabilitiesViewModel ToolsVM { get; }
+    public CapabilitiesViewModel AgentsVM { get; }
 
     public MainViewModel(DataStore dataStore, CopilotService copilotService)
     {
         _dataStore = dataStore;
         _copilotService = copilotService;
-        _pollingService = new PollingService(dataStore);
+        _azureDevOpsService = new AzureDevOpsService();
+        _pollingService = new PollingService(dataStore, _azureDevOpsService);
 
         IsOnboarded = dataStore.Data.Settings.IsOnboarded;
         UserName = dataStore.Data.Settings.UserName;
         IsDarkTheme = dataStore.Data.Settings.IsDarkTheme;
 
-        SettingsVM = new SettingsViewModel(dataStore);
+        SettingsVM = new SettingsViewModel(dataStore, copilotService);
         OnboardingVM = new OnboardingViewModel(dataStore, copilotService);
-        ServiceProjectsVM = new ServiceProjectsViewModel(dataStore, copilotService);
-        ShiftsVM = new ShiftsViewModel(dataStore);
-        ChatVM = new ChatViewModel(dataStore, copilotService);
+        ServiceProjectsVM = new ServiceProjectsViewModel(dataStore, copilotService, _azureDevOpsService);
+        ShiftsVM = new ShiftsViewModel(dataStore, _azureDevOpsService);
+        ChatVM = new ChatViewModel(dataStore, copilotService, _azureDevOpsService);
+        MemoriesVM = new MemoriesViewModel(dataStore);
+        SkillsVM = new CapabilitiesViewModel(dataStore, "Skill");
+        McpServersVM = new CapabilitiesViewModel(dataStore, "Mcp");
+        ToolsVM = new CapabilitiesViewModel(dataStore, "Tool");
+        AgentsVM = new CapabilitiesViewModel(dataStore, "Agent");
+
+        _pollingService.TrackedItemsUpdated += () => ShiftsVM.Refresh();
 
         OnboardingVM.OnboardingCompleted += () =>
         {
@@ -86,6 +100,7 @@ public partial class MainViewModel : ObservableObject
     {
         _pollingService.Start();
         await RefreshCopilotStateAsync(refreshAuthStatus: true);
+        await SettingsVM.RefreshAvailableModelsAsync();
     }
 
     private async Task RefreshCopilotStateAsync(bool refreshAuthStatus)

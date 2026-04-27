@@ -13,6 +13,9 @@ namespace Rema.Models;
 [JsonSerializable(typeof(RemaSettings))]
 [JsonSerializable(typeof(JsonDocument))]
 [JsonSerializable(typeof(List<ChatMessage>))]
+[JsonSerializable(typeof(List<Memory>))]
+[JsonSerializable(typeof(List<CapabilityDefinition>))]
+[JsonSerializable(typeof(RemaConfigurationExport))]
 [JsonSerializable(typeof(List<string>))]
 [JsonSerializable(typeof(string[]))]
 internal partial class AppDataJsonContext : JsonSerializerContext;

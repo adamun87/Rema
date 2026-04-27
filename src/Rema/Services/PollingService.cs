@@ -14,12 +14,16 @@ namespace Rema.Services;
 public sealed class PollingService : IAsyncDisposable
 {
     private readonly DataStore _dataStore;
+    private readonly AzureDevOpsService _azureDevOpsService;
     private CancellationTokenSource _cts = new();
     private Task? _loopTask;
 
-    public PollingService(DataStore dataStore)
+    public event Action? TrackedItemsUpdated;
+
+    public PollingService(DataStore dataStore, AzureDevOpsService azureDevOpsService)
     {
         _dataStore = dataStore;
+        _azureDevOpsService = azureDevOpsService;
     }
 
     public void Start()
@@ -53,19 +57,53 @@ public sealed class PollingService : IAsyncDisposable
         }
     }
 
-    private Task PollAsync(CancellationToken ct)
+    private async Task PollAsync(CancellationToken ct)
     {
         var settings = _dataStore.Data.Settings;
-        if (!settings.NotificationsEnabled) return Task.CompletedTask;
 
         var activeShift = _dataStore.Data.Shifts.FirstOrDefault(s => s.IsActive);
-        if (activeShift is null) return Task.CompletedTask;
+        if (activeShift is null) return;
 
         var items = _dataStore.Data.TrackedItems
             .Where(t => t.ShiftId == activeShift.Id)
             .ToList();
 
-        if (items.Count == 0) return Task.CompletedTask;
+        if (items.Count == 0) return;
+
+        var changed = false;
+        foreach (var item in items)
+        {
+            if (item.AdoRunId is null) continue;
+
+            var project = _dataStore.Data.ServiceProjects.FirstOrDefault(p => p.Id == item.ServiceProjectId);
+            var pipeline = project?.PipelineConfigs.FirstOrDefault(p => p.Id == item.PipelineConfigId);
+            if (project is null || pipeline is null) continue;
+
+            var snapshot = await _azureDevOpsService.GetBuildAsync(project, pipeline, item.AdoRunId.Value, ct).ConfigureAwait(false);
+            var priorStatus = item.Status;
+            AzureDevOpsService.ApplySnapshot(item, snapshot);
+            changed = true;
+
+            if (!string.Equals(priorStatus, item.Status, StringComparison.OrdinalIgnoreCase))
+            {
+                _dataStore.Data.ShiftEvents.Add(new ShiftEvent
+                {
+                    ShiftId = activeShift.Id,
+                    TrackedItemId = item.Id,
+                    EventType = "StatusChange",
+                    Message = $"{pipeline.DisplayName} build {item.BuildVersion}: {item.Status}",
+                    Severity = item.RequiresAction ? "Warning" : "Info",
+                });
+            }
+        }
+
+        if (changed)
+        {
+            await _dataStore.SaveAsync(ct).ConfigureAwait(false);
+            Dispatcher.UIThread.Post(() => TrackedItemsUpdated?.Invoke());
+        }
+
+        if (!settings.NotificationsEnabled) return;
 
         // Notify for items requiring action
         var requiresAction = items.Where(t => t.RequiresAction).ToList();
@@ -81,6 +119,11 @@ public sealed class PollingService : IAsyncDisposable
             var body = string.IsNullOrEmpty(reason)
                 ? $"{name} requires your attention."
                 : $"{name}: {reason}";
+            if (string.Equals(item.LastNotification, body, StringComparison.Ordinal))
+                continue;
+
+            item.LastNotification = body;
+            await _dataStore.SaveAsync(ct).ConfigureAwait(false);
 
             Dispatcher.UIThread.Post(() =>
                 NotificationService.ShowIfInactive("🔔 Rema — Action Required", body));
@@ -112,8 +155,6 @@ public sealed class PollingService : IAsyncDisposable
             Dispatcher.UIThread.Post(() =>
                 NotificationService.ShowIfInactive("📊 Rema — Shift Update", body));
         }
-
-        return Task.CompletedTask;
     }
 
     public async ValueTask DisposeAsync()

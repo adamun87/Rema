@@ -51,9 +51,24 @@
         <StackPanel Spacing="4">
           <TextBlock Text="{loc:Str Settings_Model}" FontSize="12"
                      Foreground="{DynamicResource Brush.TextSecondary}" />
-          <ComboBox ItemsSource="{Binding AvailableModels}"
-                    SelectedItem="{Binding PreferredModel, Mode=TwoWay}"
-                    HorizontalAlignment="Stretch" />
+          <Grid ColumnDefinitions="*,8,Auto">
+            <ComboBox Grid.Column="0"
+                      ItemsSource="{Binding AvailableModels}"
+                      SelectedItem="{Binding PreferredModel, Mode=TwoWay}"
+                      HorizontalAlignment="Stretch" />
+            <Button Grid.Column="2"
+                    Classes="subtle"
+                    Content="Refresh models"
+                    MinHeight="0"
+                    Padding="12,7"
+                    IsEnabled="{Binding !IsLoadingModels}"
+                    Command="{Binding RefreshAvailableModelsCommand}" />
+          </Grid>
+          <TextBlock Text="{Binding ModelLoadStatus}"
+                     FontSize="11"
+                     Foreground="{DynamicResource Brush.TextTertiary}"
+                     TextWrapping="Wrap"
+                     IsVisible="{Binding ModelLoadStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
         </StackPanel>
 
         <StackPanel Spacing="4">
@@ -95,6 +110,37 @@
         <CheckBox Content="{loc:Str Settings_NotificationsEnabled}"
                   IsChecked="{Binding NotificationsEnabled, Mode=TwoWay}" />
       </StackPanel>
+
+      <!-- Configuration export -->
+      <Border Background="{DynamicResource Brush.Surface}"
+              BorderBrush="{DynamicResource Brush.Border}"
+              BorderThickness="1"
+              CornerRadius="12"
+              Padding="18">
+        <Grid RowDefinitions="Auto,8,Auto,14,Auto,8,Auto">
+          <TextBlock Grid.Row="0"
+                     Text="Configuration Export"
+                     FontSize="16" FontWeight="SemiBold"
+                     Foreground="{DynamicResource Brush.TextPrimary}" />
+          <TextBlock Grid.Row="2"
+                     Text="Export Rema onboarding configuration, service projects, memories, and agency marketplace capabilities for another user."
+                     FontSize="12"
+                     Foreground="{DynamicResource Brush.TextSecondary}"
+                     TextWrapping="Wrap" />
+          <Button Grid.Row="4"
+                  Classes="accent"
+                  Content="Export configuration…"
+                  HorizontalAlignment="Left"
+                  Padding="18,8"
+                  Command="{Binding ExportConfigurationCommand}" />
+          <TextBlock Grid.Row="6"
+                     Text="{Binding ExportStatus}"
+                     FontSize="12"
+                     Foreground="{DynamicResource Brush.TextTertiary}"
+                     TextWrapping="Wrap"
+                     IsVisible="{Binding ExportStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        </Grid>
+      </Border>
 
     </StackPanel>
   </ScrollViewer>

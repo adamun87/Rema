@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
 
 namespace Rema.Models;
@@ -111,6 +112,19 @@ public class TrackedItem : INotifyPropertyChanged
 {
     private string _status = "Waiting";
     private bool _requiresAction;
+    private string? _currentStage;
+    private string? _buildVersion;
+    private string? _adoWebUrl;
+    private string? _sourceBranch;
+    private string? _requestedFor;
+    private int _succeededSteps;
+    private int _failedSteps;
+    private int _skippedSteps;
+    private int _pendingSteps;
+    private int _totalSteps;
+    private string? _expectedNextStep;
+    private string? _actionReason;
+    private string? _lastNotification;
 
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid ShiftId { get; set; }
@@ -125,7 +139,66 @@ public class TrackedItem : INotifyPropertyChanged
         set { if (_status == value) return; _status = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Status))); }
     }
 
-    public string? CurrentStage { get; set; }
+    public string? CurrentStage
+    {
+        get => _currentStage;
+        set => SetField(ref _currentStage, value);
+    }
+
+    public string? BuildVersion
+    {
+        get => _buildVersion;
+        set => SetField(ref _buildVersion, value);
+    }
+
+    public string? AdoWebUrl
+    {
+        get => _adoWebUrl;
+        set => SetField(ref _adoWebUrl, value);
+    }
+
+    public string? SourceBranch
+    {
+        get => _sourceBranch;
+        set => SetField(ref _sourceBranch, value);
+    }
+
+    public string? RequestedFor
+    {
+        get => _requestedFor;
+        set => SetField(ref _requestedFor, value);
+    }
+
+    public int SucceededSteps
+    {
+        get => _succeededSteps;
+        set => SetField(ref _succeededSteps, value);
+    }
+
+    public int FailedSteps
+    {
+        get => _failedSteps;
+        set => SetField(ref _failedSteps, value);
+    }
+
+    public int SkippedSteps
+    {
+        get => _skippedSteps;
+        set => SetField(ref _skippedSteps, value);
+    }
+
+    public int PendingSteps
+    {
+        get => _pendingSteps;
+        set => SetField(ref _pendingSteps, value);
+    }
+
+    public int TotalSteps
+    {
+        get => _totalSteps;
+        set => SetField(ref _totalSteps, value);
+    }
+
     public List<StageCompletion> CompletedStages { get; set; } = [];
     public DateTimeOffset AddedAt { get; set; } = DateTimeOffset.Now;
     public DateTimeOffset? LastPolledAt { get; set; }
@@ -139,9 +212,32 @@ public class TrackedItem : INotifyPropertyChanged
         set { if (_requiresAction == value) return; _requiresAction = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(RequiresAction))); }
     }
 
-    public string? ActionReason { get; set; }
+    public string? ExpectedNextStep
+    {
+        get => _expectedNextStep;
+        set => SetField(ref _expectedNextStep, value);
+    }
+
+    public string? ActionReason
+    {
+        get => _actionReason;
+        set => SetField(ref _actionReason, value);
+    }
+
+    public string? LastNotification
+    {
+        get => _lastNotification;
+        set => SetField(ref _lastNotification, value);
+    }
 
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    private void SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value)) return;
+        field = value;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
 }
 
 public class StageCompletion
@@ -207,6 +303,23 @@ public class ScriptTemplate
     public bool IsBuiltIn { get; set; }
 }
 
+// ── Capabilities ──
+
+public class CapabilityDefinition
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Kind { get; set; } = "Tool"; // Skill, Mcp, Tool, Agent
+    public string Name { get; set; } = "";
+    public string Description { get; set; } = "";
+    public string Content { get; set; } = "";
+    public string Source { get; set; } = "built-in";
+    public string? DeepLink { get; set; }
+    public List<string> Tags { get; set; } = [];
+    public bool IsBuiltIn { get; set; }
+    public bool IsEnabled { get; set; } = true;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
+}
+
 // ── Memories ──
 
 public class Memory
@@ -257,6 +370,17 @@ public class RemaSettings
     public bool IsMaximized { get; set; }
 }
 
+public class RemaConfigurationExport
+{
+    public int SchemaVersion { get; set; } = 1;
+    public DateTimeOffset ExportedAt { get; set; } = DateTimeOffset.Now;
+    public RemaSettings Settings { get; set; } = new();
+    public List<ServiceProject> ServiceProjects { get; set; } = [];
+    public List<CapabilityDefinition> Capabilities { get; set; } = [];
+    public List<ScriptTemplate> ScriptTemplates { get; set; } = [];
+    public List<Memory> Memories { get; set; } = [];
+}
+
 // ── Root Container ──
 
 public class RemaAppData
@@ -270,5 +394,6 @@ public class RemaAppData
     public List<AdoConnection> AdoConnections { get; set; } = [];
     public List<KustoConnection> KustoConnections { get; set; } = [];
     public List<ScriptTemplate> ScriptTemplates { get; set; } = [];
+    public List<CapabilityDefinition> Capabilities { get; set; } = [];
     public List<Memory> Memories { get; set; } = [];
 }

@@ -52,7 +52,7 @@
           <StackPanel Spacing="14">
             <TextBlock Classes="field-label" Text="{loc:Str Shift_ShiftName}" />
             <TextBox Text="{Binding NewShiftName, Mode=TwoWay}"
-                     Watermark="{loc:Str Shift_ShiftNameWatermark}" />
+                     PlaceholderText="{loc:Str Shift_ShiftNameWatermark}" />
             <Button Classes="accent"
                     HorizontalAlignment="Stretch"
                     HorizontalContentAlignment="Center"
@@ -102,15 +102,33 @@
               BorderThickness="0,0,0,1"
               Padding="24,14">
         <DockPanel>
-          <Button DockPanel.Dock="Right"
-                  Classes="subtle"
-                  Padding="14,7" MinHeight="0"
-                  Command="{Binding EndShiftCommand}">
-            <StackPanel Orientation="Horizontal" Spacing="5">
-              <TextBlock Text="⏹" />
-              <TextBlock Text="{loc:Str Shift_EndShift}" />
-            </StackPanel>
-          </Button>
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+            <Button Classes="accent"
+                    Padding="14,7" MinHeight="0"
+                    IsVisible="{Binding !IsAddingTrackedItem}"
+                    Command="{Binding ShowAddTrackedItemCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="5">
+                <TextBlock Text="+" FontWeight="Bold" />
+                <TextBlock Text="{loc:Str Shift_TrackPipeline}" />
+              </StackPanel>
+            </Button>
+            <Button Classes="subtle"
+                    Padding="14,7" MinHeight="0"
+                    Command="{Binding RefreshTrackedItemsCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="5">
+                <TextBlock Text="↻" />
+                <TextBlock Text="{loc:Str Shift_Refresh}" />
+              </StackPanel>
+            </Button>
+            <Button Classes="subtle"
+                    Padding="14,7" MinHeight="0"
+                    Command="{Binding EndShiftCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="5">
+                <TextBlock Text="⏹" />
+                <TextBlock Text="{loc:Str Shift_EndShift}" />
+              </StackPanel>
+            </Button>
+          </StackPanel>
           <StackPanel VerticalAlignment="Center" Spacing="2">
             <StackPanel Orientation="Horizontal" Spacing="6">
               <TextBlock Text="▶" Foreground="{DynamicResource Brush.Accent}" FontSize="13" VerticalAlignment="Center" />
@@ -127,13 +145,13 @@
       </Border>
 
       <!-- Add tracked item form -->
-      <Border DockPanel.Dock="Bottom"
-              IsVisible="{Binding IsAddingTrackedItem}"
-              Background="{DynamicResource Brush.Surface}"
-              BorderBrush="{DynamicResource Brush.Border}"
-              BorderThickness="0,1,0,0"
-              Padding="24,16">
-        <StackPanel Spacing="12" MaxWidth="560">
+      <Border DockPanel.Dock="Top"
+               IsVisible="{Binding IsAddingTrackedItem}"
+               Background="{DynamicResource Brush.Surface}"
+               BorderBrush="{DynamicResource Brush.Border}"
+               BorderThickness="0,1,0,0"
+               Padding="24,16">
+        <StackPanel Spacing="12">
           <TextBlock Classes="section-label" Text="{loc:Str Shift_TrackPipeline}" />
           <Grid ColumnDefinitions="*,16,*">
             <StackPanel Grid.Column="0" Spacing="4">
@@ -151,33 +169,69 @@
                         DisplayMemberBinding="{Binding DisplayName}" />
             </StackPanel>
           </Grid>
+          <DockPanel>
+            <Button DockPanel.Dock="Right" Classes="subtle"
+                    Padding="12,6" MinHeight="0" Margin="8,0,0,0"
+                    IsEnabled="{Binding !IsLoadingBuilds}"
+                    Command="{Binding RefreshAvailableBuildsCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="5">
+                <TextBlock Text="↻" />
+                <TextBlock Text="Reload builds" />
+              </StackPanel>
+            </Button>
+            <StackPanel Spacing="4">
+              <TextBlock Classes="field-label" Text="Build / run" />
+              <TextBlock Text="{Binding BuildLoadStatus}"
+                         FontSize="11"
+                         Foreground="{DynamicResource Brush.TextTertiary}"
+                         TextWrapping="Wrap"
+                         IsVisible="{Binding BuildLoadStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            </StackPanel>
+          </DockPanel>
+          <ListBox ItemsSource="{Binding AvailableBuilds}"
+                   SelectedItem="{Binding SelectedBuild, Mode=TwoWay}"
+                   MaxHeight="210"
+                   MinHeight="84"
+                   IsVisible="{Binding HasAvailableBuilds}">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:PipelineRunOption">
+                <Border Padding="10,8">
+                  <StackPanel Spacing="3">
+                    <DockPanel>
+                      <TextBlock DockPanel.Dock="Right" Text="{Binding Detail}"
+                                 FontSize="11"
+                                 Foreground="{DynamicResource Brush.TextTertiary}" />
+                      <TextBlock Text="{Binding Title}"
+                                 FontWeight="SemiBold"
+                                 Foreground="{DynamicResource Brush.TextPrimary}" />
+                    </DockPanel>
+                    <TextBlock Text="{Binding BranchAndOwner}"
+                               FontSize="11"
+                               Foreground="{DynamicResource Brush.TextSecondary}"
+                               TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding Snapshot.ExpectedNextStep}"
+                               FontSize="11"
+                               Foreground="{DynamicResource Brush.TextTertiary}"
+                               TextWrapping="Wrap" />
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
           <StackPanel Spacing="4">
             <TextBlock Classes="field-label" Text="{loc:Str Shift_Notes}" />
             <TextBox Text="{Binding TrackedItemNotes, Mode=TwoWay}"
-                     Watermark="Optional context…" />
+                     PlaceholderText="Optional context…" />
           </StackPanel>
           <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
             <Button Classes="subtle" Content="{loc:Str Shift_CancelAdd}"
                     Command="{Binding CancelAddTrackedItemCommand}" />
             <Button Classes="accent" Content="{loc:Str Shift_AddItem}"
+                    IsEnabled="{Binding CanAddTrackedItem}"
                     Command="{Binding AddTrackedItemCommand}" />
           </StackPanel>
         </StackPanel>
       </Border>
-
-      <!-- Toolbar: Track Pipeline button -->
-      <DockPanel DockPanel.Dock="Bottom"
-                 IsVisible="{Binding !IsAddingTrackedItem}"
-                 Margin="24,8">
-        <Button Classes="subtle"
-                HorizontalAlignment="Left"
-                Command="{Binding ShowAddTrackedItemCommand}">
-          <StackPanel Orientation="Horizontal" Spacing="6">
-            <TextBlock Text="+" FontWeight="Bold" />
-            <TextBlock Text="{loc:Str Shift_TrackPipeline}" />
-          </StackPanel>
-        </Button>
-      </DockPanel>
 
       <!-- Tracked items list -->
       <ScrollViewer HorizontalScrollBarVisibility="Disabled"
@@ -232,8 +286,11 @@
                         <TextBlock Text="{Binding ProjectName}"
                                    FontSize="12" Foreground="{DynamicResource Brush.TextSecondary}" />
                         <TextBlock Text="·" Foreground="{DynamicResource Brush.TextTertiary}" FontSize="12" />
+                        <TextBlock Text="{Binding BuildLabel}"
+                                   FontSize="12" Foreground="{DynamicResource Brush.TextSecondary}" />
+                        <TextBlock Text="·" Foreground="{DynamicResource Brush.TextTertiary}" FontSize="12" />
                         <Border Classes="status-badge"
-                                Background="{DynamicResource Brush.SurfaceVariant}">
+                                 Background="{DynamicResource Brush.SurfaceVariant}">
                           <TextBlock Text="{Binding Item.Status}"
                                      FontSize="11" Foreground="{DynamicResource Brush.TextSecondary}" />
                         </Border>
@@ -241,10 +298,29 @@
                                    FontSize="12" Foreground="{DynamicResource Brush.TextTertiary}"
                                    IsVisible="{Binding Item.CurrentStage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                       </StackPanel>
+                      <TextBlock Text="{Binding StepSummary}"
+                                 FontSize="12"
+                                 Foreground="{DynamicResource Brush.TextSecondary}" />
+                      <TextBlock Text="{Binding NextStep}"
+                                 FontSize="12"
+                                 Foreground="{DynamicResource Brush.TextTertiary}"
+                                 TextWrapping="Wrap" />
                       <TextBlock Text="{Binding Item.ActionReason}"
-                                 FontSize="12" Foreground="#856404"
-                                 TextWrapping="Wrap"
-                                 IsVisible="{Binding Item.ActionReason, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                  FontSize="12" Foreground="#856404"
+                                  TextWrapping="Wrap"
+                                  IsVisible="{Binding Item.ActionReason, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                      <Button Classes="subtle"
+                              HorizontalAlignment="Left"
+                              Padding="8,4"
+                              MinHeight="0"
+                              IsVisible="{Binding HasAdoLink}"
+                              Command="{Binding $parent[ItemsControl].((vm:ShiftsViewModel)DataContext).OpenTrackedItemCommand}"
+                              CommandParameter="{Binding}">
+                        <StackPanel Orientation="Horizontal" Spacing="5">
+                          <TextBlock Text="↗" />
+                          <TextBlock Text="Open in ADO" />
+                        </StackPanel>
+                      </Button>
                     </StackPanel>
                   </DockPanel>
                 </Border>

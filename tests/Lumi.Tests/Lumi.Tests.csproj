@@ -10,10 +10,10 @@
 
   <!-- Match Lumi's platform-conditional TFM -->
   <PropertyGroup Condition="'$(OS)' == 'Windows_NT'">
-    <TargetFramework>net10.0-windows10.0.22621.0</TargetFramework>
+    <TargetFramework>net11.0-windows10.0.22621.0</TargetFramework>
   </PropertyGroup>
   <PropertyGroup Condition="'$(OS)' != 'Windows_NT'">
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
   </PropertyGroup>
 
   <ItemGroup>
@@ -26,6 +26,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Lumi\Lumi.csproj" />
+    <ProjectReference Include="..\..\src\Rema\Rema.csproj" />
   </ItemGroup>
 
 </Project>

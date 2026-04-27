@@ -69,6 +69,31 @@ public static class ToolDisplayHelper
                 info = ExtractJsonField(argsJson, "pipeline_name");
                 name = "Trigger pipeline";
                 break;
+            case "ado_list_builds":
+                info = ExtractJsonField(argsJson, "definitionId") ?? ExtractJsonField(argsJson, "pipeline_name");
+                name = "List ADO builds";
+                break;
+            case "ado_get_build_status":
+                info = ExtractJsonField(argsJson, "buildId") ?? ExtractJsonField(argsJson, "runId");
+                name = "ADO build status";
+                break;
+            case "open_ado_deep_link":
+                name = "Open ADO link";
+                break;
+            case "safefly_create_request_files":
+                info = ExtractJsonField(argsJson, "outputFolder") ?? ExtractJsonField(argsJson, "output_folder");
+                name = "Create SafeFly request files";
+                break;
+            case "rema_list_capabilities":
+                info = ExtractJsonField(argsJson, "kind");
+                name = "List Rema capabilities";
+                break;
+            case "rema_list_tracked_runs":
+                name = "List tracked runs";
+                break;
+            case "rema_discover_deployed_versions":
+                name = "Discover deployed versions";
+                break;
 
             // ── GitHub ──
             case "github-search_code":
@@ -118,9 +143,14 @@ public static class ToolDisplayHelper
         "web_fetch" or "fetch_url" => "🌐",
         "kusto_query" or "execute_query" => "📊",
         "kusto_command" or "execute_command" => "⚡",
-        "ado_pipeline_status" => "🔄",
+        "ado_pipeline_status" or "ado_list_builds" or "ado_get_build_status" => "🔄",
         "ado_approve_stage" => "✅",
         "ado_trigger_pipeline" => "🚀",
+        "open_ado_deep_link" => "🔗",
+        "safefly_create_request_files" => "🛡️",
+        "rema_list_capabilities" => "🧩",
+        "rema_list_tracked_runs" => "📋",
+        "rema_discover_deployed_versions" => "🧭",
         "think" or "report_intent" => "💭",
         "task" => "🤖",
         _ => "⚙️",

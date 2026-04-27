@@ -1,0 +1,105 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Rema.ViewModels"
+             xmlns:models="using:Rema.Models"
+             x:Class="Rema.Views.MemoriesView"
+             x:DataType="vm:MemoriesViewModel">
+
+  <Grid ColumnDefinitions="280,*">
+    <Border Grid.Column="0"
+            Background="{DynamicResource Brush.Surface0}"
+            BorderBrush="{DynamicResource Brush.BorderSubtle}"
+            BorderThickness="0,0,1,0"
+            Padding="16">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Spacing="10">
+          <DockPanel>
+            <Button DockPanel.Dock="Right" Classes="accent" Padding="10,6" MinHeight="0"
+                    Command="{Binding NewMemoryCommand}">
+              <TextBlock Text="+" FontWeight="Bold" />
+            </Button>
+            <TextBlock Text="Memories" FontSize="18" FontWeight="SemiBold"
+                       Foreground="{DynamicResource Brush.TextPrimary}" />
+          </DockPanel>
+          <TextBox Text="{Binding SearchText, Mode=TwoWay}"
+                   PlaceholderText="Search memories…" />
+        </StackPanel>
+
+        <ScrollViewer Margin="0,14,0,0" VerticalScrollBarVisibility="Auto">
+          <StackPanel>
+            <TextBlock Text="No memories saved yet."
+                       IsVisible="{Binding !HasMemories}"
+                       Foreground="{DynamicResource Brush.TextTertiary}"
+                       FontSize="13" TextWrapping="Wrap" />
+            <ItemsControl ItemsSource="{Binding Memories}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="models:Memory">
+                  <Button Classes="subtle"
+                          HorizontalAlignment="Stretch"
+                          HorizontalContentAlignment="Left"
+                          Margin="0,0,0,6"
+                          Padding="10,8"
+                          Command="{Binding $parent[UserControl].((vm:MemoriesViewModel)DataContext).EditMemoryCommand}"
+                          CommandParameter="{Binding}">
+                    <StackPanel Spacing="3">
+                      <TextBlock Text="{Binding Key}" FontWeight="SemiBold"
+                                 Foreground="{DynamicResource Brush.TextPrimary}"
+                                 TextTrimming="CharacterEllipsis" />
+                      <TextBlock Text="{Binding Category}" FontSize="11"
+                                 Foreground="{DynamicResource Brush.TextTertiary}" />
+                    </StackPanel>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </ScrollViewer>
+      </DockPanel>
+    </Border>
+
+    <Panel Grid.Column="1">
+      <StackPanel IsVisible="{Binding !IsEditing}"
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Center"
+                  Spacing="8">
+        <TextBlock Text="🧠" FontSize="34" HorizontalAlignment="Center" Opacity="0.55" />
+        <TextBlock Text="Select a memory or create one."
+                   Foreground="{DynamicResource Brush.TextSecondary}" />
+      </StackPanel>
+
+      <ScrollViewer IsVisible="{Binding IsEditing}" Padding="32">
+        <StackPanel Spacing="12" MaxWidth="720">
+          <DockPanel Margin="0,0,0,8">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
+              <Button Classes="accent" Content="Save" Padding="18,7" MinHeight="0"
+                      Command="{Binding SaveMemoryCommand}" />
+              <Button Classes="subtle" Content="Cancel" Padding="18,7" MinHeight="0"
+                      Command="{Binding CancelEditCommand}" />
+              <Button Classes="subtle" Content="Delete" Padding="18,7" MinHeight="0"
+                      IsVisible="{Binding SelectedMemory, Converter={x:Static ObjectConverters.IsNotNull}}"
+                      Command="{Binding DeleteMemoryCommand}" />
+            </StackPanel>
+            <TextBlock Text="Memory" FontSize="22" FontWeight="Bold"
+                       Foreground="{DynamicResource Brush.TextPrimary}" />
+          </DockPanel>
+
+          <TextBlock Text="Key" FontSize="12" Foreground="{DynamicResource Brush.TextSecondary}" />
+          <TextBox Text="{Binding EditKey, Mode=TwoWay}"
+                   PlaceholderText="e.g. release-window-preference" />
+
+          <TextBlock Text="Category" FontSize="12" Foreground="{DynamicResource Brush.TextSecondary}" />
+          <TextBox Text="{Binding EditCategory, Mode=TwoWay}"
+                   PlaceholderText="General" />
+
+          <TextBlock Text="Content" FontSize="12" Foreground="{DynamicResource Brush.TextSecondary}" />
+          <TextBox Text="{Binding EditContent, Mode=TwoWay}"
+                   AcceptsReturn="True"
+                   TextWrapping="Wrap"
+                   MinHeight="180"
+                   VerticalContentAlignment="Top"
+                   PlaceholderText="What should Rema remember?" />
+        </StackPanel>
+      </ScrollViewer>
+    </Panel>
+  </Grid>
+</UserControl>

@@ -9,7 +9,7 @@ namespace Rema.Services;
 public static class SystemPromptBuilder
 {
     public static string Build(RemaSettings settings, List<ServiceProject> serviceProjects,
-        List<TrackedItem> trackedItems, List<Memory> memories)
+        List<TrackedItem> trackedItems, List<Memory> memories, List<CapabilityDefinition>? capabilities = null)
     {
         var sb = new System.Text.StringBuilder(4096);
 
@@ -83,7 +83,13 @@ say so clearly. When things are on track, confirm briefly and move on.
                 var pipeline = project?.PipelineConfigs.FirstOrDefault(pc => pc.Id == item.PipelineConfigId);
                 var name = pipeline?.Name ?? "Unknown pipeline";
                 var projectName = project?.Name ?? "Unknown project";
-                sb.AppendLine($"- **{projectName} / {name}**: Status={item.Status}, Stage={item.CurrentStage ?? "N/A"}");
+                sb.AppendLine($"- **{projectName} / {name}** build `{item.BuildVersion ?? item.AdoRunId?.ToString() ?? "unknown"}`: Status={item.Status}, Stage={item.CurrentStage ?? "N/A"}");
+                if (item.TotalSteps > 0)
+                    sb.AppendLine($"  Steps: {item.SucceededSteps} succeeded / {item.FailedSteps} failed / {item.SkippedSteps} skipped / {item.PendingSteps} pending");
+                if (!string.IsNullOrWhiteSpace(item.AdoWebUrl))
+                    sb.AppendLine($"  ADO link: {item.AdoWebUrl}");
+                if (!string.IsNullOrWhiteSpace(item.ExpectedNextStep))
+                    sb.AppendLine($"  Expected next step: {item.ExpectedNextStep}");
                 if (item.RequiresAction)
                     sb.AppendLine($"  ⚠️ ACTION NEEDED: {item.ActionReason}");
                 if (item.EtaCompletion.HasValue)
@@ -106,6 +112,18 @@ You have access to ADO pipeline tools:
 Use these tools to answer questions about deployment status, investigate failures,
 and perform release operations on behalf of the release manager.
 """);
+
+        if (capabilities is { Count: > 0 })
+        {
+            sb.AppendLine("## Configured Rema Capabilities");
+            foreach (var group in capabilities.Where(c => c.IsEnabled).GroupBy(c => c.Kind).OrderBy(g => g.Key))
+            {
+                sb.AppendLine($"### {group.Key}");
+                foreach (var capability in group.OrderBy(c => c.Name))
+                    sb.AppendLine($"- **{capability.Name}**: {capability.Description}");
+            }
+            sb.AppendLine();
+        }
 
         // ── Guidance Protocol ──
         sb.AppendLine("## Guidance Protocol");

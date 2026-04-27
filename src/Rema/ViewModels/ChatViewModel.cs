@@ -15,6 +15,7 @@ public sealed partial class ChatViewModel : ObservableObject
 {
     private readonly DataStore _dataStore;
     private readonly CopilotService _copilotService;
+    private readonly AzureDevOpsService _azureDevOpsService;
 
     private readonly TranscriptBuilder _transcriptBuilder = new();
     private readonly List<ChatMessageViewModel> _messages = [];
@@ -22,6 +23,7 @@ public sealed partial class ChatViewModel : ObservableObject
     private CancellationTokenSource? _sendCts;
     private TypingIndicatorItem? _typingIndicator;
     private string? _lastUserPrompt;
+    private bool _activeSessionWasRecreated;
 
     // ── Observable Properties ──
 
@@ -49,10 +51,11 @@ public sealed partial class ChatViewModel : ObservableObject
     public event Action? UserMessageSent;
     public event Action? TranscriptRebuilt;
 
-    public ChatViewModel(DataStore dataStore, CopilotService copilotService)
+    public ChatViewModel(DataStore dataStore, CopilotService copilotService, AzureDevOpsService azureDevOpsService)
     {
         _dataStore = dataStore;
         _copilotService = copilotService;
+        _azureDevOpsService = azureDevOpsService;
     }
 
     // ── Suggestion Chips ──
@@ -114,6 +117,10 @@ public sealed partial class ChatViewModel : ObservableObject
             _typingIndicator = _transcriptBuilder.AddTypingIndicator("Rema is thinking…");
             ScrollToEndRequested?.Invoke();
 
+            var retainedContext = targetChat.Messages
+                .Take(Math.Max(targetChat.Messages.Count - 1, 0))
+                .ToList();
+
             // Create or resume session
             _sendCts?.Cancel();
             _sendCts = new CancellationTokenSource();
@@ -133,8 +140,27 @@ public sealed partial class ChatViewModel : ObservableObject
             }
 
             // Send
-            var sendOptions = new MessageOptions { Prompt = prompt };
-            await _activeSession.SendAsync(sendOptions, ct);
+            var sendOptions = new MessageOptions
+            {
+                Prompt = _activeSessionWasRecreated
+                    ? BuildSessionRecoveryReplayPrompt(retainedContext, prompt)
+                    : prompt
+            };
+
+            try
+            {
+                await _activeSession.SendAsync(sendOptions, ct);
+            }
+            catch (Exception ex) when (IsSessionNotFoundError(ex))
+            {
+                DetachPersistedSession(targetChat);
+                await EnsureSessionAsync(targetChat, ct);
+                if (_activeSession is null)
+                    throw;
+
+                sendOptions.Prompt = BuildSessionRecoveryReplayPrompt(retainedContext, prompt);
+                await _activeSession.SendAsync(sendOptions, ct);
+            }
 
             // Turn complete
             RemoveTypingIndicator();
@@ -187,35 +213,55 @@ public sealed partial class ChatViewModel : ObservableObject
                 _dataStore.Data.Settings,
                 _dataStore.Data.ServiceProjects,
                 trackedItems,
-                _dataStore.Data.Memories);
+                _dataStore.Data.Memories,
+                _dataStore.Data.Capabilities);
 
             var model = _dataStore.Data.Settings.PreferredModel ?? "claude-sonnet-4";
             var reasoningEffort = _dataStore.Data.Settings.ReasoningEffort;
 
             // Collect MCP servers from all enabled service projects
             var mcpServers = BuildMcpServers();
+            var tools = RemaChatToolService.CreateTools(_dataStore, _azureDevOpsService);
+
+            _activeSessionWasRecreated = false;
 
             if (chat.CopilotSessionId is not null)
             {
                 // Resume existing session
-                var resumeConfig = SessionConfigBuilder.BuildForResume(
-                    systemPrompt, model, reasoningEffort, null, mcpServers, null, null);
-                var session = await client.ResumeSessionAsync(
-                    chat.CopilotSessionId, resumeConfig, ct);
-                _activeSession = session;
+                try
+                {
+                    var resumeConfig = SessionConfigBuilder.BuildForResume(
+                        systemPrompt, model, reasoningEffort, tools, mcpServers, null, null);
+                    var session = await client.ResumeSessionAsync(
+                        chat.CopilotSessionId, resumeConfig, ct);
+                    _activeSession = session;
+                }
+                catch (Exception ex) when (IsSessionNotFoundError(ex))
+                {
+                    DetachPersistedSession(chat);
+                    var config = SessionConfigBuilder.Build(
+                        systemPrompt, model, reasoningEffort, tools, mcpServers, null, null);
+                    var session = await client.CreateSessionAsync(config, ct);
+                    chat.CopilotSessionId = session.SessionId;
+                    _activeSession = session;
+                    _activeSessionWasRecreated = true;
+                    await _dataStore.SaveAsync(ct);
+                }
             }
             else
             {
                 // New session
                 var config = SessionConfigBuilder.Build(
-                    systemPrompt, model, reasoningEffort, null, mcpServers, null, null);
+                    systemPrompt, model, reasoningEffort, tools, mcpServers, null, null);
                 var session = await client.CreateSessionAsync(config, ct);
                 chat.CopilotSessionId = session.SessionId;
                 _activeSession = session;
+                await _dataStore.SaveAsync(ct);
             }
 
             chat.LastModelUsed = model;
             SubscribeToSession(_activeSession, chat);
+            await _dataStore.SaveAsync(ct);
         }
         catch (Exception ex)
         {
@@ -515,6 +561,71 @@ public sealed partial class ChatViewModel : ObservableObject
         _messages.Add(vm);
         // The transcript builder will create the ErrorMessageItem; wire retry afterward
         _transcriptBuilder.ProcessMessageToTranscript(vm, RetryLastMessageCommand);
+    }
+
+    private void DetachPersistedSession(Chat chat)
+    {
+        if (string.Equals(_activeSession?.SessionId, chat.CopilotSessionId, StringComparison.Ordinal))
+            _activeSession = null;
+
+        chat.CopilotSessionId = null;
+    }
+
+    private static bool IsSessionNotFoundError(Exception ex)
+    {
+        var message = FlattenExceptionMessages(ex);
+        return message.Contains("Session not found", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string FlattenExceptionMessages(Exception ex)
+    {
+        var builder = new StringBuilder(ex.Message);
+        var current = ex.InnerException;
+        while (current is not null)
+        {
+            if (!string.IsNullOrWhiteSpace(current.Message))
+                builder.Append(" ").Append(current.Message);
+            current = current.InnerException;
+        }
+
+        return builder.ToString();
+    }
+
+    private static string BuildSessionRecoveryReplayPrompt(List<ChatMessage> retainedContext, string latestPrompt)
+    {
+        if (retainedContext.Count == 0)
+            return latestPrompt;
+
+        var lines = new List<string>
+        {
+            "The previous backend chat session is unavailable. Continue using ONLY the conversation context below.",
+            "Treat the transcript as the complete conversation history so far.",
+            "",
+            "Conversation so far:"
+        };
+
+        foreach (var msg in retainedContext)
+        {
+            if (string.IsNullOrWhiteSpace(msg.Content))
+                continue;
+
+            var role = msg.Role switch
+            {
+                "assistant" => "Assistant",
+                "system" => "System",
+                "reasoning" => "Assistant reasoning",
+                _ => "User"
+            };
+
+            if (msg.Role is "user" or "assistant" or "system" or "reasoning")
+                lines.Add($"{role}: {msg.Content.Trim()}");
+        }
+
+        lines.Add("");
+        lines.Add("Latest user message:");
+        lines.Add(latestPrompt);
+
+        return string.Join("\n", lines);
     }
 
     private static string? TruncateToolOutput(string? output)

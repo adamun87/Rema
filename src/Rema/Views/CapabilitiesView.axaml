@@ -1,0 +1,132 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Rema.ViewModels"
+             xmlns:models="using:Rema.Models"
+             x:Class="Rema.Views.CapabilitiesView"
+             x:DataType="vm:CapabilitiesViewModel">
+
+  <Grid ColumnDefinitions="300,*">
+    <Border Grid.Column="0"
+            Background="{DynamicResource Brush.Surface0}"
+            BorderBrush="{DynamicResource Brush.BorderSubtle}"
+            BorderThickness="0,0,1,0"
+            Padding="16">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Spacing="10">
+          <DockPanel>
+            <Button DockPanel.Dock="Right" Classes="accent" Padding="10,6" MinHeight="0"
+                    Command="{Binding NewCapabilityCommand}">
+              <TextBlock Text="+" FontWeight="Bold" />
+            </Button>
+            <TextBlock Text="{Binding Title}" FontSize="18" FontWeight="SemiBold"
+                       Foreground="{DynamicResource Brush.TextPrimary}" />
+          </DockPanel>
+          <TextBox Text="{Binding SearchText, Mode=TwoWay}"
+                   PlaceholderText="Search…" />
+        </StackPanel>
+
+        <ScrollViewer Margin="0,14,0,0" VerticalScrollBarVisibility="Auto">
+          <StackPanel>
+            <TextBlock Text="{Binding EmptyText}"
+                       IsVisible="{Binding !HasCapabilities}"
+                       Foreground="{DynamicResource Brush.TextTertiary}"
+                       FontSize="13" TextWrapping="Wrap" />
+            <ItemsControl ItemsSource="{Binding Capabilities}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="models:CapabilityDefinition">
+                  <Button Classes="subtle"
+                          HorizontalAlignment="Stretch"
+                          HorizontalContentAlignment="Left"
+                          Margin="0,0,0,6"
+                          Padding="10,8"
+                          Command="{Binding $parent[UserControl].((vm:CapabilitiesViewModel)DataContext).EditCapabilityCommand}"
+                          CommandParameter="{Binding}">
+                    <StackPanel Spacing="4">
+                      <DockPanel>
+                        <Border DockPanel.Dock="Right"
+                                Background="{DynamicResource Brush.SurfaceVariant}"
+                                CornerRadius="4"
+                                Padding="5,1"
+                                IsVisible="{Binding IsBuiltIn}">
+                          <TextBlock Text="built-in" FontSize="10"
+                                     Foreground="{DynamicResource Brush.TextTertiary}" />
+                        </Border>
+                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource Brush.TextPrimary}"
+                                   TextTrimming="CharacterEllipsis" />
+                      </DockPanel>
+                      <TextBlock Text="{Binding Description}"
+                                 FontSize="12"
+                                 Foreground="{DynamicResource Brush.TextSecondary}"
+                                 TextWrapping="Wrap"
+                                 MaxLines="2" />
+                    </StackPanel>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </ScrollViewer>
+      </DockPanel>
+    </Border>
+
+    <Panel Grid.Column="1">
+      <StackPanel IsVisible="{Binding !IsEditing}"
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Center"
+                  Spacing="8">
+        <TextBlock Text="🧰" FontSize="34" HorizontalAlignment="Center" Opacity="0.55" />
+        <TextBlock Text="Select an item or add a custom capability."
+                   Foreground="{DynamicResource Brush.TextSecondary}" />
+      </StackPanel>
+
+      <ScrollViewer IsVisible="{Binding IsEditing}" Padding="32">
+        <StackPanel Spacing="12" MaxWidth="760">
+          <DockPanel Margin="0,0,0,8">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
+              <Button Classes="accent" Content="Save" Padding="18,7" MinHeight="0"
+                      Command="{Binding SaveCapabilityCommand}" />
+              <Button Classes="subtle" Content="Enable/Disable" Padding="18,7" MinHeight="0"
+                      IsVisible="{Binding SelectedCapability, Converter={x:Static ObjectConverters.IsNotNull}}"
+                      Command="{Binding ToggleCapabilityCommand}" />
+              <Button Classes="subtle" Content="Delete" Padding="18,7" MinHeight="0"
+                      IsVisible="{Binding CanDeleteSelectedCapability}"
+                      Command="{Binding DeleteCapabilityCommand}" />
+              <Button Classes="subtle" Content="Cancel" Padding="18,7" MinHeight="0"
+                      Command="{Binding CancelEditCommand}" />
+            </StackPanel>
+            <StackPanel>
+              <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="Bold"
+                         Foreground="{DynamicResource Brush.TextPrimary}" />
+              <TextBlock Text="{Binding SelectedSourceText}"
+                         FontSize="12"
+                         Foreground="{DynamicResource Brush.TextTertiary}"
+                         IsVisible="{Binding HasSelectedCapability}" />
+            </StackPanel>
+          </DockPanel>
+
+          <CheckBox Content="Enabled" IsChecked="{Binding EditIsEnabled, Mode=TwoWay}" />
+
+          <TextBlock Text="Name" FontSize="12" Foreground="{DynamicResource Brush.TextSecondary}" />
+          <TextBox Text="{Binding EditName, Mode=TwoWay}" />
+
+          <TextBlock Text="Description" FontSize="12" Foreground="{DynamicResource Brush.TextSecondary}" />
+          <TextBox Text="{Binding EditDescription, Mode=TwoWay}"
+                   TextWrapping="Wrap" />
+
+          <TextBlock Text="Tags" FontSize="12" Foreground="{DynamicResource Brush.TextSecondary}" />
+          <TextBox Text="{Binding EditTags, Mode=TwoWay}"
+                   PlaceholderText="ado, safefly, release" />
+
+          <TextBlock Text="Definition" FontSize="12" Foreground="{DynamicResource Brush.TextSecondary}" />
+          <TextBox Text="{Binding EditContent, Mode=TwoWay}"
+                   AcceptsReturn="True"
+                   TextWrapping="Wrap"
+                   MinHeight="240"
+                   VerticalContentAlignment="Top"
+                   PlaceholderText="Instructions, command details, server configuration notes, or persona prompt…" />
+        </StackPanel>
+      </ScrollViewer>
+    </Panel>
+  </Grid>
+</UserControl>

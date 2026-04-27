@@ -242,6 +242,123 @@
           </ItemsControl.ItemTemplate>
         </ItemsControl>
 
+        <Separator Margin="0,16,0,16" />
+
+        <!-- ── SafeFly ── -->
+        <TextBlock Text="SAFEFLY REQUEST" Classes="section-label" />
+        <Border Background="{DynamicResource Brush.Surface1}" CornerRadius="10"
+                Padding="14,12" Margin="0,0,0,8">
+          <StackPanel Spacing="10">
+            <TextBlock Text="Analyze application diffs between versions and create SafeFly request files for onboarding/review."
+                       FontSize="12"
+                       Foreground="{DynamicResource Brush.TextSecondary}"
+                       TextWrapping="Wrap" />
+            <Border Background="{DynamicResource Brush.Surface}"
+                    BorderBrush="{DynamicResource Brush.Border}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="12">
+              <StackPanel Spacing="8">
+                <DockPanel>
+                  <Button DockPanel.Dock="Right"
+                          Classes="subtle motion-action"
+                          Content="Discover deployed versions"
+                          Padding="12,6"
+                          MinHeight="0"
+                          IsEnabled="{Binding !IsDiscoveringSafeFlyVersions}"
+                          Command="{Binding DiscoverSafeFlyVersionsCommand}" />
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="Current deployed version evidence"
+                               FontSize="13"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource Brush.TextPrimary}" />
+                    <TextBlock Text="Rema checks ADO release/build pipelines and configured version telemetry queries across all service projects."
+                               FontSize="11"
+                               Foreground="{DynamicResource Brush.TextTertiary}"
+                               TextWrapping="Wrap" />
+                  </StackPanel>
+                </DockPanel>
+                <TextBlock Text="{Binding SafeFlyVersionStatus}"
+                           FontSize="11"
+                           Foreground="{DynamicResource Brush.TextTertiary}"
+                           TextWrapping="Wrap"
+                           IsVisible="{Binding SafeFlyVersionStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                <ItemsControl ItemsSource="{Binding SafeFlyVersionEvidence}"
+                              IsVisible="{Binding HasSafeFlyVersionEvidence}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:DeploymentVersionEvidenceDisplay">
+                      <Border BorderBrush="{DynamicResource Brush.Border}"
+                              BorderThickness="1"
+                              CornerRadius="6"
+                              Padding="8"
+                              Margin="0,0,0,6">
+                        <StackPanel Spacing="3">
+                          <DockPanel>
+                            <TextBlock DockPanel.Dock="Right"
+                                       Text="{Binding Source}"
+                                       FontSize="11"
+                                       Foreground="{DynamicResource Brush.TextTertiary}" />
+                            <TextBlock Text="{Binding ServiceName}"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource Brush.TextPrimary}" />
+                          </DockPanel>
+                          <TextBlock Text="{Binding PipelineOrQueryName}"
+                                     FontSize="11"
+                                     Foreground="{DynamicResource Brush.TextSecondary}" />
+                          <TextBlock FontSize="11"
+                                     Foreground="{DynamicResource Brush.TextTertiary}"
+                                     TextWrapping="Wrap">
+                            <Run Text="{Binding Version}" />
+                            <Run Text=" · " />
+                            <Run Text="{Binding Status}" />
+                            <Run Text=" · " />
+                            <Run Text="{Binding Details}" />
+                          </TextBlock>
+                        </StackPanel>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </Border>
+            <Grid ColumnDefinitions="*,12,*">
+              <StackPanel Grid.Column="0" Spacing="4">
+                <TextBlock Text="From version / git ref" Classes="field-label" />
+                <TextBox Text="{Binding SafeFlyFromVersion, Mode=TwoWay}"
+                         PlaceholderText="v1.2.3 or commit SHA" />
+              </StackPanel>
+              <StackPanel Grid.Column="2" Spacing="4">
+                <TextBlock Text="To version / git ref" Classes="field-label" />
+                <TextBox Text="{Binding SafeFlyToVersion, Mode=TwoWay}"
+                         PlaceholderText="HEAD" />
+              </StackPanel>
+            </Grid>
+            <TextBlock Text="Output folder" Classes="field-label" />
+            <DockPanel>
+              <Button DockPanel.Dock="Right" Classes="subtle motion-action"
+                      Padding="10,6" MinHeight="0" Margin="8,0,0,0"
+                      Command="{Binding BrowseSafeFlyOutputCommand}">
+                <TextBlock Text="📂" />
+              </Button>
+              <TextBox Text="{Binding SafeFlyOutputDirectory, Mode=TwoWay}"
+                       PlaceholderText="Folder for safefly-request.md and diff files" />
+            </DockPanel>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Classes="accent motion-action"
+                      Content="Create SafeFly request files"
+                      Padding="18,8"
+                      IsEnabled="{Binding !IsCreatingSafeFlyRequest}"
+                      Command="{Binding CreateSafeFlyRequestCommand}" />
+              <TextBlock Text="{Binding SafeFlyStatus}"
+                         VerticalAlignment="Center"
+                         FontSize="12"
+                         Foreground="{DynamicResource Brush.TextTertiary}"
+                         TextWrapping="Wrap"
+                         IsVisible="{Binding SafeFlyStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
       </StackPanel>
     </ScrollViewer>
 

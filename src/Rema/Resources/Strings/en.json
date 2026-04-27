@@ -5,6 +5,11 @@
   "Nav_ShiftManagement": "Shift",
   "Nav_Chat": "Chat",
   "Nav_ServiceProjects": "Projects",
+  "Nav_Memories": "Memories",
+  "Nav_Skills": "Skills",
+  "Nav_McpServers": "MCP Servers",
+  "Nav_Tools": "Tools",
+  "Nav_Agents": "Agents",
   "Nav_Settings": "Settings",
 
   "Onboarding_Hello": "Hello! I'm Rema",

@@ -19,6 +19,8 @@ public partial class ServiceProjectsViewModel : ObservableObject
 {
     private readonly DataStore _dataStore;
     private readonly CopilotService _copilotService;
+    private readonly DeploymentVersionDiscoveryService _deploymentVersionDiscoveryService;
+    private readonly SafeFlyDiffService _safeFlyDiffService = new();
 
     [ObservableProperty] private ServiceProject? _selectedProject;
     [ObservableProperty] private bool _isEditing;
@@ -31,17 +33,31 @@ public partial class ServiceProjectsViewModel : ObservableObject
     [ObservableProperty] private string _editInstructions = "";
     [ObservableProperty] private bool _isDiscovering;
     [ObservableProperty] private string _discoveryStatus = "";
+    [ObservableProperty] private string _safeFlyFromVersion = "";
+    [ObservableProperty] private string _safeFlyToVersion = "HEAD";
+    [ObservableProperty] private string _safeFlyOutputDirectory = "";
+    [ObservableProperty] private string _safeFlyStatus = "";
+    [ObservableProperty] private string _safeFlyVersionStatus = "";
+    [ObservableProperty] private bool _isCreatingSafeFlyRequest;
+    [ObservableProperty] private bool _isDiscoveringSafeFlyVersions;
+    [ObservableProperty] private bool _hasSafeFlyVersionEvidence;
 
     public ObservableCollection<ServiceProject> Projects { get; } = [];
     public ObservableCollection<string> DiscoveryLog { get; } = [];
+    public ObservableCollection<DeploymentVersionEvidenceDisplay> SafeFlyVersionEvidence { get; } = [];
 
     /// <summary>Raised when the user clicks Browse — the View handles the folder picker dialog.</summary>
     public event Action? BrowseRepoPathRequested;
+    public event Action? BrowseSafeFlyOutputRequested;
 
-    public ServiceProjectsViewModel(DataStore dataStore, CopilotService copilotService)
+    public ServiceProjectsViewModel(
+        DataStore dataStore,
+        CopilotService copilotService,
+        AzureDevOpsService azureDevOpsService)
     {
         _dataStore = dataStore;
         _copilotService = copilotService;
+        _deploymentVersionDiscoveryService = new DeploymentVersionDiscoveryService(azureDevOpsService);
         RefreshList();
     }
 
@@ -69,6 +85,9 @@ public partial class ServiceProjectsViewModel : ObservableObject
     [RelayCommand]
     private void BrowseRepoPath() => BrowseRepoPathRequested?.Invoke();
 
+    [RelayCommand]
+    private void BrowseSafeFlyOutput() => BrowseSafeFlyOutputRequested?.Invoke();
+
     private void ClearEditFields()
     {
         EditName = "";
@@ -78,6 +97,13 @@ public partial class ServiceProjectsViewModel : ObservableObject
         EditKustoCluster = "";
         EditKustoDatabase = "";
         EditInstructions = "";
+        SafeFlyFromVersion = "";
+        SafeFlyToVersion = "HEAD";
+        SafeFlyOutputDirectory = "";
+        SafeFlyStatus = "";
+        SafeFlyVersionStatus = "";
+        SafeFlyVersionEvidence.Clear();
+        HasSafeFlyVersionEvidence = false;
         DiscoveryStatus = "";
         DiscoveryLog.Clear();
         EditPipelines.Clear();
@@ -660,6 +686,15 @@ public partial class ServiceProjectsViewModel : ObservableObject
         EditKustoCluster = value.KustoCluster ?? "";
         EditKustoDatabase = value.KustoDatabase ?? "";
         EditInstructions = value.Instructions ?? "";
+        SafeFlyFromVersion = "";
+        SafeFlyToVersion = "HEAD";
+        SafeFlyOutputDirectory = string.IsNullOrWhiteSpace(value.RepoPath)
+            ? ""
+            : Path.Combine(value.RepoPath, "safefly-request");
+        SafeFlyStatus = "";
+        SafeFlyVersionStatus = "";
+        SafeFlyVersionEvidence.Clear();
+        HasSafeFlyVersionEvidence = false;
         DiscoveryLog.Clear();
         DiscoveryStatus = "";
         LoadPipelines(value);
@@ -773,11 +808,99 @@ public partial class ServiceProjectsViewModel : ObservableObject
                 DisplayName = string.IsNullOrWhiteSpace(item.DisplayName) ? "" : item.DisplayName.Trim(),
                 Name = item.DisplayName?.Trim() ?? "",
                 AdoUrl = item.AdoUrl?.Trim() ?? "",
+                AdoPipelineId = PipelineDefinitionIdResolver.Parse(item.AdoUrl),
                 PipelineType = item.PipelineType ?? "yaml",
                 Description = item.Description?.Trim() ?? "",
             });
         }
     }
+
+    [RelayCommand]
+    private async Task DiscoverSafeFlyVersionsAsync()
+    {
+        try
+        {
+            IsDiscoveringSafeFlyVersions = true;
+            SafeFlyVersionStatus = "Discovering current deployed versions from ADO and telemetry configuration…";
+            SafeFlyVersionEvidence.Clear();
+            HasSafeFlyVersionEvidence = false;
+
+            var evidence = await _deploymentVersionDiscoveryService.DiscoverAsync(_dataStore.Data.ServiceProjects);
+            foreach (var item in evidence)
+                SafeFlyVersionEvidence.Add(new DeploymentVersionEvidenceDisplay(item));
+
+            HasSafeFlyVersionEvidence = SafeFlyVersionEvidence.Count > 0;
+            SafeFlyVersionStatus = HasSafeFlyVersionEvidence
+                ? $"Found {SafeFlyVersionEvidence.Count} deployed-version evidence item(s)."
+                : "No ADO or telemetry version evidence was found. Add release pipelines or version telemetry queries to service projects.";
+
+            if (string.IsNullOrWhiteSpace(SafeFlyFromVersion) && SelectedProject is not null)
+            {
+                var projectEvidence = evidence.FirstOrDefault(item =>
+                    item.Source.Equals("ADO", StringComparison.OrdinalIgnoreCase)
+                    && item.ServiceName.Equals(SelectedProject.Name, StringComparison.OrdinalIgnoreCase)
+                    && !string.IsNullOrWhiteSpace(item.Version));
+                if (projectEvidence?.Version is not null)
+                    SafeFlyFromVersion = projectEvidence.Version;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            SafeFlyVersionStatus = "Version discovery was canceled.";
+        }
+        finally
+        {
+            IsDiscoveringSafeFlyVersions = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task CreateSafeFlyRequestAsync()
+    {
+        var project = SelectedProject;
+        if (project is null)
+        {
+            SafeFlyStatus = "Save or select a project before creating SafeFly request files.";
+            return;
+        }
+
+        try
+        {
+            IsCreatingSafeFlyRequest = true;
+            SafeFlyStatus = "Creating SafeFly request files…";
+
+            var output = string.IsNullOrWhiteSpace(SafeFlyOutputDirectory)
+                ? Path.Combine(project.RepoPath, "safefly-request")
+                : SafeFlyOutputDirectory.Trim();
+
+            var result = await _safeFlyDiffService.CreateRequestFilesAsync(
+                project,
+                SafeFlyFromVersion,
+                SafeFlyToVersion,
+                output,
+                SafeFlyVersionEvidence.Select(e => e.Evidence).ToList());
+
+            SafeFlyOutputDirectory = result.OutputDirectory;
+            SafeFlyStatus = $"Created {result.Files.Count} SafeFly files for {result.ChangedFileCount} changed files.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            SafeFlyStatus = ex.Message;
+        }
+        catch (IOException ex)
+        {
+            SafeFlyStatus = ex.Message;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            SafeFlyStatus = ex.Message;
+        }
+        finally
+        {
+            IsCreatingSafeFlyRequest = false;
+        }
+    }
+
 }
 
 /// <summary>Editable pipeline row for the UI.</summary>
@@ -788,4 +911,20 @@ public partial class PipelineEditItem : ObservableObject
     [ObservableProperty] private string _adoUrl = "";
     [ObservableProperty] private string _pipelineType = "yaml";
     [ObservableProperty] private string _description = "";
+}
+
+public sealed class DeploymentVersionEvidenceDisplay
+{
+    public DeploymentVersionEvidenceDisplay(DeploymentVersionEvidence evidence)
+    {
+        Evidence = evidence;
+    }
+
+    public DeploymentVersionEvidence Evidence { get; }
+    public string Source => Evidence.Source;
+    public string ServiceName => Evidence.ServiceName;
+    public string PipelineOrQueryName => Evidence.PipelineOrQueryName;
+    public string Version => string.IsNullOrWhiteSpace(Evidence.Version) ? "Unknown version" : Evidence.Version!;
+    public string Status => Evidence.Status;
+    public string Details => Evidence.Details;
 }

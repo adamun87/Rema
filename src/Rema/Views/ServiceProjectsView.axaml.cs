@@ -17,7 +17,10 @@ public partial class ServiceProjectsView : UserControl
     {
         base.OnDataContextChanged(e);
         if (DataContext is ServiceProjectsViewModel vm)
+        {
             vm.BrowseRepoPathRequested += OnBrowseRepoPath;
+            vm.BrowseSafeFlyOutputRequested += OnBrowseSafeFlyOutput;
+        }
     }
 
     private async void OnBrowseRepoPath()
@@ -35,5 +38,20 @@ public partial class ServiceProjectsView : UserControl
         {
             vm.EditRepoPath = folders[0].Path.LocalPath;
         }
+    }
+
+    private async void OnBrowseSafeFlyOutput()
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return;
+
+        var folders = await topLevel.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            AllowMultiple = false,
+            Title = "Select SafeFly request output folder"
+        });
+
+        if (folders.Count > 0 && DataContext is ServiceProjectsViewModel vm)
+            vm.SafeFlyOutputDirectory = folders[0].Path.LocalPath;
     }
 }

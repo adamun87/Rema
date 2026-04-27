@@ -10,8 +10,7 @@ namespace Rema.Services;
 
 public class DataStore
 {
-    private static readonly string AppDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Rema");
+    private static readonly string AppDir = ResolveAppDir();
     private static readonly string DataFile = Path.Combine(AppDir, "data.json");
 
     public static string ChatsDir { get; } = Path.Combine(AppDir, "chats");
@@ -26,11 +25,15 @@ public class DataStore
         Directory.CreateDirectory(AppDir);
         Directory.CreateDirectory(ChatsDir);
         _data = Load();
+        BuiltInCapabilityCatalog.EnsureBuiltIns(_data);
+        NormalizeLoadedData(_data);
     }
 
     internal DataStore(RemaAppData data)
     {
         _data = data ?? new RemaAppData();
+        BuiltInCapabilityCatalog.EnsureBuiltIns(_data);
+        NormalizeLoadedData(_data);
     }
 
     public RemaAppData Data => _data;
@@ -150,5 +153,19 @@ public class DataStore
         {
             return new RemaAppData();
         }
+    }
+
+    private static void NormalizeLoadedData(RemaAppData data)
+    {
+        foreach (var project in data.ServiceProjects)
+            PipelineDefinitionIdResolver.Normalize(project);
+    }
+
+    private static string ResolveAppDir()
+    {
+        var overrideDir = Environment.GetEnvironmentVariable("REMA_APPDATA_DIR");
+        return string.IsNullOrWhiteSpace(overrideDir)
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Rema")
+            : overrideDir;
     }
 }

@@ -11,8 +11,8 @@ namespace Rema.Views;
 
 public partial class MainWindow : Window
 {
-    private Panel?[] _pages = [];
-    private Panel?[] _sidebarPanels = [];
+    private Control?[] _pages = [];
+    private Control?[] _sidebarPanels = [];
     private Button?[] _navButtons = [];
     private Control? _onboardingPanel;
     private MainViewModel? _wiredVm;
@@ -26,29 +26,44 @@ public partial class MainWindow : Window
 
         _pages =
         [
-            this.FindControl<Panel>("Page0"),
-            this.FindControl<Panel>("Page1"),
-            this.FindControl<Panel>("Page2"),
-            this.FindControl<Panel>("Page3"),
-            this.FindControl<Panel>("Page4"),
+            this.FindControl<Control>("Page0"),
+            this.FindControl<Control>("Page1"),
+            this.FindControl<Control>("Page2"),
+            this.FindControl<Control>("Page3"),
+            this.FindControl<Control>("Page4"),
+            this.FindControl<Control>("Page5"),
+            this.FindControl<Control>("Page6"),
+            this.FindControl<Control>("Page7"),
+            this.FindControl<Control>("Page8"),
+            this.FindControl<Control>("Page9"),
         ];
 
         _sidebarPanels =
         [
-            this.FindControl<Panel>("Sidebar0"),
-            this.FindControl<Panel>("Sidebar1"),
-            this.FindControl<Panel>("Sidebar2"),
-            this.FindControl<Panel>("Sidebar3"),
-            this.FindControl<Panel>("Sidebar4"),
+            this.FindControl<Control>("Sidebar0"),
+            this.FindControl<Control>("Sidebar1"),
+            this.FindControl<Control>("Sidebar2"),
+            this.FindControl<Control>("Sidebar3"),
+            this.FindControl<Control>("Sidebar4"),
+            this.FindControl<Control>("Sidebar5"),
+            this.FindControl<Control>("Sidebar6"),
+            this.FindControl<Control>("Sidebar7"),
+            this.FindControl<Control>("Sidebar8"),
+            this.FindControl<Control>("Sidebar9"),
         ];
 
         _navButtons =
         [
-            this.FindControl<Button>("NavBtn0"),
-            this.FindControl<Button>("NavBtn1"),
-            this.FindControl<Button>("NavBtn2"),
-            this.FindControl<Button>("NavBtn3"),
-            this.FindControl<Button>("NavBtn4"),
+            this.FindControl<Button>("NavDashboard"),
+            this.FindControl<Button>("NavShift"),
+            this.FindControl<Button>("NavChat"),
+            this.FindControl<Button>("NavProjects"),
+            this.FindControl<Button>("NavMemories"),
+            this.FindControl<Button>("NavSkills"),
+            this.FindControl<Button>("NavMcpServers"),
+            this.FindControl<Button>("NavTools"),
+            this.FindControl<Button>("NavAgents"),
+            this.FindControl<Button>("NavSettings"),
         ];
 
         Opened += (_, _) =>
@@ -105,6 +120,9 @@ public partial class MainWindow : Window
 
     private void ShowPage(int index)
     {
+        if (index < 0 || index >= _pages.Length)
+            return;
+
         // Update page visibility
         for (int i = 0; i < _pages.Length; i++)
         {
