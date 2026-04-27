@@ -1,0 +1,264 @@
+using System.Diagnostics;
+using Rema.Models;
+using Rema.Services;
+using Rema.ViewModels;
+using Xunit;
+
+namespace Lumi.Tests;
+
+public sealed class RemaServicesTests
+{
+    [Fact]
+    public void BuiltInCapabilities_IncludeAdoSafeFlyAndMarketplaceSurfaces()
+    {
+        var data = new RemaAppData();
+
+        BuiltInCapabilityCatalog.EnsureBuiltIns(data);
+
+        Assert.Contains(data.Capabilities, c => c.Kind == "Skill" && c.Name.Contains("SafeFly", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(data.Capabilities, c => c.Kind == "Tool" && c.Name.Contains("ado_", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(data.Capabilities, c => c.Kind == "Mcp" && c.Source == "agency marketplace");
+        Assert.Contains(data.Capabilities, c => c.Kind == "Agent" && c.Name.Contains("Shift", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void PipelineDefinitionIdResolver_NormalizesDefinitionIdsFromAdoUrls()
+    {
+        var project = new ServiceProject { Name = "Sherlock", AdoOrgUrl = "https://dev.azure.com/msazure", AdoProjectName = "One" };
+        project.PipelineConfigs.Add(new PipelineConfig
+        {
+            DisplayName = "Sherlock Official ARM release",
+            AdoUrl = "https://msazure.visualstudio.com/One/_build?definitionId=356855",
+        });
+        var changed = PipelineDefinitionIdResolver.Normalize(project);
+
+        Assert.True(changed);
+        Assert.Equal(356855, project.PipelineConfigs[0].AdoPipelineId);
+    }
+
+    [Fact]
+    public async Task SafeFlyDiffService_CreatesRequestFilesForVersionDiff()
+    {
+        var repo = Path.Combine(Path.GetTempPath(), "rema-safefly-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(repo);
+
+        try
+        {
+            await RunGitAsync(repo, "init");
+            await RunGitAsync(repo, "config user.email rema@example.invalid");
+            await RunGitAsync(repo, "config user.name Rema");
+            await File.WriteAllTextAsync(Path.Combine(repo, "app.txt"), "v1");
+            await RunGitAsync(repo, "add app.txt");
+            await RunGitAsync(repo, "commit -m initial");
+            await RunGitAsync(repo, "tag v1");
+            await File.WriteAllTextAsync(Path.Combine(repo, "app.txt"), "v2");
+            await RunGitAsync(repo, "commit -am update");
+            await RunGitAsync(repo, "tag v2");
+
+            var project = new ServiceProject
+            {
+                Name = "Demo Service",
+                RepoPath = repo,
+                AdoOrgUrl = "https://dev.azure.com/example",
+                AdoProjectName = "Demo",
+            };
+            var output = Path.Combine(repo, "safefly-output");
+
+            var result = await new SafeFlyDiffService().CreateRequestFilesAsync(project, "v1", "v2", output);
+
+            Assert.Equal(3, result.Files.Count);
+            Assert.True(File.Exists(Path.Combine(output, "safefly-request.md")));
+            Assert.True(File.Exists(Path.Combine(output, "application-diff.patch")));
+            Assert.True(File.Exists(Path.Combine(output, "changed-files.txt")));
+            Assert.Contains("Demo Service", await File.ReadAllTextAsync(Path.Combine(output, "safefly-request.md")));
+            Assert.Contains("app.txt", await File.ReadAllTextAsync(Path.Combine(output, "changed-files.txt")));
+        }
+        finally
+        {
+            if (Directory.Exists(repo))
+            {
+                ClearReadOnlyAttributes(repo);
+                Directory.Delete(repo, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task SafeFlyDiffService_IncludesAdoAndTelemetryVersionEvidence()
+    {
+        var repo = Path.Combine(Path.GetTempPath(), "rema-safefly-evidence-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(repo);
+
+        try
+        {
+            await RunGitAsync(repo, "init");
+            await RunGitAsync(repo, "config user.email rema@example.invalid");
+            await RunGitAsync(repo, "config user.name Rema");
+            await File.WriteAllTextAsync(Path.Combine(repo, "app.txt"), "v1");
+            await RunGitAsync(repo, "add app.txt");
+            await RunGitAsync(repo, "commit -m initial");
+            await RunGitAsync(repo, "tag v1");
+            await File.WriteAllTextAsync(Path.Combine(repo, "app.txt"), "v2");
+            await RunGitAsync(repo, "commit -am update");
+            await RunGitAsync(repo, "tag v2");
+
+            var project = new ServiceProject { Name = "Demo Service", RepoPath = repo };
+            var output = Path.Combine(repo, "safefly-output");
+            var evidence = new[]
+            {
+                new DeploymentVersionEvidence("ADO", "Demo Service", "Official Release", "20260427.5", "succeeded", "https://dev.azure.com/example", "ADO release evidence"),
+                new DeploymentVersionEvidence("Telemetry", "Demo Service", "ApplicationVersion", "20260427.5", "Telemetry query configured", null, "Kusto version evidence"),
+            };
+
+            await new SafeFlyDiffService().CreateRequestFilesAsync(project, "v1", "v2", output, evidence);
+
+            var request = await File.ReadAllTextAsync(Path.Combine(output, "safefly-request.md"));
+            Assert.Contains("Current deployed version evidence", request);
+            Assert.Contains("Official Release", request);
+            Assert.Contains("Telemetry", request);
+            Assert.Contains("20260427.5", request);
+        }
+        finally
+        {
+            if (Directory.Exists(repo))
+            {
+                ClearReadOnlyAttributes(repo);
+                Directory.Delete(repo, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void SystemPrompt_IncludesTrackedBuildRunDetailsAndCapabilities()
+    {
+        var project = new ServiceProject { Name = "Payments", RepoPath = "C:\\Repos\\Payments" };
+        var pipeline = new PipelineConfig { DisplayName = "Prod", Name = "Prod" };
+        project.PipelineConfigs.Add(pipeline);
+        var tracked = new TrackedItem
+        {
+            ServiceProjectId = project.Id,
+            PipelineConfigId = pipeline.Id,
+            AdoRunId = 123,
+            BuildVersion = "20260427.5",
+            Status = "In Progress",
+            CurrentStage = "Deploy EU",
+            SucceededSteps = 7,
+            PendingSteps = 2,
+            TotalSteps = 9,
+            ExpectedNextStep = "Monitor Deploy EU until it completes.",
+            AdoWebUrl = "https://dev.azure.com/example/Demo/_build/results?buildId=123",
+        };
+        var capability = new CapabilityDefinition
+        {
+            Kind = "Skill",
+            Name = "SafeFly Request Author",
+            Description = "Create SafeFly files",
+            IsEnabled = true,
+        };
+
+        var prompt = SystemPromptBuilder.Build(new RemaSettings(), [project], [tracked], [], [capability]);
+
+        Assert.Contains("20260427.5", prompt);
+        Assert.Contains("7 succeeded / 0 failed / 0 skipped / 2 pending", prompt);
+        Assert.Contains("SafeFly Request Author", prompt);
+        Assert.Contains("Monitor Deploy EU", prompt);
+    }
+
+    [Fact]
+    public void TranscriptBuilder_GroupsToolsAndKeepsReasoningInAssistantTurn()
+    {
+        var builder = new TranscriptBuilder();
+        var messages = new[]
+        {
+            CreateMessageVm("user", "Track the deployment."),
+            CreateMessageVm("reasoning", "I need to inspect the active shift."),
+            CreateMessageVm("tool", "{\"pipeline\":\"Prod\"}", toolName: "ado_list_builds", toolCallId: "tool-1", toolStatus: "Completed"),
+            CreateMessageVm("tool", "{\"buildId\":123}", toolName: "ado_get_build", toolCallId: "tool-2", toolStatus: "Completed"),
+            CreateMessageVm("assistant", "Prod build 123 is still running."),
+        };
+
+        builder.Rebuild(messages);
+
+        Assert.Equal(2, builder.Turns.Count);
+        var assistantTurn = builder.Turns[1];
+        Assert.IsType<ReasoningItem>(assistantTurn.Items[0]);
+        var group = Assert.IsType<ToolGroupItem>(assistantTurn.Items[1]);
+        Assert.Equal(2, group.ToolCalls.Count);
+        Assert.Equal("2 done", group.Meta);
+        Assert.Contains("List ADO builds", group.Label);
+        Assert.IsType<AssistantMessageItem>(assistantTurn.Items[2]);
+    }
+
+    [Fact]
+    public void SessionConfigBuilder_SendsReasoningEffortOnlyForReasoningModels()
+    {
+        var claudeConfig = SessionConfigBuilder.Build(
+            "system",
+            "claude-sonnet-4",
+            "medium",
+            tools: null,
+            mcpServers: null,
+            onPermission: null,
+            hooks: null);
+        var gpt5Config = SessionConfigBuilder.Build(
+            "system",
+            "gpt-5.4",
+            "medium",
+            tools: null,
+            mcpServers: null,
+            onPermission: null,
+            hooks: null);
+
+        Assert.Null(claudeConfig.ReasoningEffort);
+        Assert.Equal("medium", gpt5Config.ReasoningEffort);
+    }
+
+    private static async Task RunGitAsync(string workingDirectory, string arguments)
+    {
+        using var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = "git",
+                Arguments = arguments,
+                WorkingDirectory = workingDirectory,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            }
+        };
+
+        process.Start();
+        var stderr = await process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        if (process.ExitCode != 0)
+            throw new InvalidOperationException($"git {arguments} failed: {stderr}");
+    }
+
+    private static ChatMessageViewModel CreateMessageVm(
+        string role,
+        string content,
+        string? toolName = null,
+        string? toolCallId = null,
+        string? toolStatus = null)
+    {
+        return new ChatMessageViewModel(new ChatMessage
+        {
+            Role = role,
+            Content = content,
+            ToolName = toolName,
+            ToolCallId = toolCallId,
+            ToolStatus = toolStatus,
+        });
+    }
+
+    private static void ClearReadOnlyAttributes(string directory)
+    {
+        foreach (var file in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
+            File.SetAttributes(file, FileAttributes.Normal);
+
+        foreach (var dir in Directory.EnumerateDirectories(directory, "*", SearchOption.AllDirectories))
+            File.SetAttributes(dir, FileAttributes.Directory);
+    }
+}

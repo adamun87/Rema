@@ -409,7 +409,7 @@ public partial class SettingsViewModel : ObservableObject
             }
         }
 
-        if (Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+        if (Avalonia.Application.Current is null || Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
             ApplyStatus();
         else
             Avalonia.Threading.Dispatcher.UIThread.Post(ApplyStatus);
