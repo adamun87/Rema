@@ -38,9 +38,12 @@ public sealed record AdoBuildSnapshot(
 public sealed class AzureDevOpsService
 {
     private const string AzureDevOpsResource = "499b84ac-1321-427f-aa17-267ca6975798";
+    private static readonly TimeSpan AzureCliTokenFetchTimeout = TimeSpan.FromSeconds(90);
+    private static readonly TimeSpan AzureCliLoginTimeout = TimeSpan.FromMinutes(3);
     private readonly HttpClient _httpClient = new();
     private string? _cachedBearerToken;
     private DateTimeOffset _cachedBearerTokenExpiresAt;
+    private bool _interactiveLoginAttempted;
     // Semaphore ensures only one caller runs the full "try-token → az login → try-token"
     // flow at a time. All others wait, then pick up the cached token on exit.
     private readonly SemaphoreSlim _authSemaphore = new(1, 1);
@@ -351,8 +354,10 @@ public sealed class AzureDevOpsService
         }
 
         var bearerToken = await GetAzureCliTokenAsync(cancellationToken).ConfigureAwait(false);
-        if (!string.IsNullOrWhiteSpace(bearerToken))
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken);
+        if (string.IsNullOrWhiteSpace(bearerToken))
+            throw new InvalidOperationException("Azure DevOps sign-in could not complete. Rema opened the Azure CLI sign-in flow once, but no Azure DevOps token was returned. Complete the browser sign-in or run 'az login' in a terminal, then reload builds.");
+
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken);
     }
 
     private static string FormatHttpErrorBody(string body)
@@ -403,8 +408,12 @@ public sealed class AzureDevOpsService
             if (token is not null)
                 return token;
 
-            // Not signed in — open exactly one az login browser window.
-            await LaunchAzLoginAsync(cancellationToken).ConfigureAwait(false);
+            if (_interactiveLoginAttempted)
+                return null;
+
+            // Not signed in — open exactly one az login browser window for this app session.
+            _interactiveLoginAttempted = true;
+            await LaunchAzLoginAsync().ConfigureAwait(false);
             return await TryFetchAzureCliTokenAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -419,8 +428,8 @@ public sealed class AzureDevOpsService
         {
             StartInfo = new ProcessStartInfo
             {
-                FileName = "az",
-                Arguments = $"account get-access-token --resource {AzureDevOpsResource} --query accessToken -o tsv",
+                FileName = "cmd.exe",
+                Arguments = $"/d /s /c \"az account get-access-token --resource {AzureDevOpsResource} --query accessToken -o tsv\"",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
@@ -431,8 +440,10 @@ public sealed class AzureDevOpsService
         try { process.Start(); }
         catch { return null; }
 
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(TimeSpan.FromSeconds(15));
+        // Do not link this timeout to the per-request cancellation token. Auth is shared
+        // across parallel/stale requests, so cancelling one UI load must not abort the
+        // single token acquisition that other requests are waiting on.
+        using var timeoutCts = new CancellationTokenSource(AzureCliTokenFetchTimeout);
 
         try
         {
@@ -453,7 +464,7 @@ public sealed class AzureDevOpsService
         }
     }
 
-    private static async Task LaunchAzLoginAsync(CancellationToken cancellationToken)
+    private static async Task LaunchAzLoginAsync()
     {
         using var process = new Process
         {
@@ -469,8 +480,9 @@ public sealed class AzureDevOpsService
         catch { return; }
 
         // Wait up to 3 minutes for the user to complete the browser-based sign-in.
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(TimeSpan.FromMinutes(3));
+        // This is intentionally independent of per-request cancellation so selection
+        // changes do not abandon one auth flow and spawn another.
+        using var timeoutCts = new CancellationTokenSource(AzureCliLoginTimeout);
 
         try { await process.WaitForExitAsync(timeoutCts.Token).ConfigureAwait(false); }
         catch (OperationCanceledException) { }

@@ -245,24 +245,43 @@ public partial class ShiftsViewModel : ObservableObject
 
     partial void OnSelectedServiceProjectChanged(ServiceProject? value)
     {
+        CancelBuildLoadForSelectionChange();
+        SelectedBuild = null;
+        AvailableBuilds.Clear();
+        HasAvailableBuilds = false;
+
         AvailablePipelines.Clear();
         if (value is not null)
             foreach (var p in value.PipelineConfigs.OrderBy(p => p.DisplayName))
                 AvailablePipelines.Add(p);
 
         SelectedPipelineConfig = AvailablePipelines.FirstOrDefault();
+        if (value is null)
+            BuildLoadStatus = "Select a service project and pipeline.";
+        else if (SelectedPipelineConfig is null)
+            BuildLoadStatus = "No ADO pipelines are configured for this service project.";
+
         UpdateCanAddTrackedItem();
     }
 
     partial void OnSelectedPipelineConfigChanged(PipelineConfig? value)
     {
+        CancelBuildLoadForSelectionChange();
         SelectedBuild = null;
         AvailableBuilds.Clear();
         HasAvailableBuilds = false;
-        UpdateCanAddTrackedItem();
 
-        if (value is not null)
-            _ = LoadBuildsForSelectionAsync();
+        if (value is null)
+        {
+            BuildLoadStatus = SelectedServiceProject is null
+                ? "Select a service project and pipeline."
+                : "Select an ADO pipeline to load recent builds.";
+            UpdateCanAddTrackedItem();
+            return;
+        }
+
+        UpdateCanAddTrackedItem();
+        _ = LoadBuildsForSelectionAsync();
     }
 
     partial void OnSelectedBuildChanged(PipelineRunOption? value) => UpdateCanAddTrackedItem();
@@ -270,6 +289,7 @@ public partial class ShiftsViewModel : ObservableObject
     [RelayCommand]
     private async Task RefreshAvailableBuilds()
     {
+        if (IsLoadingBuilds) return;
         await LoadBuildsForSelectionAsync();
     }
 
@@ -279,12 +299,14 @@ public partial class ShiftsViewModel : ObservableObject
         var pipeline = SelectedPipelineConfig;
         if (project is null || pipeline is null)
         {
+            CancelBuildLoadForSelectionChange();
             BuildLoadStatus = "Select a service project and pipeline.";
             return;
         }
 
         _buildLoadCts?.Cancel();
-        _buildLoadCts = new CancellationTokenSource();
+        var loadCts = new CancellationTokenSource();
+        _buildLoadCts = loadCts;
         var version = ++_buildLoadVersion;
 
         try
@@ -298,7 +320,7 @@ public partial class ShiftsViewModel : ObservableObject
                 project,
                 pipeline,
                 20,
-                _buildLoadCts.Token);
+                loadCts.Token);
 
             if (version != _buildLoadVersion) return;
 
@@ -329,9 +351,21 @@ public partial class ShiftsViewModel : ObservableObject
             if (version == _buildLoadVersion)
             {
                 IsLoadingBuilds = false;
+                if (ReferenceEquals(_buildLoadCts, loadCts))
+                    _buildLoadCts = null;
                 UpdateCanAddTrackedItem();
             }
+
+            loadCts.Dispose();
         }
+    }
+
+    private void CancelBuildLoadForSelectionChange()
+    {
+        _buildLoadCts?.Cancel();
+        _buildLoadCts = null;
+        _buildLoadVersion++;
+        IsLoadingBuilds = false;
     }
 
     [RelayCommand]

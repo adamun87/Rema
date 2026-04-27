@@ -175,12 +175,15 @@
                     IsEnabled="{Binding !IsLoadingBuilds}"
                     Command="{Binding RefreshAvailableBuildsCommand}">
               <StackPanel Orientation="Horizontal" Spacing="5">
-                <TextBlock Text="↻" />
-                <TextBlock Text="Reload builds" />
+                <TextBlock Text="↻" IsVisible="{Binding !IsLoadingBuilds}" />
+                <TextBlock Text="Reload builds" IsVisible="{Binding !IsLoadingBuilds}" />
+                <TextBlock Text="Loading…" IsVisible="{Binding IsLoadingBuilds}" />
               </StackPanel>
             </Button>
             <StackPanel Spacing="4">
               <TextBlock Classes="field-label" Text="Build / run" />
+              <ProgressBar IsIndeterminate="True" Height="3" CornerRadius="2"
+                           IsVisible="{Binding IsLoadingBuilds}" />
               <TextBlock Text="{Binding BuildLoadStatus}"
                          FontSize="11"
                          Foreground="{DynamicResource Brush.TextTertiary}"
