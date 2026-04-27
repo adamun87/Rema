@@ -82,6 +82,7 @@ public partial class ShiftsViewModel : ObservableObject
     [ObservableProperty] private int _inProgressCount;
     [ObservableProperty] private int _completedCount;
     [ObservableProperty] private int _failedCount;
+    [ObservableProperty] private bool _isRefreshing;
 
     // ── Collections ──
     public ObservableCollection<TrackedItemDisplay> ActiveTrackedItems { get; } = [];
@@ -145,6 +146,17 @@ public partial class ShiftsViewModel : ObservableObject
         HasShiftHistory = ShiftHistory.Count > 0;
         HasRecentEvents = RecentEvents.Count > 0;
 
+        RefreshSummaryStats();
+
+        ServiceProjects.Clear();
+        foreach (var p in _dataStore.Data.ServiceProjects.OrderBy(p => p.Name))
+            ServiceProjects.Add(p);
+
+        UpdateCanAddTrackedItem();
+    }
+
+    private void RefreshSummaryStats()
+    {
         TotalTrackedCount = ActiveTrackedItems.Count;
         NeedsActionCount = ActiveTrackedItems.Count(i => i.Item.RequiresAction);
         InProgressCount = ActiveTrackedItems.Count(i =>
@@ -359,22 +371,50 @@ public partial class ShiftsViewModel : ObservableObject
     [RelayCommand]
     private async Task RefreshTrackedItems()
     {
-        if (ActiveShift is null) return;
+        if (ActiveShift is null || IsRefreshing) return;
 
-        foreach (var display in ActiveTrackedItems.ToList())
-            await UpdateTrackedItemFromAdoAsync(display.Item);
+        IsRefreshing = true;
+        try
+        {
+            var items = ActiveTrackedItems.Select(d => d.Item).ToList();
 
-        await _dataStore.SaveAsync();
-        Refresh();
+            // Fetch all items from ADO in parallel; each task updates its item in-place
+            // and returns any ShiftEvent to log (avoids concurrent List<> mutation).
+            var tasks = items.Select(item => FetchAndApplyItemAsync(item)).ToList();
+            var newEvents = await Task.WhenAll(tasks);
+
+            foreach (var evt in newEvents.OfType<ShiftEvent>())
+                _dataStore.Data.ShiftEvents.Add(evt);
+
+            await _dataStore.SaveAsync();
+            Refresh();
+        }
+        finally
+        {
+            IsRefreshing = false;
+        }
     }
 
-    private async Task UpdateTrackedItemFromAdoAsync(TrackedItem item)
+    /// <summary>
+    /// Fetches a fresh snapshot for one item, applies it in-place, and updates the
+    /// summary stats on the UI thread so counts update as each ADO call completes.
+    /// Returns a ShiftEvent if one should be logged, null otherwise.
+    /// </summary>
+    private async Task<ShiftEvent?> FetchAndApplyItemAsync(TrackedItem item)
     {
-        if (item.AdoRunId is null) return;
+        var evt = await UpdateTrackedItemFromAdoAsync(item);
+        // Dispatch stats refresh so the dashboard counts update as each response arrives.
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(RefreshSummaryStats);
+        return evt;
+    }
+
+    private async Task<ShiftEvent?> UpdateTrackedItemFromAdoAsync(TrackedItem item)
+    {
+        if (item.AdoRunId is null) return null;
 
         var project = _dataStore.Data.ServiceProjects.FirstOrDefault(p => p.Id == item.ServiceProjectId);
         var pipeline = project?.PipelineConfigs.FirstOrDefault(p => p.Id == item.PipelineConfigId);
-        if (project is null || pipeline is null) return;
+        if (project is null || pipeline is null) return null;
 
         var snapshot = await _azureDevOpsService.GetBuildAsync(project, pipeline, item.AdoRunId.Value);
         AzureDevOpsService.ApplySnapshot(item, snapshot);
@@ -385,16 +425,18 @@ public partial class ShiftsViewModel : ObservableObject
             if (!string.Equals(item.LastNotification, message, StringComparison.Ordinal))
             {
                 item.LastNotification = message;
-                _dataStore.Data.ShiftEvents.Add(new ShiftEvent
+                return new ShiftEvent
                 {
                     ShiftId = ActiveShift.Id,
                     TrackedItemId = item.Id,
                     EventType = "Alert",
                     Message = message,
                     Severity = "Warning",
-                });
+                };
             }
         }
+
+        return null;
     }
 
     [RelayCommand]

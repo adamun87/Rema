@@ -70,38 +70,18 @@ public sealed class PollingService : IAsyncDisposable
 
         if (items.Count == 0) return;
 
-        var changed = false;
-        foreach (var item in items)
-        {
-            if (item.AdoRunId is null) continue;
+        // Fetch all items from ADO in parallel; each task fires TrackedItemsUpdated
+        // so the UI updates incrementally as responses arrive.
+        var tasks = items.Select(item => PollItemAsync(item, activeShift, ct)).ToList();
+        var newEvents = await Task.WhenAll(tasks).ConfigureAwait(false);
 
-            var project = _dataStore.Data.ServiceProjects.FirstOrDefault(p => p.Id == item.ServiceProjectId);
-            var pipeline = project?.PipelineConfigs.FirstOrDefault(p => p.Id == item.PipelineConfigId);
-            if (project is null || pipeline is null) continue;
+        var anyChanged = newEvents.Any(e => e is not null);
 
-            var snapshot = await _azureDevOpsService.GetBuildAsync(project, pipeline, item.AdoRunId.Value, ct).ConfigureAwait(false);
-            var priorStatus = item.Status;
-            AzureDevOpsService.ApplySnapshot(item, snapshot);
-            changed = true;
+        foreach (var evt in newEvents.OfType<ShiftEvent>())
+            _dataStore.Data.ShiftEvents.Add(evt);
 
-            if (!string.Equals(priorStatus, item.Status, StringComparison.OrdinalIgnoreCase))
-            {
-                _dataStore.Data.ShiftEvents.Add(new ShiftEvent
-                {
-                    ShiftId = activeShift.Id,
-                    TrackedItemId = item.Id,
-                    EventType = "StatusChange",
-                    Message = $"{pipeline.DisplayName} build {item.BuildVersion}: {item.Status}",
-                    Severity = item.RequiresAction ? "Warning" : "Info",
-                });
-            }
-        }
-
-        if (changed)
-        {
+        if (anyChanged)
             await _dataStore.SaveAsync(ct).ConfigureAwait(false);
-            Dispatcher.UIThread.Post(() => TrackedItemsUpdated?.Invoke());
-        }
 
         if (!settings.NotificationsEnabled) return;
 
@@ -155,6 +135,41 @@ public sealed class PollingService : IAsyncDisposable
             Dispatcher.UIThread.Post(() =>
                 NotificationService.ShowIfInactive("📊 Rema — Shift Update", body));
         }
+    }
+
+    /// <summary>
+    /// Fetches a fresh ADO snapshot for a single item, applies it, and notifies the UI
+    /// immediately so the dashboard updates as each response arrives (not only at the end).
+    /// Returns a ShiftEvent to log if a status change warrants one, null otherwise.
+    /// </summary>
+    private async Task<ShiftEvent?> PollItemAsync(TrackedItem item, Shift activeShift, CancellationToken ct)
+    {
+        if (item.AdoRunId is null) return null;
+
+        var project = _dataStore.Data.ServiceProjects.FirstOrDefault(p => p.Id == item.ServiceProjectId);
+        var pipeline = project?.PipelineConfigs.FirstOrDefault(p => p.Id == item.PipelineConfigId);
+        if (project is null || pipeline is null) return null;
+
+        var snapshot = await _azureDevOpsService.GetBuildAsync(project, pipeline, item.AdoRunId.Value, ct).ConfigureAwait(false);
+        var priorStatus = item.Status;
+        AzureDevOpsService.ApplySnapshot(item, snapshot);
+
+        // Notify the UI after each item so the dashboard card updates immediately.
+        Dispatcher.UIThread.Post(() => TrackedItemsUpdated?.Invoke());
+
+        if (!string.Equals(priorStatus, item.Status, StringComparison.OrdinalIgnoreCase))
+        {
+            return new ShiftEvent
+            {
+                ShiftId = activeShift.Id,
+                TrackedItemId = item.Id,
+                EventType = "StatusChange",
+                Message = $"{pipeline.DisplayName} build {item.BuildVersion}: {item.Status}",
+                Severity = item.RequiresAction ? "Warning" : "Info",
+            };
+        }
+
+        return null;
     }
 
     public async ValueTask DisposeAsync()

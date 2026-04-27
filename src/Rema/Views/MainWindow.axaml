@@ -286,10 +286,13 @@
           <DockPanel>
             <Button DockPanel.Dock="Right" Classes="subtle"
                     Padding="14,7" MinHeight="0"
+                    IsEnabled="{Binding !IsRefreshing}"
                     Command="{Binding RefreshTrackedItemsCommand}">
               <StackPanel Orientation="Horizontal" Spacing="5">
-                <TextBlock Text="↻" />
-                <TextBlock Text="{loc:Str Dashboard_RefreshNow}" />
+                <TextBlock Text="↻" IsVisible="{Binding !IsRefreshing}" />
+                <TextBlock Text="{loc:Str Dashboard_RefreshNow}" IsVisible="{Binding !IsRefreshing}" />
+                <TextBlock Text="Refreshing…" IsVisible="{Binding IsRefreshing}"
+                           Foreground="{DynamicResource Brush.TextTertiary}" />
               </StackPanel>
             </Button>
             <StackPanel Spacing="2">
@@ -301,6 +304,11 @@
                          IsVisible="{Binding HasActiveShift}" />
             </StackPanel>
           </DockPanel>
+
+          <!-- Indeterminate progress bar — visible only while fetching from ADO -->
+          <ProgressBar IsIndeterminate="True" Height="3" CornerRadius="2"
+                       IsVisible="{Binding IsRefreshing}"
+                       Margin="0,-8,0,0" />
 
           <UniformGrid Columns="5" Rows="1">
             <Border Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}"
