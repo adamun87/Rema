@@ -31,6 +31,8 @@ public sealed partial class ChatViewModel : ObservableObject
     // Bind directly to the builder's ObservableCollection so ProcessMessageToTranscript()
     // updates are immediately visible in the ItemsControl without any reassignment.
     public ObservableCollection<TranscriptTurn> MountedTranscriptTurns => _transcriptBuilder.Turns;
+    // Chat history list shown in sidebar — newest first.
+    public ObservableCollection<Chat> Chats { get; } = [];
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private bool _isStreaming;
     [ObservableProperty] private string _promptText = "";
@@ -56,6 +58,10 @@ public sealed partial class ChatViewModel : ObservableObject
         _dataStore = dataStore;
         _copilotService = copilotService;
         _azureDevOpsService = azureDevOpsService;
+
+        // Populate chat history newest-first
+        for (var i = _dataStore.Data.Chats.Count - 1; i >= 0; i--)
+            Chats.Add(_dataStore.Data.Chats[i]);
     }
 
     // ── Suggestion Chips ──
@@ -91,6 +97,8 @@ public sealed partial class ChatViewModel : ObservableObject
                     Title = prompt.Length > 40 ? prompt[..40].Trim() + "…" : prompt,
                 };
                 _dataStore.Data.Chats.Add(chat);
+                Chats.Insert(0, chat); // Prepend so newest appears first in sidebar
+                _ = _dataStore.SaveAsync(); // Persist the new chat entry to data.json
                 CurrentChat = chat;
             }
 
@@ -493,6 +501,7 @@ public sealed partial class ChatViewModel : ObservableObject
         ScrollToEndRequested?.Invoke();
     }
 
+    [RelayCommand]
     public void NewChat()
     {
         CurrentChat = null;
@@ -501,6 +510,9 @@ public sealed partial class ChatViewModel : ObservableObject
         _transcriptBuilder.Reset();
         TranscriptRebuilt?.Invoke();
     }
+
+    [RelayCommand]
+    private Task SelectChat(Chat chat) => LoadChatAsync(chat);
 
     // ── Retry ──
 

@@ -41,6 +41,8 @@ public sealed class AzureDevOpsService
     private readonly HttpClient _httpClient = new();
     private string? _cachedBearerToken;
     private DateTimeOffset _cachedBearerTokenExpiresAt;
+    private readonly object _loginLock = new();
+    private Task? _loginInProgressTask;
 
     public async Task<IReadOnlyList<AdoBuildSnapshot>> GetRecentBuildsAsync(
         ServiceProject project,
@@ -437,7 +439,21 @@ public sealed class AzureDevOpsService
         }
     }
 
-    private static async Task RunAzLoginAsync(CancellationToken cancellationToken)
+    private Task RunAzLoginAsync(CancellationToken cancellationToken)
+    {
+        lock (_loginLock)
+        {
+            // If a sign-in is already in progress, return the same task so all callers wait
+            // on a single browser window instead of spawning multiple az login processes.
+            if (_loginInProgressTask is { IsCompleted: false })
+                return _loginInProgressTask;
+
+            _loginInProgressTask = LaunchAzLoginAsync(cancellationToken);
+            return _loginInProgressTask;
+        }
+    }
+
+    private static async Task LaunchAzLoginAsync(CancellationToken cancellationToken)
     {
         using var process = new Process
         {

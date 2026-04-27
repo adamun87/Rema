@@ -147,10 +147,42 @@
           </Panel>
 
           <!-- Sidebar: Chat (2) -->
-          <Panel x:Name="Sidebar2" IsVisible="False">
-            <TextBlock Text="{loc:Str Nav_Chat}" FontSize="13" FontWeight="SemiBold"
-                       Foreground="{DynamicResource Brush.TextSecondary}"
-                       Margin="20,12,16,0" />
+          <Panel x:Name="Sidebar2" IsVisible="False" DataContext="{Binding ChatVM}">
+            <DockPanel>
+              <DockPanel DockPanel.Dock="Top" Margin="16,8,16,0">
+                <Button DockPanel.Dock="Right" Classes="subtle" Padding="7,5" MinHeight="0"
+                        CornerRadius="6"
+                        Command="{Binding NewChatCommand}"
+                        ToolTip.Tip="{loc:Str Chat_NewChat}">
+                  <TextBlock Text="+" FontSize="16" FontWeight="Bold" />
+                </Button>
+                <TextBlock Text="{loc:Str Nav_Chat}" FontSize="13" FontWeight="SemiBold"
+                           Foreground="{DynamicResource Brush.TextSecondary}"
+                           VerticalAlignment="Center" Margin="6,0,0,0" />
+              </DockPanel>
+              <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="8,8,8,8">
+                <ItemsControl ItemsSource="{Binding Chats}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="models:Chat">
+                      <Button Classes="subtle" HorizontalAlignment="Stretch"
+                              HorizontalContentAlignment="Left"
+                              Padding="10,8" MinHeight="0" Margin="0,1"
+                              CornerRadius="6"
+                              Command="{Binding $parent[Panel].((vm:ChatViewModel)DataContext).SelectChatCommand}"
+                              CommandParameter="{Binding}">
+                        <StackPanel Spacing="1">
+                          <TextBlock Text="{Binding Title}" FontSize="13"
+                                     Foreground="{DynamicResource Brush.TextPrimary}"
+                                     TextTrimming="CharacterEllipsis" />
+                          <TextBlock Text="{Binding CreatedAt, StringFormat='{}{0:MMM d, HH:mm}'}" FontSize="11"
+                                     Foreground="{DynamicResource Brush.TextTertiary}" />
+                        </StackPanel>
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+            </DockPanel>
           </Panel>
 
           <!-- Sidebar: Projects (3) — shows project list like Lumi -->
