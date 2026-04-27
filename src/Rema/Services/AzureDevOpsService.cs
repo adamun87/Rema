@@ -280,6 +280,14 @@ public sealed class AzureDevOpsService
         await ApplyAuthorizationAsync(request, cancellationToken).ConfigureAwait(false);
 
         using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+
+        // On auth failure, invalidate cached token so the next call triggers re-login.
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+        {
+            _cachedBearerToken = null;
+            _cachedBearerTokenExpiresAt = default;
+        }
+
         var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
@@ -348,6 +356,17 @@ public sealed class AzureDevOpsService
         if (!string.IsNullOrWhiteSpace(_cachedBearerToken) && _cachedBearerTokenExpiresAt > DateTimeOffset.Now.AddMinutes(5))
             return _cachedBearerToken;
 
+        var token = await TryFetchAzureCliTokenAsync(cancellationToken).ConfigureAwait(false);
+        if (token is not null)
+            return token;
+
+        // Token fetch failed (not signed in or session expired) — run az login automatically.
+        await RunAzLoginAsync(cancellationToken).ConfigureAwait(false);
+        return await TryFetchAzureCliTokenAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<string?> TryFetchAzureCliTokenAsync(CancellationToken cancellationToken)
+    {
         using var process = new Process
         {
             StartInfo = new ProcessStartInfo
@@ -361,14 +380,8 @@ public sealed class AzureDevOpsService
             }
         };
 
-        try
-        {
-            process.Start();
-        }
-        catch
-        {
-            return null;
-        }
+        try { process.Start(); }
+        catch { return null; }
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(TimeSpan.FromSeconds(15));
@@ -390,6 +403,30 @@ public sealed class AzureDevOpsService
         {
             return null;
         }
+    }
+
+    private static async Task RunAzLoginAsync(CancellationToken cancellationToken)
+    {
+        using var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = "az",
+                Arguments = "login",
+                UseShellExecute = false,
+                CreateNoWindow = false,
+            }
+        };
+
+        try { process.Start(); }
+        catch { return; }
+
+        // Wait up to 3 minutes for the user to complete the browser-based sign-in.
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(TimeSpan.FromMinutes(3));
+
+        try { await process.WaitForExitAsync(timeoutCts.Token).ConfigureAwait(false); }
+        catch (OperationCanceledException) { }
     }
 
     private static int ValidateAndResolveBuildDefinitionId(ServiceProject project, PipelineConfig pipeline)
