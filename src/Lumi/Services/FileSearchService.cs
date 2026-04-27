@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -119,7 +120,13 @@ public sealed class FileSearchService
     private static int CompareScoredFiles(ScoredFile a, ScoredFile b)
     {
         var cmp = b.Score.CompareTo(a.Score);
-        return cmp != 0 ? cmp : a.RelativePath.Length.CompareTo(b.RelativePath.Length);
+        if (cmp != 0)
+            return cmp;
+
+        cmp = a.RelativePath.Length.CompareTo(b.RelativePath.Length);
+        return cmp != 0
+            ? cmp
+            : StringComparer.OrdinalIgnoreCase.Compare(a.RelativePath, b.RelativePath);
     }
 
     private static List<(string, string)> TakeTopResults(List<ScoredFile> scored, int maxResults)
@@ -410,18 +417,20 @@ public sealed class FileSearchService
             Consider(ScoreSubsequence(file.FileNameNoExtCompact, term.Compact, 420), true);
             Consider(ScoreEditDistance(file.FileNameNoExtCompact, term.Compact, 450), true);
 
-            foreach (var token in file.FileNameTokens)
+            for (var index = 0; index < file.FileNameTokens.Length; index++)
             {
+                var token = file.FileNameTokens[index];
+                var positionPenalty = index * 28;
                 if (string.Equals(token, term.Compact, StringComparison.Ordinal))
                 {
-                    Consider(575, true);
+                    Consider(575 - positionPenalty, true);
                     continue;
                 }
 
-                Consider(ScorePrefix(token, term.Compact, 545), true);
-                Consider(ScoreContains(token, term.Compact, 465), true);
-                Consider(ScoreSubsequence(token, term.Compact, 405), true);
-                Consider(ScoreEditDistance(token, term.Compact, 425), true);
+                Consider(ScorePrefix(token, term.Compact, 545 - positionPenalty), true);
+                Consider(ScoreContains(token, term.Compact, 465 - positionPenalty), true);
+                Consider(ScoreSubsequence(token, term.Compact, 405 - positionPenalty), true);
+                Consider(ScoreEditDistance(token, term.Compact, 425 - positionPenalty), true);
             }
 
             foreach (var token in file.PathTokens)
@@ -541,8 +550,11 @@ public sealed class FileSearchService
             return "";
 
         var builder = new StringBuilder(text.Length);
-        foreach (var character in text)
+        foreach (var character in text.Normalize(NormalizationForm.FormD))
         {
+            if (CharUnicodeInfo.GetUnicodeCategory(character) == UnicodeCategory.NonSpacingMark)
+                continue;
+
             if (character == '\\' || character == '/')
             {
                 if (builder.Length > 0 && builder[^1] != '/')
@@ -562,8 +574,11 @@ public sealed class FileSearchService
             return "";
 
         var builder = new StringBuilder(text.Length);
-        foreach (var character in text)
+        foreach (var character in text.Normalize(NormalizationForm.FormD))
         {
+            if (CharUnicodeInfo.GetUnicodeCategory(character) == UnicodeCategory.NonSpacingMark)
+                continue;
+
             if (char.IsLetterOrDigit(character))
                 builder.Append(char.ToLowerInvariant(character));
         }
@@ -589,8 +604,11 @@ public sealed class FileSearchService
             builder.Clear();
         }
 
-        foreach (var character in text)
+        foreach (var character in text.Normalize(NormalizationForm.FormD))
         {
+            if (CharUnicodeInfo.GetUnicodeCategory(character) == UnicodeCategory.NonSpacingMark)
+                continue;
+
             if (!char.IsLetterOrDigit(character))
             {
                 Flush();
@@ -1106,13 +1124,22 @@ internal readonly record struct PreparedFileSearchEntry(
             ? []
             : normalizedPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
 
-        var pathTokens = FileSearchService.ExtractSearchTokens(normalizedPath);
+        var originalSegments = relativePath
+            .Replace('\\', '/')
+            .Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var originalFileName = originalSegments.Length == 0 ? relativePath : originalSegments[^1];
+        var originalExtension = Path.GetExtension(originalFileName);
+        var originalFileNameNoExt = string.IsNullOrEmpty(originalExtension)
+            ? originalFileName
+            : originalFileName[..^originalExtension.Length];
+
+        var pathTokens = FileSearchService.ExtractSearchTokens(relativePath);
         var fileName = pathSegments.Length == 0 ? normalizedPath : pathSegments[^1];
-        var extension = Path.GetExtension(fileName);
+        var extension = originalExtension;
         var fileNameNoExt = string.IsNullOrEmpty(extension)
             ? fileName
             : fileName[..^extension.Length];
-        var fileNameTokens = FileSearchService.ExtractSearchTokens(fileNameNoExt);
+        var fileNameTokens = FileSearchService.ExtractSearchTokens(originalFileNameNoExt);
 
         return new PreparedFileSearchEntry(
             normalizedPath,

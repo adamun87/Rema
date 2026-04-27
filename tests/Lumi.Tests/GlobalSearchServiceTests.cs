@@ -215,6 +215,66 @@ public class GlobalSearchServiceTests
     }
 
     [Fact]
+    public async Task SearchAsync_SkillQueryMatchesTermsAcrossNameAndContent()
+    {
+        var skill = new Skill
+        {
+            Name = "Document Creator",
+            Description = "Creates polished user-facing files.",
+            Content = "Can produce Word documents, Excel workbooks, and PowerPoint decks.",
+            CreatedAt = Now.AddDays(-2)
+        };
+
+        var service = CreateService(new AppData { Skills = [skill] });
+
+        var results = await service.SearchAsync("document excel");
+
+        var match = Assert.Single(results);
+        Assert.Equal(GlobalSearchCategory.Skills, match.Category);
+        Assert.Equal(skill.Name, match.Title);
+        Assert.True(match.IsContentMatch);
+    }
+
+    [Fact]
+    public async Task SearchAsync_AgentQueryMatchesTermsAcrossNameAndPrompt()
+    {
+        var agent = new LumiAgent
+        {
+            Name = "Code Reviewer",
+            Description = "Reviews implementation quality.",
+            SystemPrompt = "Focus on security vulnerabilities, correctness, and performance regressions.",
+            CreatedAt = Now.AddDays(-4)
+        };
+
+        var service = CreateService(new AppData { Agents = [agent] });
+
+        var results = await service.SearchAsync("review security");
+
+        var match = Assert.Single(results);
+        Assert.Equal(GlobalSearchCategory.Lumis, match.Category);
+        Assert.Equal(agent.Name, match.Title);
+        Assert.True(match.IsContentMatch);
+    }
+
+    [Fact]
+    public async Task SearchAsync_DiacriticsAreIgnoredForSkillNames()
+    {
+        var skill = new Skill
+        {
+            Name = "R\u00e9sum\u00e9 Writer",
+            Description = "Drafts professional CV content.",
+            CreatedAt = Now.AddDays(-7)
+        };
+
+        var service = CreateService(new AppData { Skills = [skill] });
+
+        var results = await service.SearchAsync("resume");
+
+        var match = Assert.Single(results);
+        Assert.Equal(skill.Name, match.Title);
+    }
+
+    [Fact]
     public async Task SearchAsync_RecencyBreaksTitleTiesForChats()
     {
         var older = new Chat

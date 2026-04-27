@@ -266,6 +266,30 @@ public class FileSearchServiceTests
     }
 
     [Fact]
+    public void ScoreMatch_TransposedTypoStillMatchesFileName()
+    {
+        var score = FileSearchService.ScoreMatch("src/SearchService.cs", new[] { "serach" });
+
+        Assert.True(score > 0, $"Transposed typo should match SearchService.cs, got score {score}");
+    }
+
+    [Fact]
+    public void ScoreMatch_DiacriticsAreIgnored()
+    {
+        var score = FileSearchService.ScoreMatch("src/R\u00e9sum\u00e9Parser.cs", new[] { "resume" });
+
+        Assert.True(score > 0, $"Diacritic-insensitive query should match R\u00e9sum\u00e9Parser.cs, got score {score}");
+    }
+
+    [Fact]
+    public void ScoreMatch_PathSeparatorQueryMatchesNestedPath()
+    {
+        var score = FileSearchService.ScoreMatch("src/Services/ChatViewModel.cs", new[] { "services/chat" });
+
+        Assert.True(score > 0, $"Path separator query should match nested file path, got score {score}");
+    }
+
+    [Fact]
     public void Search_AcronymQuery_RanksCamelCaseFileFirst()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), $"lumi-test-{Guid.NewGuid():N}");
@@ -579,6 +603,30 @@ public class FileSearchServiceTests
             // First result should be the shallowest exact filename match
             Assert.Equal("app.cs", Path.GetFileName(results[0].RelativePath));
             Assert.Contains("lib", results[0].RelativePath); // lib/app.cs is shallower than src/deep/nest/app.cs
+        }
+        finally
+        {
+            try { Directory.Delete(tempDir, true); } catch { }
+        }
+    }
+
+    [Fact]
+    public void Search_EqualScoresUseAlphabeticalTieBreak()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"lumi-test-{Guid.NewGuid():N}");
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(tempDir, "src"));
+
+            File.WriteAllText(Path.Combine(tempDir, "src", "CApp.cs"), "");
+            File.WriteAllText(Path.Combine(tempDir, "src", "BApp.cs"), "");
+
+            var service = new FileSearchService();
+            var results = service.Search(tempDir, "app");
+
+            Assert.Equal(2, results.Count);
+            Assert.Equal("BApp.cs", Path.GetFileName(results[0].RelativePath));
+            Assert.Equal("CApp.cs", Path.GetFileName(results[1].RelativePath));
         }
         finally
         {
