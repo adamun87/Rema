@@ -6,6 +6,8 @@ namespace Rema.Views;
 
 public partial class SettingsView : UserControl
 {
+    private SettingsViewModel? _wiredVm;
+
     public SettingsView()
     {
         InitializeComponent();
@@ -14,8 +16,13 @@ public partial class SettingsView : UserControl
     protected override void OnDataContextChanged(EventArgs e)
     {
         base.OnDataContextChanged(e);
+        if (_wiredVm is not null)
+            _wiredVm.ExportConfigurationRequested -= OnExportConfigurationRequested;
         if (DataContext is SettingsViewModel vm)
+        {
+            _wiredVm = vm;
             vm.ExportConfigurationRequested += OnExportConfigurationRequested;
+        }
     }
 
     private async void OnExportConfigurationRequested()

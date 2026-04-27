@@ -8,6 +8,8 @@ namespace Rema.Views;
 
 public partial class ServiceProjectsView : UserControl
 {
+    private ServiceProjectsViewModel? _wiredVm;
+
     public ServiceProjectsView()
     {
         AvaloniaXamlLoader.Load(this);
@@ -16,8 +18,14 @@ public partial class ServiceProjectsView : UserControl
     protected override void OnDataContextChanged(EventArgs e)
     {
         base.OnDataContextChanged(e);
+        if (_wiredVm is not null)
+        {
+            _wiredVm.BrowseRepoPathRequested -= OnBrowseRepoPath;
+            _wiredVm.BrowseSafeFlyOutputRequested -= OnBrowseSafeFlyOutput;
+        }
         if (DataContext is ServiceProjectsViewModel vm)
         {
+            _wiredVm = vm;
             vm.BrowseRepoPathRequested += OnBrowseRepoPath;
             vm.BrowseSafeFlyOutputRequested += OnBrowseSafeFlyOutput;
         }

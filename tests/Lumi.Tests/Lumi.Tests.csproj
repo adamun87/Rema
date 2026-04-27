@@ -25,7 +25,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Lumi\Lumi.csproj" />
     <ProjectReference Include="..\..\src\Rema\Rema.csproj" />
   </ItemGroup>
 

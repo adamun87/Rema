@@ -115,6 +115,8 @@
                       IsActive="{Binding IsActive}">
         <sc:StrataThink.Content>
           <sc:StrataAiToolCall ToolName="{Binding Label}"
+                               Status="{Binding Status}"
+                               IsExpanded="{Binding IsExpanded}"
                                InputParameters="{Binding InputParameters}"
                                MoreInfo="{Binding MoreInfo}"
                                MaxWidth="420" />

@@ -194,10 +194,10 @@ public sealed class TranscriptBuilder
     {
         var msg = msgVm.Message;
         var toolCallId = msg.ToolCallId ?? Guid.NewGuid().ToString();
-        var toolName = msg.ToolName ?? "unknown";
+        var toolName = msg.ToolName;
 
-        // Skip hidden tools
-        if (toolName is "report_intent" or "think") return;
+        // Skip result-only records (no ToolName) and hidden tools
+        if (string.IsNullOrEmpty(toolName) || toolName is "report_intent" or "think") return;
 
         EnsureTurn("assistant");
 

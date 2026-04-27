@@ -443,11 +443,18 @@ public sealed partial class ChatViewModel : ObservableObject
                             toolComplete.Data.ToolCallId,
                             status);
 
-                        // Persist tool result
+                        // Persist tool result — carry ToolName so transcript can rebuild correctly on reload
+                        var startRecord = _messages
+                            .Select(m => m.Message)
+                            .FirstOrDefault(m => m.ToolCallId == toolComplete.Data.ToolCallId
+                                                 && m.ToolName is not null);
                         var resultMsg = new ChatMessage
                         {
                             Role = "tool",
                             ToolCallId = toolComplete.Data.ToolCallId,
+                            ToolName = startRecord?.ToolName,
+                            Content = startRecord?.Content ?? "",
+                            Author = startRecord?.Author,
                             ToolStatus = toolComplete.Data.Success ? "Completed" : "Failed",
                             Timestamp = DateTimeOffset.Now,
                         };

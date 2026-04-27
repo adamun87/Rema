@@ -117,8 +117,11 @@ public sealed partial class SingleToolItem : TranscriptItem
                 else if (e.PropertyName is nameof(ToolCallItem.Status))
                 {
                     OnPropertyChanged(nameof(IsActive));
+                    OnPropertyChanged(nameof(Status));
                     OnPropertyChanged(nameof(Meta));
                 }
+                else if (e.PropertyName is nameof(ToolCallItem.IsExpanded))
+                    OnPropertyChanged(nameof(IsExpanded));
                 else if (e.PropertyName is nameof(ToolCallItem.InputParameters))
                     OnPropertyChanged(nameof(InputParameters));
                 else if (e.PropertyName is nameof(ToolCallItem.MoreInfo))
@@ -133,6 +136,8 @@ public sealed partial class SingleToolItem : TranscriptItem
     public bool IsActive => Inner is ToolCallItem tc
         ? tc.Status == StrataAiToolCallStatus.InProgress
         : false;
+    public StrataAiToolCallStatus Status => Inner is ToolCallItem tc ? tc.Status : StrataAiToolCallStatus.InProgress;
+    public bool IsExpanded => Inner is ToolCallItem tc && tc.IsExpanded;
     public string? Meta => Inner is ToolCallItem tc ? tc.Status switch
     {
         StrataAiToolCallStatus.Completed => "✓",

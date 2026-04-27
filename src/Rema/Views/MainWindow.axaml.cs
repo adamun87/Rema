@@ -93,6 +93,8 @@ public partial class MainWindow : Window
 
         if (e.PropertyName == nameof(MainViewModel.IsOnboarded))
             UpdateOnboardingVisibility(vm);
+        else if (e.PropertyName == nameof(MainViewModel.SelectedNavIndex))
+            ShowPage(vm.SelectedNavIndex);
     }
 
     private void UpdateOnboardingVisibility(MainViewModel vm)
@@ -269,6 +271,7 @@ public partial class MainWindow : Window
         if (ctrl && e.Key == Key.N)
         {
             ShowPage(2); // Navigate to Chat tab
+            vm.ChatVM.NewChat();
             e.Handled = true;
         }
     }
