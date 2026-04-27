@@ -41,8 +41,9 @@ public sealed class AzureDevOpsService
     private readonly HttpClient _httpClient = new();
     private string? _cachedBearerToken;
     private DateTimeOffset _cachedBearerTokenExpiresAt;
-    private readonly object _loginLock = new();
-    private Task? _loginInProgressTask;
+    // Semaphore ensures only one caller runs the full "try-token → az login → try-token"
+    // flow at a time. All others wait, then pick up the cached token on exit.
+    private readonly SemaphoreSlim _authSemaphore = new(1, 1);
 
     public async Task<IReadOnlyList<AdoBuildSnapshot>> GetRecentBuildsAsync(
         ServiceProject project,
@@ -286,16 +287,12 @@ public sealed class AzureDevOpsService
             using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
             var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 
-            // On explicit auth failure, invalidate token and re-login.
             if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
             {
+                // Clear cached token so the next attempt acquires a fresh one via the auth semaphore.
                 _cachedBearerToken = null;
                 _cachedBearerTokenExpiresAt = default;
-                if (attempt == 0)
-                {
-                    await RunAzLoginAsync(cancellationToken).ConfigureAwait(false);
-                    continue;
-                }
+                if (attempt == 0) continue;
                 throw new InvalidOperationException($"Azure DevOps request failed ({(int)response.StatusCode} {response.ReasonPhrase}): authentication failed after re-login attempt.");
             }
 
@@ -307,9 +304,10 @@ public sealed class AzureDevOpsService
             {
                 if (attempt == 0)
                 {
+                    // Clear token; the next attempt will re-enter GetAzureCliTokenAsync
+                    // where the semaphore ensures a single az login browser window opens.
                     _cachedBearerToken = null;
                     _cachedBearerTokenExpiresAt = default;
-                    await RunAzLoginAsync(cancellationToken).ConfigureAwait(false);
                     continue;
                 }
                 throw new InvalidOperationException("Azure DevOps sign-in required. Sign in completed but ADO still returned a sign-in page — check that 'az login' used the correct account and has access to this organization.");
@@ -387,16 +385,32 @@ public sealed class AzureDevOpsService
 
     private async Task<string?> GetAzureCliTokenAsync(CancellationToken cancellationToken)
     {
+        // Fast path: return the cached token without acquiring the semaphore.
         if (!string.IsNullOrWhiteSpace(_cachedBearerToken) && _cachedBearerTokenExpiresAt > DateTimeOffset.Now.AddMinutes(5))
             return _cachedBearerToken;
 
-        var token = await TryFetchAzureCliTokenAsync(cancellationToken).ConfigureAwait(false);
-        if (token is not null)
-            return token;
+        // Slow path: only one caller at a time runs the full login flow.
+        // All parallel callers wait here; after the first one finishes and caches the token,
+        // the rest hit the fast path above and return immediately.
+        await _authSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            // Double-check: another caller may have refreshed the token while we waited.
+            if (!string.IsNullOrWhiteSpace(_cachedBearerToken) && _cachedBearerTokenExpiresAt > DateTimeOffset.Now.AddMinutes(5))
+                return _cachedBearerToken;
 
-        // Token fetch failed (not signed in or session expired) — run az login automatically.
-        await RunAzLoginAsync(cancellationToken).ConfigureAwait(false);
-        return await TryFetchAzureCliTokenAsync(cancellationToken).ConfigureAwait(false);
+            var token = await TryFetchAzureCliTokenAsync(cancellationToken).ConfigureAwait(false);
+            if (token is not null)
+                return token;
+
+            // Not signed in — open exactly one az login browser window.
+            await LaunchAzLoginAsync(cancellationToken).ConfigureAwait(false);
+            return await TryFetchAzureCliTokenAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _authSemaphore.Release();
+        }
     }
 
     private async Task<string?> TryFetchAzureCliTokenAsync(CancellationToken cancellationToken)
@@ -436,20 +450,6 @@ public sealed class AzureDevOpsService
         catch (OperationCanceledException)
         {
             return null;
-        }
-    }
-
-    private Task RunAzLoginAsync(CancellationToken cancellationToken)
-    {
-        lock (_loginLock)
-        {
-            // If a sign-in is already in progress, return the same task so all callers wait
-            // on a single browser window instead of spawning multiple az login processes.
-            if (_loginInProgressTask is { IsCompleted: false })
-                return _loginInProgressTask;
-
-            _loginInProgressTask = LaunchAzLoginAsync(cancellationToken);
-            return _loginInProgressTask;
         }
     }
 
