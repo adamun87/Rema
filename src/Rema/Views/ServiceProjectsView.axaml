@@ -1,0 +1,263 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Rema.ViewModels"
+             xmlns:loc="using:Rema.Localization"
+             x:Class="Rema.Views.ServiceProjectsView"
+             x:DataType="vm:ServiceProjectsViewModel">
+
+  <UserControl.Styles>
+    <!-- Fade-in when visible (matches Lumi motion-surface) -->
+    <Style Selector="ScrollViewer.motion-surface, StackPanel.motion-surface">
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.18" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="ScrollViewer.motion-surface[IsVisible=true], StackPanel.motion-surface[IsVisible=true]">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+
+    <!-- Button transition animations -->
+    <Style Selector="Button.motion-action">
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.12" />
+          <BrushTransition Property="Background" Duration="0:0:0.12" />
+        </Transitions>
+      </Setter>
+    </Style>
+
+    <!-- List row hover -->
+    <Style Selector="Button.motion-list-row">
+      <Setter Property="Opacity" Value="0.95" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.12" />
+          <BrushTransition Property="Background" Duration="0:0:0.12" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Button.motion-list-row:pointerover">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+
+    <!-- Field label (Lumi pattern) -->
+    <Style Selector="TextBlock.field-label">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}" />
+      <Setter Property="Margin" Value="0,0,0,4" />
+    </Style>
+
+    <!-- Section label -->
+    <Style Selector="TextBlock.section-label">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.TextTertiary}" />
+      <Setter Property="Margin" Value="0,0,0,6" />
+      <Setter Property="LetterSpacing" Value="0.5" />
+    </Style>
+  </UserControl.Styles>
+
+  <Panel>
+
+    <!-- ═══ Editor form ═══ -->
+    <ScrollViewer Classes="motion-surface"
+                  IsVisible="{Binding IsEditing}"
+                  HorizontalScrollBarVisibility="Disabled"
+                  VerticalScrollBarVisibility="Auto">
+      <StackPanel Spacing="0" Margin="24,20,24,28">
+
+        <!-- Header + actions row -->
+        <DockPanel Margin="0,0,0,16">
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+            <Button Classes="accent motion-action" Content="{loc:Str Projects_Save}" Padding="18,7" MinHeight="0"
+                    Command="{Binding SaveProjectCommand}" />
+            <Button Classes="subtle motion-action" Content="{loc:Str Projects_Cancel}" Padding="18,7" MinHeight="0"
+                    Command="{Binding CancelEditCommand}" />
+            <Button Classes="subtle motion-action" Content="🗑" Padding="10,7" MinHeight="0"
+                    Command="{Binding DeleteProjectCommand}"
+                    IsVisible="{Binding SelectedProject, Converter={x:Static ObjectConverters.IsNotNull}}"
+                    ToolTip.Tip="{loc:Str Projects_Delete}" />
+          </StackPanel>
+          <TextBlock Text="{loc:Str Projects_Title}" FontSize="18" FontWeight="SemiBold"
+                     Foreground="{DynamicResource Brush.TextPrimary}" VerticalAlignment="Center" />
+        </DockPanel>
+
+        <!-- ── Identity ── -->
+        <TextBlock Text="IDENTITY" Classes="section-label" />
+
+        <!-- Project Name -->
+        <TextBlock Text="{loc:Str Projects_Name}" Classes="field-label" />
+        <TextBox Text="{Binding EditName, Mode=TwoWay}"
+                 PlaceholderText="My Service" Margin="0,0,0,10" />
+
+        <!-- Repo Path -->
+        <TextBlock Text="{loc:Str Projects_RepoPath}" Classes="field-label" />
+        <DockPanel Margin="0,0,0,2">
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4" Margin="8,0,0,0">
+            <Button Classes="subtle motion-action" Padding="8,6" MinHeight="0"
+                    CornerRadius="6"
+                    Command="{Binding BrowseRepoPathCommand}"
+                    ToolTip.Tip="Browse for folder">
+              <TextBlock Text="📂" FontSize="13" />
+            </Button>
+            <Button Classes="subtle motion-action" Padding="8,6" MinHeight="0"
+                    CornerRadius="6"
+                    Command="{Binding DiscoverFromRepoCommand}"
+                    IsEnabled="{Binding !IsDiscovering}"
+                    ToolTip.Tip="Discover project info from repo">
+              <TextBlock Text="🔍" FontSize="13" />
+            </Button>
+          </StackPanel>
+          <TextBox Text="{Binding EditRepoPath, Mode=TwoWay}"
+                   PlaceholderText="C:\Repos\MyService" />
+        </DockPanel>
+
+        <!-- Discovery progress panel -->
+        <Border Margin="0,6,0,6" Padding="10,8" CornerRadius="6"
+                Background="{DynamicResource Brush.Surface1}"
+                IsVisible="{Binding DiscoveryLog.Count}">
+          <StackPanel Spacing="2">
+            <DockPanel Margin="0,0,0,4">
+              <TextBlock DockPanel.Dock="Left" Text="Discovery Log" FontSize="11" FontWeight="SemiBold"
+                         Foreground="{DynamicResource Brush.TextTertiary}" />
+              <Border DockPanel.Dock="Right" IsVisible="{Binding IsDiscovering}"
+                      Width="12" Height="12" CornerRadius="6"
+                      Background="{DynamicResource Brush.AccentDefault}">
+                <Border.Styles>
+                  <Style Selector="Border">
+                    <Style.Animations>
+                      <Animation Duration="0:0:0.8" IterationCount="INFINITE" PlaybackDirection="Alternate">
+                        <KeyFrame Cue="0%"><Setter Property="Opacity" Value="1.0"/></KeyFrame>
+                        <KeyFrame Cue="100%"><Setter Property="Opacity" Value="0.3"/></KeyFrame>
+                      </Animation>
+                    </Style.Animations>
+                  </Style>
+                </Border.Styles>
+              </Border>
+            </DockPanel>
+            <ItemsControl ItemsSource="{Binding DiscoveryLog}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding}" FontSize="11"
+                             Foreground="{DynamicResource Brush.TextSecondary}"
+                             TextWrapping="Wrap" Margin="0,1" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+
+        <Separator Margin="0,8,0,16" />
+
+        <!-- ── Azure DevOps ── -->
+        <TextBlock Text="AZURE DEVOPS" Classes="section-label" />
+
+        <!-- ADO Org URL -->
+        <TextBlock Text="{loc:Str Projects_AdoOrg}" Classes="field-label" />
+        <TextBox Text="{Binding EditAdoOrgUrl, Mode=TwoWay}"
+                 PlaceholderText="https://dev.azure.com/myorg" Margin="0,0,0,10" />
+
+        <!-- ADO Project -->
+        <TextBlock Text="{loc:Str Projects_AdoProject}" Classes="field-label" />
+        <TextBox Text="{Binding EditAdoProjectName, Mode=TwoWay}"
+                 PlaceholderText="MyProject" Margin="0,0,0,10" />
+
+        <Separator Margin="0,8,0,16" />
+
+        <!-- ── Kusto ── -->
+        <TextBlock Text="KUSTO" Classes="section-label" />
+
+        <TextBlock Text="Cluster" Classes="field-label" />
+        <TextBox Text="{Binding EditKustoCluster, Mode=TwoWay}"
+                 PlaceholderText="https://mycluster.kusto.windows.net" Margin="0,0,0,10" />
+
+        <TextBlock Text="Database" Classes="field-label" />
+        <TextBox Text="{Binding EditKustoDatabase, Mode=TwoWay}"
+                 PlaceholderText="MyDatabase" Margin="0,0,0,10" />
+
+        <Separator Margin="0,8,0,16" />
+
+        <!-- ── Instructions ── -->
+        <TextBlock Text="CUSTOM INSTRUCTIONS" Classes="section-label" />
+
+        <TextBox Text="{Binding EditInstructions, Mode=TwoWay}" AcceptsReturn="True" TextWrapping="Wrap"
+                 MinHeight="100" MaxHeight="360" VerticalContentAlignment="Top"
+                 PlaceholderText="Additional context or instructions for the AI when working with this project…" />
+
+        <Separator Margin="0,16,0,16" />
+
+        <!-- ── Pipelines ── -->
+        <DockPanel Margin="0,0,0,8">
+          <Button DockPanel.Dock="Right" Classes="subtle" Padding="7,3" MinHeight="0"
+                  CornerRadius="6" Command="{Binding AddPipelineCommand}"
+                  ToolTip.Tip="Add pipeline">
+            <TextBlock Text="+" FontSize="14" FontWeight="Bold" />
+          </Button>
+          <TextBlock Text="PIPELINES" Classes="section-label" VerticalAlignment="Center" />
+        </DockPanel>
+
+        <TextBlock Text="Define the build and release pipelines for this service. Each pipeline can have a display name, ADO link, and description of its purpose."
+                   FontSize="11" Foreground="{DynamicResource Brush.TextTertiary}"
+                   TextWrapping="Wrap" Margin="0,0,0,8"
+                   IsVisible="{Binding !EditPipelines.Count}" />
+
+        <ItemsControl ItemsSource="{Binding EditPipelines}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border Background="{DynamicResource Brush.Surface1}" CornerRadius="8"
+                      Padding="12,10" Margin="0,0,0,8">
+                <StackPanel Spacing="6">
+                  <DockPanel>
+                    <Button DockPanel.Dock="Right" Classes="subtle" Padding="4,2" MinHeight="0"
+                            CornerRadius="4"
+                            Command="{Binding $parent[UserControl].((vm:ServiceProjectsViewModel)DataContext).RemovePipelineCommand}"
+                            CommandParameter="{Binding}"
+                            ToolTip.Tip="Remove">
+                      <TextBlock Text="✕" FontSize="11" Opacity="0.6" />
+                    </Button>
+                    <TextBox Text="{Binding DisplayName, Mode=TwoWay}"
+                             PlaceholderText="Display name (e.g. Buddy Build)"
+                             FontSize="13" />
+                  </DockPanel>
+                  <TextBox Text="{Binding AdoUrl, Mode=TwoWay}"
+                           PlaceholderText="ADO pipeline URL (e.g. https://dev.azure.com/org/project/_build?definitionId=123)"
+                           FontSize="12" />
+                  <Grid ColumnDefinitions="Auto,*">
+                    <ComboBox Grid.Column="0" SelectedItem="{Binding PipelineType}"
+                              Margin="0,0,8,0" MinHeight="0" Padding="8,4" FontSize="12">
+                      <ComboBoxItem Content="yaml" />
+                      <ComboBoxItem Content="classic" />
+                    </ComboBox>
+                    <TextBox Grid.Column="1" Text="{Binding Description, Mode=TwoWay}"
+                             PlaceholderText="Purpose / relationship (e.g. Buddy ARM release + Buddy K8s release)"
+                             FontSize="12" TextWrapping="Wrap" />
+                  </Grid>
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+      </StackPanel>
+    </ScrollViewer>
+
+    <!-- ═══ Empty state ═══ -->
+    <StackPanel Classes="motion-surface"
+                IsVisible="{Binding !IsEditing}"
+                HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
+      <TextBlock Text="📁" FontSize="32" HorizontalAlignment="Center" Opacity="0.4" />
+      <TextBlock Text="{loc:Str Projects_NoProjects}" FontSize="14"
+                 HorizontalAlignment="Center" Opacity="0.4"
+                 Foreground="{DynamicResource Brush.TextSecondary}" />
+      <Button Classes="accent" Command="{Binding NewProjectCommand}"
+              Content="{loc:Str Projects_New}" Padding="18,8"
+              HorizontalAlignment="Center" Margin="0,4,0,0" />
+    </StackPanel>
+
+  </Panel>
+
+</UserControl>

@@ -1,0 +1,102 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Rema.ViewModels"
+             xmlns:loc="using:Rema.Localization"
+             x:Class="Rema.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+
+  <ScrollViewer Padding="32">
+    <StackPanel Spacing="24" MaxWidth="600">
+
+      <TextBlock Text="{loc:Str Settings_Title}"
+                 FontSize="24" FontWeight="Bold"
+                 Foreground="{DynamicResource Brush.TextPrimary}" />
+
+      <!-- General -->
+      <StackPanel Spacing="12">
+        <TextBlock Text="{loc:Str Settings_General}"
+                   FontSize="16" FontWeight="SemiBold"
+                   Foreground="{DynamicResource Brush.TextPrimary}" />
+
+        <StackPanel Spacing="4">
+          <TextBlock Text="{loc:Str Settings_UserName}" FontSize="12"
+                     Foreground="{DynamicResource Brush.TextSecondary}" />
+          <TextBox Text="{Binding UserName, Mode=TwoWay}" />
+        </StackPanel>
+      </StackPanel>
+
+      <!-- Appearance -->
+      <StackPanel Spacing="12">
+        <TextBlock Text="{loc:Str Settings_Appearance}"
+                   FontSize="16" FontWeight="SemiBold"
+                   Foreground="{DynamicResource Brush.TextPrimary}" />
+
+        <CheckBox Content="{loc:Str Settings_DarkMode}"
+                  IsChecked="{Binding IsDarkTheme, Mode=TwoWay}" />
+        <CheckBox Content="{loc:Str Settings_CompactDensity}"
+                  IsChecked="{Binding IsCompactDensity, Mode=TwoWay}" />
+      </StackPanel>
+
+      <!-- AI / Model -->
+      <StackPanel Spacing="12">
+        <TextBlock Text="{loc:Str Settings_Chat}"
+                   FontSize="16" FontWeight="SemiBold"
+                   Foreground="{DynamicResource Brush.TextPrimary}" />
+
+        <CheckBox Content="{loc:Str Settings_SendWithEnter}"
+                  IsChecked="{Binding SendWithEnter, Mode=TwoWay}" />
+        <CheckBox Content="{loc:Str Settings_ShowToolCalls}"
+                  IsChecked="{Binding ShowToolCalls, Mode=TwoWay}" />
+
+        <StackPanel Spacing="4">
+          <TextBlock Text="{loc:Str Settings_Model}" FontSize="12"
+                     Foreground="{DynamicResource Brush.TextSecondary}" />
+          <ComboBox ItemsSource="{Binding AvailableModels}"
+                    SelectedItem="{Binding PreferredModel, Mode=TwoWay}"
+                    HorizontalAlignment="Stretch" />
+        </StackPanel>
+
+        <StackPanel Spacing="4">
+          <TextBlock Text="{loc:Str Settings_ReasoningEffort}" FontSize="12"
+                     Foreground="{DynamicResource Brush.TextSecondary}" />
+          <ComboBox ItemsSource="{Binding AvailableReasoningEfforts}"
+                    SelectedItem="{Binding ReasoningEffort, Mode=TwoWay}"
+                    HorizontalAlignment="Stretch" />
+        </StackPanel>
+      </StackPanel>
+
+      <!-- Polling -->
+      <StackPanel Spacing="12">
+        <TextBlock Text="{loc:Str Settings_Polling}"
+                   FontSize="16" FontWeight="SemiBold"
+                   Foreground="{DynamicResource Brush.TextPrimary}" />
+
+        <CheckBox Content="{loc:Str Settings_PollingEnabled}"
+                  IsChecked="{Binding IsPollingEnabled, Mode=TwoWay}" />
+
+        <StackPanel Spacing="4" IsEnabled="{Binding IsPollingEnabled}">
+          <TextBlock FontSize="12"
+                     Foreground="{DynamicResource Brush.TextSecondary}">
+            <Run Text="{loc:Str Settings_PollingInterval}" />
+            <Run Text=": " />
+            <Run Text="{Binding PollingIntervalSeconds}" />
+          </TextBlock>
+          <Slider Minimum="30" Maximum="300" Value="{Binding PollingIntervalSeconds, Mode=TwoWay}"
+                  TickFrequency="30" IsSnapToTickEnabled="True" />
+        </StackPanel>
+      </StackPanel>
+
+      <!-- Notifications -->
+      <StackPanel Spacing="12">
+        <TextBlock Text="{loc:Str Settings_Notifications}"
+                   FontSize="16" FontWeight="SemiBold"
+                   Foreground="{DynamicResource Brush.TextPrimary}" />
+
+        <CheckBox Content="{loc:Str Settings_NotificationsEnabled}"
+                  IsChecked="{Binding NotificationsEnabled, Mode=TwoWay}" />
+      </StackPanel>
+
+    </StackPanel>
+  </ScrollViewer>
+
+</UserControl>

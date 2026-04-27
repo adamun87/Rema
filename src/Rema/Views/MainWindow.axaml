@@ -1,0 +1,269 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Rema.ViewModels"
+        xmlns:models="using:Rema.Models"
+        xmlns:views="using:Rema.Views"
+        xmlns:loc="using:Rema.Localization"
+        x:Class="Rema.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Title="Rema"
+        MinWidth="800" MinHeight="560"
+        WindowStartupLocation="Manual"
+        UseLayoutRounding="True"
+        Background="{DynamicResource Brush.Surface0}">
+
+  <Grid ColumnDefinitions="220,*">
+
+    <!-- ═══ Sidebar (matches Lumi layout: top section content + bottom nav pill) ═══ -->
+    <Border Grid.Column="0"
+            Background="{DynamicResource Brush.Surface0}"
+            BorderBrush="{DynamicResource Brush.BorderSubtle}"
+            BorderThickness="0,0,1,0"
+            ClipToBounds="True">
+      <DockPanel>
+
+        <!-- ── Top: App title + connection status ── -->
+        <StackPanel DockPanel.Dock="Top" Margin="16,16,16,4">
+          <TextBlock Text="Rema" FontSize="20" FontWeight="Bold"
+                     Foreground="{DynamicResource Brush.TextPrimary}" />
+          <TextBlock Text="{Binding ConnectionStatus}"
+                     FontSize="11" Opacity="0.6"
+                     Foreground="{DynamicResource Brush.TextSecondary}"
+                     Margin="0,2,0,0" />
+        </StackPanel>
+
+        <!-- ── Bottom: Nav pill (horizontal, Lumi-style) ── -->
+        <Border DockPanel.Dock="Bottom" Margin="14,4,14,12" ClipToBounds="False">
+          <Border Classes="nav-pill"
+                  BorderBrush="{DynamicResource Brush.BorderSubtle}"
+                  Background="{DynamicResource Brush.Surface1}"
+                  ClipToBounds="False">
+            <StackPanel x:Name="NavRow" Orientation="Horizontal" Spacing="3" HorizontalAlignment="Center">
+              <Button x:Name="NavBtn0" Classes="nav-icon active" Click="NavButton_Click" Tag="0"
+                      ToolTip.Tip="{loc:Str Nav_Dashboard}">
+                <TextBlock Text="📊" FontSize="14" VerticalAlignment="Center" />
+              </Button>
+              <Button x:Name="NavBtn1" Classes="nav-icon" Click="NavButton_Click" Tag="1"
+                      ToolTip.Tip="{loc:Str Nav_ShiftManagement}">
+                <TextBlock Text="🔄" FontSize="14" VerticalAlignment="Center" />
+              </Button>
+              <Button x:Name="NavBtn2" Classes="nav-icon" Click="NavButton_Click" Tag="2"
+                      ToolTip.Tip="{loc:Str Nav_Chat}">
+                <TextBlock Text="💬" FontSize="14" VerticalAlignment="Center" />
+              </Button>
+              <Button x:Name="NavBtn3" Classes="nav-icon" Click="NavButton_Click" Tag="3"
+                      ToolTip.Tip="{loc:Str Nav_ServiceProjects}">
+                <TextBlock Text="📁" FontSize="14" VerticalAlignment="Center" />
+              </Button>
+              <Button x:Name="NavBtn4" Classes="nav-icon" Click="NavButton_Click" Tag="4"
+                      ToolTip.Tip="{loc:Str Nav_Settings}">
+                <TextBlock Text="⚙️" FontSize="14" VerticalAlignment="Center" />
+              </Button>
+            </StackPanel>
+          </Border>
+        </Border>
+
+        <!-- ── Middle: Section-specific sidebar content ── -->
+        <Panel>
+          <!-- Sidebar: Dashboard (0) -->
+          <Panel x:Name="Sidebar0">
+            <TextBlock Text="{loc:Str Nav_Dashboard}" FontSize="13" FontWeight="SemiBold"
+                       Foreground="{DynamicResource Brush.TextSecondary}"
+                       Margin="20,12,16,0" />
+          </Panel>
+
+          <!-- Sidebar: Shifts (1) -->
+          <Panel x:Name="Sidebar1" IsVisible="False" DataContext="{Binding ShiftsVM}">
+            <DockPanel>
+              <TextBlock DockPanel.Dock="Top"
+                         Text="{loc:Str Nav_ShiftManagement}" FontSize="13" FontWeight="SemiBold"
+                         Foreground="{DynamicResource Brush.TextSecondary}"
+                         Margin="20,12,16,6" />
+              <!-- Active shift summary chip -->
+              <Border DockPanel.Dock="Top"
+                      IsVisible="{Binding HasActiveShift}"
+                      Background="{DynamicResource Brush.SurfaceVariant}"
+                      CornerRadius="8" Padding="12,8" Margin="12,0,12,4">
+                <StackPanel Spacing="2">
+                  <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock Text="▶" Foreground="{DynamicResource Brush.Accent}" FontSize="11" />
+                    <TextBlock Text="{Binding ActiveShift.Name}"
+                               FontSize="12" FontWeight="Medium"
+                               TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource Brush.TextPrimary}" />
+                  </StackPanel>
+                  <TextBlock FontSize="11" Foreground="{DynamicResource Brush.TextTertiary}">
+                    <Run Text="{Binding ActiveTrackedItems.Count}" />
+                    <Run Text=" tracked" />
+                  </TextBlock>
+                </StackPanel>
+              </Border>
+              <!-- Shift history list -->
+              <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="8,4,8,8">
+                <StackPanel Spacing="1">
+                  <TextBlock Text="{loc:Str Shift_History}" FontSize="11" FontWeight="SemiBold"
+                             Foreground="{DynamicResource Brush.TextTertiary}"
+                             Margin="6,4,6,4"
+                             IsVisible="{Binding HasShiftHistory}" />
+                  <ItemsControl ItemsSource="{Binding ShiftHistory}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="models:Shift">
+                        <Border Background="Transparent" CornerRadius="6" Padding="10,6" Margin="0,1">
+                          <StackPanel Spacing="1">
+                            <TextBlock Text="{Binding Name}" FontSize="12"
+                                       Foreground="{DynamicResource Brush.TextSecondary}"
+                                       TextTrimming="CharacterEllipsis" />
+                            <TextBlock FontSize="10" Foreground="{DynamicResource Brush.TextTertiary}">
+                              <Run Text="{Binding StartedAt, StringFormat='{}{0:MMM d}'}" />
+                            </TextBlock>
+                          </StackPanel>
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+              </ScrollViewer>
+            </DockPanel>
+          </Panel>
+
+          <!-- Sidebar: Chat (2) -->
+          <Panel x:Name="Sidebar2" IsVisible="False">
+            <TextBlock Text="{loc:Str Nav_Chat}" FontSize="13" FontWeight="SemiBold"
+                       Foreground="{DynamicResource Brush.TextSecondary}"
+                       Margin="20,12,16,0" />
+          </Panel>
+
+          <!-- Sidebar: Projects (3) — shows project list like Lumi -->
+          <Panel x:Name="Sidebar3" IsVisible="False" DataContext="{Binding ServiceProjectsVM}">
+            <DockPanel>
+              <DockPanel DockPanel.Dock="Top" Margin="16,8,16,0">
+                <Button DockPanel.Dock="Right" Classes="subtle" Padding="7,5" MinHeight="0"
+                        CornerRadius="6"
+                        Command="{Binding NewProjectCommand}"
+                        ToolTip.Tip="{loc:Str Projects_New}">
+                  <TextBlock Text="+" FontSize="16" FontWeight="Bold" />
+                </Button>
+                <TextBlock Text="{loc:Str Nav_ServiceProjects}" FontSize="13" FontWeight="SemiBold"
+                           Foreground="{DynamicResource Brush.TextSecondary}"
+                           VerticalAlignment="Center" Margin="6,0,0,0" />
+              </DockPanel>
+              <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="8,8,8,8">
+                <ItemsControl ItemsSource="{Binding Projects}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Button Classes="subtle" HorizontalAlignment="Stretch"
+                              HorizontalContentAlignment="Left"
+                              Padding="10,8" MinHeight="0" Margin="0,1"
+                              CornerRadius="6"
+                              Command="{Binding $parent[Panel].((vm:ServiceProjectsViewModel)DataContext).EditProjectCommand}"
+                              CommandParameter="{Binding}">
+                        <StackPanel Spacing="1">
+                          <TextBlock Text="{Binding Name}" FontSize="13"
+                                     Foreground="{DynamicResource Brush.TextPrimary}"
+                                     TextTrimming="CharacterEllipsis" />
+                          <TextBlock Text="{Binding AdoProjectName}" FontSize="11"
+                                     Foreground="{DynamicResource Brush.TextTertiary}"
+                                     TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+            </DockPanel>
+          </Panel>
+
+          <!-- Sidebar: Settings (4) -->
+          <Panel x:Name="Sidebar4" IsVisible="False">
+            <TextBlock Text="{loc:Str Nav_Settings}" FontSize="13" FontWeight="SemiBold"
+                       Foreground="{DynamicResource Brush.TextSecondary}"
+                       Margin="20,12,16,0" />
+          </Panel>
+        </Panel>
+
+      </DockPanel>
+    </Border>
+
+    <!-- ═══ Main Content ═══ -->
+    <Grid Grid.Column="1">
+
+      <!-- Onboarding overlay -->
+      <views:OnboardingView x:Name="OnboardingPanel" DataContext="{Binding OnboardingVM}"
+                            ZIndex="100" />
+
+      <!-- Dashboard (index 0) -->
+      <Panel x:Name="Page0">
+        <TextBlock Text="{loc:Str Dashboard_Title}" FontSize="24" FontWeight="Bold"
+                   Margin="32,32" VerticalAlignment="Top"
+                   Foreground="{DynamicResource Brush.TextPrimary}" />
+        <TextBlock Text="{loc:Str Dashboard_NoItems}" Opacity="0.5"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                   Foreground="{DynamicResource Brush.TextSecondary}" />
+      </Panel>
+
+      <!-- Shift Management (index 1) -->
+      <Panel x:Name="Page1" IsVisible="False">
+        <views:ShiftsView DataContext="{Binding ShiftsVM}" />
+      </Panel>
+
+      <!-- Chat (index 2) -->
+      <Panel x:Name="Page2" IsVisible="False">
+        <views:ChatView DataContext="{Binding ChatVM}" />
+      </Panel>
+
+      <!-- Service Projects (index 3) — detail/editor only (list is in sidebar) -->
+      <Panel x:Name="Page3" IsVisible="False">
+        <views:ServiceProjectsView DataContext="{Binding ServiceProjectsVM}" />
+      </Panel>
+
+      <!-- Settings (index 4) -->
+      <Panel x:Name="Page4" IsVisible="False">
+        <views:SettingsView DataContext="{Binding SettingsVM}" />
+      </Panel>
+
+    </Grid>
+  </Grid>
+
+  <Window.Styles>
+    <!-- Nav pill — horizontal bar at bottom of sidebar -->
+    <Style Selector="Border.nav-pill">
+      <Setter Property="CornerRadius" Value="18" />
+      <Setter Property="Padding" Value="5" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BoxShadow" Value="0 1 6 0 #16000000" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <BoxShadowsTransition Property="BoxShadow" Duration="0:0:0.25" Easing="CubicEaseOut" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Border.nav-pill:pointerover">
+      <Setter Property="BoxShadow" Value="0 4 16 0 #28000000" />
+    </Style>
+
+    <!-- Nav icon buttons inside pill -->
+    <Style Selector="Button.nav-icon">
+      <Setter Property="Padding" Value="8,4" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Height" Value="28" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.nav-icon:pointerover">
+      <Setter Property="Background" Value="{DynamicResource Brush.Surface2}" />
+    </Style>
+    <Style Selector="Button.nav-icon:pressed">
+      <Setter Property="Opacity" Value="0.7" />
+    </Style>
+    <Style Selector="Button.nav-icon.active">
+      <Setter Property="Background" Value="{DynamicResource Brush.Surface2}" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+    </Style>
+  </Window.Styles>
+
+</Window>
