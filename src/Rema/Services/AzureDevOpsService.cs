@@ -276,33 +276,65 @@ public sealed class AzureDevOpsService
 
     private async Task<JsonDocument> GetJsonAsync(string url, CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        await ApplyAuthorizationAsync(request, cancellationToken).ConfigureAwait(false);
-
-        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
-
-        // On auth failure, invalidate cached token so the next call triggers re-login.
-        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+        for (var attempt = 0; attempt < 2; attempt++)
         {
-            _cachedBearerToken = null;
-            _cachedBearerTokenExpiresAt = default;
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            await ApplyAuthorizationAsync(request, cancellationToken).ConfigureAwait(false);
+
+            using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+
+            // On explicit auth failure, invalidate token and re-login.
+            if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            {
+                _cachedBearerToken = null;
+                _cachedBearerTokenExpiresAt = default;
+                if (attempt == 0)
+                {
+                    await RunAzLoginAsync(cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+                throw new InvalidOperationException($"Azure DevOps request failed ({(int)response.StatusCode} {response.ReasonPhrase}): authentication failed after re-login attempt.");
+            }
+
+            if (!response.IsSuccessStatusCode)
+                throw new InvalidOperationException($"Azure DevOps request failed ({(int)response.StatusCode} {response.ReasonPhrase}): {FormatHttpErrorBody(body)}");
+
+            // ADO sometimes returns 200 OK with an HTML sign-in page when the token is invalid.
+            if (IsSignInPage(body))
+            {
+                if (attempt == 0)
+                {
+                    _cachedBearerToken = null;
+                    _cachedBearerTokenExpiresAt = default;
+                    await RunAzLoginAsync(cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+                throw new InvalidOperationException("Azure DevOps sign-in required. Sign in completed but ADO still returned a sign-in page — check that 'az login' used the correct account and has access to this organization.");
+            }
+
+            try
+            {
+                return JsonDocument.Parse(body);
+            }
+            catch (JsonException ex)
+            {
+                throw new InvalidOperationException($"Azure DevOps returned a non-JSON response: {FormatHttpErrorBody(body)}", ex);
+            }
         }
 
-        var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode)
-        {
-            var message = FormatHttpErrorBody(body);
-            throw new InvalidOperationException($"Azure DevOps request failed ({(int)response.StatusCode} {response.ReasonPhrase}): {message}");
-        }
+        throw new InvalidOperationException("Azure DevOps authentication failed after re-login attempt.");
+    }
 
-        try
-        {
-            return JsonDocument.Parse(body);
-        }
-        catch (JsonException ex)
-        {
-            throw new InvalidOperationException($"Azure DevOps returned a non-JSON response: {FormatHttpErrorBody(body)}", ex);
-        }
+    private static bool IsSignInPage(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body)) return false;
+        var trimmed = body.TrimStart();
+        if (!trimmed.StartsWith('<')) return false;
+        return body.Contains("</html>", StringComparison.OrdinalIgnoreCase)
+            && (body.Contains("Sign in", StringComparison.OrdinalIgnoreCase)
+                || body.Contains("login.microsoftonline", StringComparison.OrdinalIgnoreCase)
+                || body.Contains("aadcdn.msftauth", StringComparison.OrdinalIgnoreCase));
     }
 
     private async Task ApplyAuthorizationAsync(HttpRequestMessage request, CancellationToken cancellationToken)
