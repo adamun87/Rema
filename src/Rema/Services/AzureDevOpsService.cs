@@ -445,8 +445,7 @@ public sealed class AzureDevOpsService
             {
                 FileName = "az",
                 Arguments = "login",
-                UseShellExecute = false,
-                CreateNoWindow = false,
+                UseShellExecute = true, // Required for browser-based sign-in on Windows (az is az.cmd)
             }
         };
 

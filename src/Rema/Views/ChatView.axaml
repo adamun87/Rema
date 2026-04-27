@@ -29,7 +29,7 @@
 
     <!-- ═══ User Message ═══ -->
     <DataTemplate DataType="vm:UserMessageItem">
-      <sc:StrataChatMessage Role="User" HorizontalAlignment="Right"
+      <sc:StrataChatMessage Role="User" HorizontalAlignment="Right" MaxWidth="560"
                             Author="{Binding Author}"
                             Timestamp="{Binding TimestampText}">
         <sc:StrataChatMessage.Content>
@@ -40,7 +40,7 @@
 
     <!-- ═══ Assistant Message ═══ -->
     <DataTemplate DataType="vm:AssistantMessageItem">
-      <sc:StrataChatMessage Role="Assistant" HorizontalAlignment="Left"
+      <sc:StrataChatMessage Role="Assistant" HorizontalAlignment="Left" MaxWidth="760"
                             IsStreaming="{Binding IsStreaming}"
                             Author="{Binding Author}"
                             Timestamp="{Binding TimestampText}">
