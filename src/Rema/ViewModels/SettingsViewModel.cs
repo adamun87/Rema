@@ -16,6 +16,7 @@ public partial class SettingsViewModel : ObservableObject
 {
     private readonly DataStore _dataStore;
     private readonly CopilotService _copilotService;
+    private bool _isRefreshingSettingsFromStore;
 
     [ObservableProperty] private string? _userName;
     [ObservableProperty] private bool _isDarkTheme;
@@ -28,10 +29,14 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private string _preferredModel = "";
     [ObservableProperty] private string _reasoningEffort = "";
     [ObservableProperty] private string _exportStatus = "";
+    [ObservableProperty] private string _importStatus = "";
+    [ObservableProperty] private bool _isImportingConfiguration;
     [ObservableProperty] private bool _isLoadingModels;
     [ObservableProperty] private string _modelLoadStatus = "";
 
     public event Action? ExportConfigurationRequested;
+    public event Action? ImportConfigurationRequested;
+    public event Action? ConfigurationImported;
 
     public ObservableCollection<string> AvailableModels { get; } = [];
 
@@ -57,16 +62,16 @@ public partial class SettingsViewModel : ObservableObject
         SeedAvailableModels();
     }
 
-    partial void OnUserNameChanged(string? value) { _dataStore.Data.Settings.UserName = value; _ = _dataStore.SaveAsync(); }
-    partial void OnIsDarkThemeChanged(bool value) { _dataStore.Data.Settings.IsDarkTheme = value; _ = _dataStore.SaveAsync(); }
-    partial void OnIsCompactDensityChanged(bool value) { _dataStore.Data.Settings.IsCompactDensity = value; _ = _dataStore.SaveAsync(); }
-    partial void OnSendWithEnterChanged(bool value) { _dataStore.Data.Settings.SendWithEnter = value; _ = _dataStore.SaveAsync(); }
-    partial void OnShowToolCallsChanged(bool value) { _dataStore.Data.Settings.ShowToolCalls = value; _ = _dataStore.SaveAsync(); }
-    partial void OnIsPollingEnabledChanged(bool value) { _dataStore.Data.Settings.IsPollingEnabled = value; _ = _dataStore.SaveAsync(); }
-    partial void OnPollingIntervalSecondsChanged(int value) { _dataStore.Data.Settings.PollingIntervalSeconds = value; _ = _dataStore.SaveAsync(); }
-    partial void OnNotificationsEnabledChanged(bool value) { _dataStore.Data.Settings.NotificationsEnabled = value; _ = _dataStore.SaveAsync(); }
-    partial void OnPreferredModelChanged(string value) { _dataStore.Data.Settings.PreferredModel = value; _ = _dataStore.SaveAsync(); }
-    partial void OnReasoningEffortChanged(string value) { _dataStore.Data.Settings.ReasoningEffort = value; _ = _dataStore.SaveAsync(); }
+    partial void OnUserNameChanged(string? value) => SaveSetting(s => s.UserName = value);
+    partial void OnIsDarkThemeChanged(bool value) => SaveSetting(s => s.IsDarkTheme = value);
+    partial void OnIsCompactDensityChanged(bool value) => SaveSetting(s => s.IsCompactDensity = value);
+    partial void OnSendWithEnterChanged(bool value) => SaveSetting(s => s.SendWithEnter = value);
+    partial void OnShowToolCallsChanged(bool value) => SaveSetting(s => s.ShowToolCalls = value);
+    partial void OnIsPollingEnabledChanged(bool value) => SaveSetting(s => s.IsPollingEnabled = value);
+    partial void OnPollingIntervalSecondsChanged(int value) => SaveSetting(s => s.PollingIntervalSeconds = value);
+    partial void OnNotificationsEnabledChanged(bool value) => SaveSetting(s => s.NotificationsEnabled = value);
+    partial void OnPreferredModelChanged(string value) => SaveSetting(s => s.PreferredModel = value);
+    partial void OnReasoningEffortChanged(string value) => SaveSetting(s => s.ReasoningEffort = value);
 
     [RelayCommand]
     public async Task RefreshAvailableModelsAsync()
@@ -104,6 +109,12 @@ public partial class SettingsViewModel : ObservableObject
         ExportConfigurationRequested?.Invoke();
     }
 
+    [RelayCommand]
+    private void ImportConfiguration()
+    {
+        ImportConfigurationRequested?.Invoke();
+    }
+
     public async Task ExportConfigurationAsync(string path)
     {
         var export = new RemaConfigurationExport
@@ -126,9 +137,58 @@ public partial class SettingsViewModel : ObservableObject
         await JsonSerializer.SerializeAsync(
             stream,
             export,
-            AppDataJsonContext.Default.RemaConfigurationExport).ConfigureAwait(false);
+            AppDataJsonContext.Default.RemaConfigurationExport);
 
         ExportStatus = $"Exported configuration to {path}";
+    }
+
+    public async Task ImportConfigurationAsync(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            ImportStatus = "Choose a Rema configuration file to import.";
+            return;
+        }
+
+        try
+        {
+            IsImportingConfiguration = true;
+            ImportStatus = "Importing configuration…";
+            ExportStatus = "";
+
+            await using var stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                81920,
+                FileOptions.Asynchronous);
+
+            var import = await JsonSerializer.DeserializeAsync(
+                stream,
+                AppDataJsonContext.Default.RemaConfigurationExport);
+
+            if (import is null)
+                throw new InvalidDataException("The selected file is not a valid Rema configuration export.");
+
+            var result = ConfigurationImportService.ImportInto(_dataStore.Data, import);
+            await _dataStore.SaveAsync();
+            RefreshSettingsFromDataStore();
+            ConfigurationImported?.Invoke();
+            ImportStatus = result.ToStatusMessage();
+        }
+        catch (JsonException ex)
+        {
+            ImportStatus = $"Import failed: the selected file is not valid Rema configuration JSON. {ex.Message}";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or NotSupportedException)
+        {
+            ImportStatus = $"Import failed: {ex.Message}";
+        }
+        finally
+        {
+            IsImportingConfiguration = false;
+        }
     }
 
     private void SeedAvailableModels()
@@ -165,5 +225,39 @@ public partial class SettingsViewModel : ObservableObject
         AvailableModels.Clear();
         foreach (var model in ordered)
             AvailableModels.Add(model);
+    }
+
+    private void RefreshSettingsFromDataStore()
+    {
+        var s = _dataStore.Data.Settings;
+
+        try
+        {
+            _isRefreshingSettingsFromStore = true;
+            UserName = s.UserName;
+            IsDarkTheme = s.IsDarkTheme;
+            IsCompactDensity = s.IsCompactDensity;
+            SendWithEnter = s.SendWithEnter;
+            ShowToolCalls = s.ShowToolCalls;
+            IsPollingEnabled = s.IsPollingEnabled;
+            PollingIntervalSeconds = s.PollingIntervalSeconds;
+            NotificationsEnabled = s.NotificationsEnabled;
+            PreferredModel = s.PreferredModel;
+            ReasoningEffort = s.ReasoningEffort;
+            ApplyAvailableModels(AvailableModels.ToList());
+        }
+        finally
+        {
+            _isRefreshingSettingsFromStore = false;
+        }
+    }
+
+    private void SaveSetting(Action<RemaSettings> apply)
+    {
+        if (_isRefreshingSettingsFromStore)
+            return;
+
+        apply(_dataStore.Data.Settings);
+        _ = _dataStore.SaveAsync();
     }
 }

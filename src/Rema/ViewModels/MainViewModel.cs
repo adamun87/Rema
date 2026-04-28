@@ -77,6 +77,7 @@ public partial class MainViewModel : ObservableObject
             if (e.PropertyName == nameof(SettingsViewModel.IsDarkTheme))
                 IsDarkTheme = SettingsVM.IsDarkTheme;
         };
+        SettingsVM.ConfigurationImported += RefreshImportedConfigurationViews;
 
         _copilotService.Reconnected += () =>
         {
@@ -94,6 +95,17 @@ public partial class MainViewModel : ObservableObject
                 ConnectionStatus = "Reconnecting…";
             });
         };
+    }
+
+    private void RefreshImportedConfigurationViews()
+    {
+        ServiceProjectsVM.Refresh();
+        ShiftsVM.Refresh();
+        MemoriesVM.Refresh();
+        SkillsVM.Refresh();
+        McpServersVM.Refresh();
+        ToolsVM.Refresh();
+        AgentsVM.Refresh();
     }
 
     public async Task InitializeAsync()

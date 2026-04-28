@@ -58,10 +58,10 @@ public partial class ServiceProjectsViewModel : ObservableObject
         _dataStore = dataStore;
         _copilotService = copilotService;
         _deploymentVersionDiscoveryService = new DeploymentVersionDiscoveryService(azureDevOpsService);
-        RefreshList();
+        Refresh();
     }
 
-    private void RefreshList()
+    public void Refresh()
     {
         Projects.Clear();
         foreach (var p in _dataStore.Data.ServiceProjects.OrderBy(p => p.Name))
@@ -720,7 +720,7 @@ public partial class ServiceProjectsViewModel : ObservableObject
         ApplyFieldsToProject(project);
         SavePipelines(project);
         _ = _dataStore.SaveAsync();
-        RefreshList();
+        Refresh();
         SelectedProject = Projects.FirstOrDefault(p => p.Id == project.Id);
 
         // Auto-discover on first save with a valid repo path
@@ -759,7 +759,7 @@ public partial class ServiceProjectsViewModel : ObservableObject
         _ = _dataStore.SaveAsync();
         SelectedProject = null;
         IsEditing = false;
-        RefreshList();
+        Refresh();
     }
 
     // ── Pipeline Management ──

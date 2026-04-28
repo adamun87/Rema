@@ -22,6 +22,133 @@ public sealed class RemaServicesTests
     }
 
     [Fact]
+    public void ConfigurationImport_MergesExportAndPreservesLocalIdentity()
+    {
+        var existingPipelineId = Guid.NewGuid();
+        var target = new RemaAppData
+        {
+            Settings = new RemaSettings
+            {
+                UserName = "Local User",
+                IsOnboarded = true,
+                PreferredModel = "claude-sonnet-4",
+                WindowWidth = 1200,
+            },
+        };
+        target.ServiceProjects.Add(new ServiceProject
+        {
+            Name = "Payments",
+            RepoPath = "C:\\Repos\\Payments",
+            AdoOrgUrl = "https://dev.azure.com/example",
+            AdoProjectName = "Demo",
+            PipelineConfigs =
+            [
+                new PipelineConfig
+                {
+                    Id = existingPipelineId,
+                    AdoPipelineId = 42,
+                    DisplayName = "Release",
+                    Name = "Release",
+                }
+            ],
+        });
+        target.Memories.Add(new Memory
+        {
+            Key = "timezone",
+            Category = "Profile",
+            Content = "UTC",
+        });
+
+        var import = new RemaConfigurationExport
+        {
+            Settings = new RemaSettings
+            {
+                UserName = "Exporting User",
+                IsOnboarded = false,
+                PreferredModel = "gpt-5.4",
+                WindowWidth = 600,
+            },
+            ServiceProjects =
+            [
+                new ServiceProject
+                {
+                    Name = "Payments",
+                    RepoPath = "D:\\OtherUser\\Payments",
+                    AdoOrgUrl = "https://dev.azure.com/example",
+                    AdoProjectName = "Demo",
+                    KustoDatabase = "AppTelemetry",
+                    PipelineConfigs =
+                    [
+                        new PipelineConfig
+                        {
+                            AdoPipelineId = 42,
+                            DisplayName = "Release",
+                            Name = "Release",
+                            DeploymentStages = ["PPE", "Prod"],
+                        }
+                    ],
+                },
+                new ServiceProject
+                {
+                    Name = "Billing",
+                    AdoOrgUrl = "https://dev.azure.com/example",
+                    AdoProjectName = "Demo",
+                }
+            ],
+            Capabilities =
+            [
+                new CapabilityDefinition
+                {
+                    Kind = "Skill",
+                    Name = "Deployment Checklist",
+                    Description = "Shared checklist",
+                    Source = "imported",
+                    IsEnabled = true,
+                }
+            ],
+            ScriptTemplates =
+            [
+                new ScriptTemplate
+                {
+                    Name = "Collect Logs",
+                    ScriptType = "PowerShell",
+                    Content = "Get-ChildItem",
+                }
+            ],
+            Memories =
+            [
+                new Memory
+                {
+                    Key = "timezone",
+                    Category = "Profile",
+                    Content = "Israel Standard Time",
+                    Source = "imported",
+                }
+            ],
+        };
+
+        var result = ConfigurationImportService.ImportInto(target, import);
+
+        Assert.True(result.SettingsUpdated);
+        Assert.Equal(1, result.ServiceProjectsAdded);
+        Assert.Equal(1, result.ServiceProjectsUpdated);
+        Assert.Equal("Local User", target.Settings.UserName);
+        Assert.True(target.Settings.IsOnboarded);
+        Assert.Equal(1200, target.Settings.WindowWidth);
+        Assert.Equal("gpt-5.4", target.Settings.PreferredModel);
+        Assert.Equal(2, target.ServiceProjects.Count);
+        var payments = Assert.Single(target.ServiceProjects, project => project.Name == "Payments");
+        Assert.Equal("C:\\Repos\\Payments", payments.RepoPath);
+        Assert.Equal("AppTelemetry", payments.KustoDatabase);
+        var pipeline = Assert.Single(payments.PipelineConfigs);
+        Assert.Equal(existingPipelineId, pipeline.Id);
+        Assert.Equal(["PPE", "Prod"], pipeline.DeploymentStages);
+        Assert.Contains(target.Capabilities, capability => capability.Kind == "Skill" && capability.Name == "Deployment Checklist");
+        Assert.Contains(target.ScriptTemplates, template => template.Name == "Collect Logs");
+        Assert.Equal("Israel Standard Time", Assert.Single(target.Memories).Content);
+    }
+
+    [Fact]
     public void PipelineDefinitionIdResolver_NormalizesDefinitionIdsFromAdoUrls()
     {
         var project = new ServiceProject { Name = "Sherlock", AdoOrgUrl = "https://dev.azure.com/msazure", AdoProjectName = "One" };

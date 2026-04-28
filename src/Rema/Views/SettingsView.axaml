@@ -25,7 +25,7 @@
         </StackPanel>
       </StackPanel>
 
-      <!-- Configuration export — placed near top so it's visible without scrolling -->
+      <!-- Configuration transfer — placed near top so it's visible without scrolling -->
       <Border Background="{DynamicResource Brush.Surface}"
               BorderBrush="{DynamicResource Brush.Border}"
               BorderThickness="1"
@@ -34,23 +34,36 @@
         <DockPanel>
           <StackPanel DockPanel.Dock="Right" VerticalAlignment="Center" Spacing="6" Margin="16,0,0,0">
             <Button Classes="accent"
+                    Content="Import configuration…"
+                    HorizontalAlignment="Right"
+                    Padding="18,8"
+                    IsEnabled="{Binding !IsImportingConfiguration}"
+                    Command="{Binding ImportConfigurationCommand}" />
+            <Button Classes="subtle"
                     Content="Export configuration…"
                     HorizontalAlignment="Right"
                     Padding="18,8"
                     Command="{Binding ExportConfigurationCommand}" />
+            <TextBlock Text="{Binding ImportStatus}"
+                       FontSize="11"
+                       Foreground="{DynamicResource Brush.TextTertiary}"
+                       TextWrapping="Wrap"
+                       MaxWidth="220"
+                       HorizontalAlignment="Right"
+                       IsVisible="{Binding ImportStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
             <TextBlock Text="{Binding ExportStatus}"
                        FontSize="11"
                        Foreground="{DynamicResource Brush.TextTertiary}"
                        TextWrapping="Wrap"
-                       MaxWidth="200"
+                       MaxWidth="220"
                        HorizontalAlignment="Right"
                        IsVisible="{Binding ExportStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
           </StackPanel>
           <StackPanel Spacing="4">
-            <TextBlock Text="Configuration Export"
+            <TextBlock Text="Configuration Transfer"
                        FontSize="14" FontWeight="SemiBold"
                        Foreground="{DynamicResource Brush.TextPrimary}" />
-            <TextBlock Text="Export service projects, memories, and capabilities for another user."
+            <TextBlock Text="Import or export service projects, memories, capabilities, script templates, and shareable preferences. Local chats, shifts, user name, and window placement stay private."
                        FontSize="12"
                        Foreground="{DynamicResource Brush.TextSecondary}"
                        TextWrapping="Wrap" />
