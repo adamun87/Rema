@@ -66,6 +66,8 @@ public sealed class RemaServicesTests
                 UserName = "Exporting User",
                 IsOnboarded = false,
                 PreferredModel = "gpt-5.4",
+                ShowStreamingUpdates = false,
+                ShowReasoning = false,
                 WindowWidth = 600,
             },
             ServiceProjects =
@@ -136,6 +138,8 @@ public sealed class RemaServicesTests
         Assert.True(target.Settings.IsOnboarded);
         Assert.Equal(1200, target.Settings.WindowWidth);
         Assert.Equal("gpt-5.4", target.Settings.PreferredModel);
+        Assert.False(target.Settings.ShowStreamingUpdates);
+        Assert.False(target.Settings.ShowReasoning);
         Assert.Equal(2, target.ServiceProjects.Count);
         var payments = Assert.Single(target.ServiceProjects, project => project.Name == "Payments");
         Assert.Equal("C:\\Repos\\Payments", payments.RepoPath);
@@ -292,6 +296,145 @@ public sealed class RemaServicesTests
     }
 
     [Fact]
+    public void RepoCapabilityDiscovery_DiscoversMcpSkillsAndAgents()
+    {
+        var repo = Path.Combine(Path.GetTempPath(), "rema-capabilities-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(repo);
+
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(repo, ".vscode"));
+            Directory.CreateDirectory(Path.Combine(repo, ".github", "skills", "release-check"));
+            Directory.CreateDirectory(Path.Combine(repo, ".github", "agents"));
+
+            File.WriteAllText(Path.Combine(repo, ".vscode", "mcp.json"), """
+                {
+                  "servers": {
+                    "release-tools": {
+                      "type": "stdio",
+                      "command": "dotnet",
+                      "args": ["run", "--project", "tools/ReleaseMcp"]
+                    }
+                  }
+                }
+                """);
+            File.WriteAllText(Path.Combine(repo, ".github", "skills", "release-check", "SKILL.md"), """
+                ---
+                name: Release checklist
+                description: Validate release readiness.
+                tags: release,workflow
+                ---
+                steps:
+                - Check rollout health.
+                """);
+            File.WriteAllText(Path.Combine(repo, ".github", "agents", "triage.agent.md"), """
+                ---
+                name: Triage agent
+                description: Triage failed deployments.
+                ---
+                Investigate deployment failures.
+                """);
+
+            var projectId = Guid.NewGuid();
+            var result = RepoCapabilityDiscoveryService.Discover(repo, "Demo", projectId);
+
+            Assert.Contains(result.McpServers, server => server.Name == "release-tools" && server.Command == "dotnet");
+            Assert.Contains(result.Capabilities, capability => capability.Kind == "Mcp" && capability.Name == "release-tools");
+            var skill = Assert.Single(result.Capabilities, capability => capability.Kind == "Skill" && capability.Name == "Release checklist");
+            Assert.True(skill.IsWorkflow);
+            Assert.Equal(projectId, skill.ServiceProjectId);
+            Assert.Contains(".github", skill.SourcePath);
+            Assert.Contains(result.Capabilities, capability => capability.Kind == "Agent" && capability.Name == "Triage agent");
+        }
+        finally
+        {
+            if (Directory.Exists(repo))
+                Directory.Delete(repo, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void RepoCapabilityDiscovery_MergeUpdatesExistingDiscoveredCapability()
+    {
+        var projectId = Guid.NewGuid();
+        var data = new RemaAppData();
+        data.Capabilities.Add(new CapabilityDefinition
+        {
+            Kind = "Skill",
+            Name = "Release checklist",
+            Description = "Old",
+            Source = "discovered from Demo",
+            ServiceProjectId = projectId,
+        });
+
+        var result = RepoCapabilityDiscoveryService.MergeInto(data,
+        [
+            new CapabilityDefinition
+            {
+                Kind = "Skill",
+                Name = "Release checklist",
+                Description = "New",
+                Content = "Updated content",
+                Source = "discovered from Demo",
+                SourcePath = ".github/skills/release-check/SKILL.md",
+                ServiceProjectId = projectId,
+                InvocationHint = "Use for release readiness",
+            }
+        ]);
+
+        Assert.Equal(0, result.Added);
+        Assert.Equal(1, result.Updated);
+        var capability = Assert.Single(data.Capabilities);
+        Assert.Equal("New", capability.Description);
+        Assert.Equal("Updated content", capability.Content);
+        Assert.Equal("Use for release readiness", capability.InvocationHint);
+    }
+
+    [Fact]
+    public void RepoCapabilityDiscovery_MergeMcpServersPreservesManualServers()
+    {
+        var result = RepoCapabilityDiscoveryService.MergeMcpServers(
+            existing:
+            [
+                new McpServerConfig { Name = "manual-tools", Command = "manual.exe" },
+                new McpServerConfig { Name = "repo-tools", Command = "old.exe" },
+            ],
+            discovered:
+            [
+                new McpServerConfig { Name = "repo-tools", Command = "new.exe" },
+            ]);
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal("new.exe", Assert.Single(result, server => server.Name == "repo-tools").Command);
+        Assert.Equal("manual.exe", Assert.Single(result, server => server.Name == "manual-tools").Command);
+    }
+
+    [Fact]
+    public void CapabilitiesViewModel_ShowsAndSearchesDiscoveredSource()
+    {
+        var data = new RemaAppData();
+        data.Capabilities.Add(new CapabilityDefinition
+        {
+            Kind = "Agent",
+            Name = "Triage agent",
+            Description = "Triage failed deployments.",
+            Source = "discovered from Sherlock",
+            SourcePath = ".github\\agents\\triage.agent.md",
+            IsEnabled = true,
+        });
+
+        var viewModel = new CapabilitiesViewModel(new DataStore(data), "Agent");
+
+        Assert.Contains(viewModel.Capabilities, capability => capability.Name == "Triage agent");
+
+        viewModel.SearchText = "Sherlock";
+
+        var capability = Assert.Single(viewModel.Capabilities);
+        Assert.Equal("Triage agent", capability.Name);
+        Assert.Equal("discovered from Sherlock", capability.Source);
+    }
+
+    [Fact]
     public void TranscriptBuilder_GroupsToolsAndKeepsReasoningInAssistantTurn()
     {
         var builder = new TranscriptBuilder();
@@ -314,6 +457,32 @@ public sealed class RemaServicesTests
         Assert.Equal("2 done", group.Meta);
         Assert.Contains("List ADO builds", group.Label);
         Assert.IsType<AssistantMessageItem>(assistantTurn.Items[2]);
+    }
+
+    [Fact]
+    public void TranscriptBuilder_RespectsChatVisibilitySettings()
+    {
+        var builder = new TranscriptBuilder();
+        builder.ApplySettings(new RemaSettings
+        {
+            ShowReasoning = false,
+            ShowToolCalls = false,
+            ShowTimestamps = false,
+        });
+
+        builder.Rebuild(
+        [
+            CreateMessageVm("user", "Track the deployment."),
+            CreateMessageVm("reasoning", "I need to inspect the active shift."),
+            CreateMessageVm("tool", "{\"pipeline\":\"Prod\"}", toolName: "ado_list_builds", toolCallId: "tool-1", toolStatus: "Completed"),
+            CreateMessageVm("assistant", "Prod build 123 is still running."),
+        ]);
+
+        Assert.Equal(2, builder.Turns.Count);
+        Assert.IsType<UserMessageItem>(builder.Turns[0].Items.Single());
+        var assistant = Assert.IsType<AssistantMessageItem>(builder.Turns[1].Items.Single());
+        Assert.Equal("", assistant.TimestampText);
+        Assert.DoesNotContain(builder.Turns.SelectMany(turn => turn.Items), item => item is ReasoningItem or ToolGroupItem or SingleToolItem);
     }
 
     [Fact]

@@ -55,14 +55,24 @@
                                    Foreground="{DynamicResource Brush.TextPrimary}"
                                    TextTrimming="CharacterEllipsis" />
                       </DockPanel>
-                      <TextBlock Text="{Binding Description}"
-                                 FontSize="12"
-                                 Foreground="{DynamicResource Brush.TextSecondary}"
-                                 TextWrapping="Wrap"
-                                 MaxLines="2" />
-                    </StackPanel>
-                  </Button>
-                </DataTemplate>
+                       <TextBlock Text="{Binding Description}"
+                                  FontSize="12"
+                                  Foreground="{DynamicResource Brush.TextSecondary}"
+                                  TextWrapping="Wrap"
+                                  MaxLines="2" />
+                       <TextBlock Text="{Binding Source}"
+                                  FontSize="11"
+                                  Foreground="{DynamicResource Brush.TextTertiary}"
+                                  TextTrimming="CharacterEllipsis"
+                                  IsVisible="{Binding Source, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                       <TextBlock Text="{Binding SourcePath}"
+                                  FontSize="11"
+                                  Foreground="{DynamicResource Brush.TextTertiary}"
+                                  TextTrimming="CharacterEllipsis"
+                                  IsVisible="{Binding SourcePath, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                     </StackPanel>
+                   </Button>
+                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
           </StackPanel>
@@ -98,14 +108,36 @@
             <StackPanel>
               <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="Bold"
                          Foreground="{DynamicResource Brush.TextPrimary}" />
-              <TextBlock Text="{Binding SelectedSourceText}"
+               <TextBlock Text="{Binding SelectedSourceText}"
+                          FontSize="12"
+                          Foreground="{DynamicResource Brush.TextTertiary}"
+                          IsVisible="{Binding HasSelectedCapability}" />
+              <TextBlock Text="{Binding SelectedSourcePathText}"
                          FontSize="12"
                          Foreground="{DynamicResource Brush.TextTertiary}"
-                         IsVisible="{Binding HasSelectedCapability}" />
+                         IsVisible="{Binding HasSelectedSourcePath}" />
             </StackPanel>
           </DockPanel>
 
           <CheckBox Content="Enabled" IsChecked="{Binding EditIsEnabled, Mode=TwoWay}" />
+          <Border Background="{DynamicResource Brush.SurfaceVariant}"
+                  CornerRadius="8"
+                  Padding="10,8"
+                  IsVisible="{Binding HasSelectedInvocationMetadata}">
+            <StackPanel Spacing="4">
+              <TextBlock Text="Invocation"
+                         FontSize="12"
+                         Foreground="{DynamicResource Brush.TextSecondary}" />
+              <TextBlock Text="{Binding SelectedInvocationHintText}"
+                         TextWrapping="Wrap"
+                         Foreground="{DynamicResource Brush.TextPrimary}"
+                         IsVisible="{Binding HasSelectedInvocationHint}" />
+              <TextBlock Text="Long-running workflow"
+                         FontSize="12"
+                         Foreground="{DynamicResource Brush.Accent}"
+                         IsVisible="{Binding SelectedIsWorkflow}" />
+            </StackPanel>
+          </Border>
 
           <TextBlock Text="Name" FontSize="12" Foreground="{DynamicResource Brush.TextSecondary}" />
           <TextBox Text="{Binding EditName, Mode=TwoWay}" />

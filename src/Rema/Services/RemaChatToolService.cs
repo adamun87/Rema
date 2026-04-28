@@ -33,6 +33,10 @@ public static class RemaChatToolService
                             c.Name,
                             c.Description,
                             c.Source,
+                            c.ServiceProjectId,
+                            c.SourcePath,
+                            c.InvocationHint,
+                            c.IsWorkflow,
                             Tags = c.Tags,
                         })
                         .ToList();
@@ -40,7 +44,60 @@ public static class RemaChatToolService
                     return JsonSerializer.Serialize(result);
                 },
                 "rema_list_capabilities",
-                "List enabled Rema skills, MCP servers, tools, and agents from the agency marketplace catalog."),
+                "List enabled Rema skills, MCP servers, tools, and agents, including repo-discovered capabilities."),
+
+            AIFunctionFactory.Create(
+                async (
+                    [Description("Name of the skill, MCP server, tool, or agent to use.")] string capabilityName,
+                    [Description("Optional user goal for this invocation or long-running workflow.")] string? goal = null) =>
+                {
+                    var capability = dataStore.Data.Capabilities.FirstOrDefault(c =>
+                        c.IsEnabled && c.Name.Equals(capabilityName, StringComparison.OrdinalIgnoreCase));
+                    if (capability is null)
+                        throw new InvalidOperationException($"Capability '{capabilityName}' was not found or is disabled.");
+
+                    WorkflowExecution? execution = null;
+                    if (capability.IsWorkflow || capability.Kind.Equals("Agent", StringComparison.OrdinalIgnoreCase))
+                    {
+                        execution = new WorkflowExecution
+                        {
+                            CapabilityId = capability.Id,
+                            CapabilityName = capability.Name,
+                            CapabilityKind = capability.Kind,
+                            Goal = goal ?? "",
+                            Status = "Running",
+                            StartedAt = DateTimeOffset.Now,
+                            UpdatedAt = DateTimeOffset.Now,
+                        };
+                        dataStore.Data.WorkflowExecutions.Add(execution);
+                        await dataStore.SaveAsync();
+                    }
+
+                    var project = capability.ServiceProjectId is Guid projectId
+                        ? dataStore.Data.ServiceProjects.FirstOrDefault(p => p.Id == projectId)
+                        : null;
+
+                    return JsonSerializer.Serialize(new
+                    {
+                        capability.Kind,
+                        capability.Name,
+                        capability.Description,
+                        Instructions = capability.Content,
+                        capability.InvocationHint,
+                        capability.Source,
+                        capability.SourcePath,
+                        ServiceProject = project?.Name,
+                        Tags = capability.Tags,
+                        WorkflowExecution = execution is null ? null : new
+                        {
+                            execution.Id,
+                            execution.Status,
+                            execution.StartedAt,
+                        },
+                    });
+                },
+                "rema_invoke_capability",
+                "Retrieve the full prompt/invocation details for an enabled Rema capability and start a tracked workflow when it represents an agent or long-running workflow."),
 
             AIFunctionFactory.Create(
                 () =>

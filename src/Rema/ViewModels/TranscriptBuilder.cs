@@ -24,6 +24,12 @@ public sealed class TranscriptBuilder
     private string? _lastRole;
     private int _turnCounter;
     private int _itemCounter;
+    private RemaSettings _settings = new();
+
+    public void ApplySettings(RemaSettings settings)
+    {
+        _settings = settings;
+    }
 
     /// <summary>
     /// Clears and rebuilds <see cref="Turns"/> in-place from a message list.
@@ -137,7 +143,7 @@ public sealed class TranscriptBuilder
         {
             Content = msgVm.Content,
             Author = msgVm.Author ?? "You",
-            TimestampText = msgVm.TimestampText,
+            TimestampText = TimestampOrEmpty(msgVm),
         };
         _currentTurn!.Items.Add(item);
     }
@@ -151,7 +157,7 @@ public sealed class TranscriptBuilder
         {
             Content = msgVm.Content,
             IsStreaming = msgVm.IsStreaming,
-            TimestampText = msgVm.TimestampText,
+            TimestampText = TimestampOrEmpty(msgVm),
             ModelName = ChatViewModel.FormatModelDisplay(msgVm.Message.Model),
         };
 
@@ -169,6 +175,9 @@ public sealed class TranscriptBuilder
 
     private void ProcessReasoningMessage(ChatMessageViewModel msgVm)
     {
+        if (!_settings.ShowReasoning)
+            return;
+
         CloseCurrentToolGroup();
         EnsureTurn("assistant");
 
@@ -176,7 +185,7 @@ public sealed class TranscriptBuilder
         {
             Content = msgVm.Content,
             IsActive = msgVm.IsStreaming,
-            IsExpanded = false,
+            IsExpanded = msgVm.IsStreaming && _settings.ExpandReasoningWhileStreaming,
         };
 
         msgVm.PropertyChanged += (_, e) =>
@@ -184,7 +193,11 @@ public sealed class TranscriptBuilder
             if (e.PropertyName == nameof(ChatMessageViewModel.Content))
                 item.Content = msgVm.Content;
             else if (e.PropertyName == nameof(ChatMessageViewModel.IsStreaming))
+            {
                 item.IsActive = msgVm.IsStreaming;
+                if (!msgVm.IsStreaming)
+                    item.IsExpanded = false;
+            }
         };
 
         _currentTurn!.Items.Add(item);
@@ -192,6 +205,9 @@ public sealed class TranscriptBuilder
 
     private void ProcessToolMessage(ChatMessageViewModel msgVm)
     {
+        if (!_settings.ShowToolCalls)
+            return;
+
         var msg = msgVm.Message;
         var toolCallId = msg.ToolCallId ?? Guid.NewGuid().ToString();
         var toolName = msg.ToolName;
@@ -267,7 +283,7 @@ public sealed class TranscriptBuilder
         var item = new ErrorMessageItem(NextItemId())
         {
             Content = msgVm.Content,
-            TimestampText = msgVm.TimestampText,
+            TimestampText = TimestampOrEmpty(msgVm),
             RetryCommand = retryCommand,
         };
         _currentTurn!.Items.Add(item);
@@ -363,4 +379,7 @@ public sealed class TranscriptBuilder
     }
 
     private string NextItemId() => $"item-{_itemCounter++}";
+
+    private string TimestampOrEmpty(ChatMessageViewModel msgVm) =>
+        _settings.ShowTimestamps ? msgVm.TimestampText : "";
 }

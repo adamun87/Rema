@@ -67,6 +67,7 @@ public static class ConfigurationImportService
         target.Capabilities ??= [];
         target.ScriptTemplates ??= [];
         target.Memories ??= [];
+        target.WorkflowExecutions ??= [];
 
         var settingsUpdated = import.Settings is not null && CopyShareableSettings(target.Settings, import.Settings);
         var (projectsAdded, projectsUpdated) = MergeServiceProjects(target.ServiceProjects, import.ServiceProjects);
@@ -98,6 +99,11 @@ public static class ConfigurationImportService
         SetIfChanged(ref changed, target.FontSize, import.FontSize, value => target.FontSize = value);
         SetIfChanged(ref changed, target.SendWithEnter, import.SendWithEnter, value => target.SendWithEnter = value);
         SetIfChanged(ref changed, target.ShowToolCalls, import.ShowToolCalls, value => target.ShowToolCalls = value);
+        SetIfChanged(ref changed, target.ShowTimestamps, import.ShowTimestamps, value => target.ShowTimestamps = value);
+        SetIfChanged(ref changed, target.ShowReasoning, import.ShowReasoning, value => target.ShowReasoning = value);
+        SetIfChanged(ref changed, target.ExpandReasoningWhileStreaming, import.ExpandReasoningWhileStreaming, value => target.ExpandReasoningWhileStreaming = value);
+        SetIfChanged(ref changed, target.ShowStreamingUpdates, import.ShowStreamingUpdates, value => target.ShowStreamingUpdates = value);
+        SetIfChanged(ref changed, target.AutoGenerateTitles, import.AutoGenerateTitles, value => target.AutoGenerateTitles = value);
         SetIfChanged(ref changed, target.PreferredModel, import.PreferredModel, value => target.PreferredModel = value, requireValue: true);
         SetIfChanged(ref changed, target.ReasoningEffort, import.ReasoningEffort, value => target.ReasoningEffort = value, requireValue: true);
         SetIfChanged(ref changed, target.PollingIntervalSeconds, import.PollingIntervalSeconds, value => target.PollingIntervalSeconds = value);
@@ -160,6 +166,7 @@ public static class ConfigurationImportService
         target.DiscoveredAgentPath = import.DiscoveredAgentPath;
         target.Instructions = import.Instructions;
         target.McpServer = CloneMcpServer(import.McpServer);
+        target.McpServers = import.McpServers?.Select(CloneMcpServer).OfType<McpServerConfig>().ToList() ?? [];
         target.PipelineConfigs ??= [];
         target.HealthQueries ??= [];
 
@@ -183,6 +190,7 @@ public static class ConfigurationImportService
             Instructions = import.Instructions,
             CreatedAt = import.CreatedAt,
             McpServer = CloneMcpServer(import.McpServer),
+            McpServers = import.McpServers?.Select(CloneMcpServer).OfType<McpServerConfig>().ToList() ?? [],
         };
 
         foreach (var pipeline in import.PipelineConfigs?.OfType<PipelineConfig>() ?? Enumerable.Empty<PipelineConfig>())
@@ -353,6 +361,10 @@ public static class ConfigurationImportService
         target.Kind = string.IsNullOrWhiteSpace(import.Kind) ? "Tool" : import.Kind;
         target.Name = import.Name.Trim();
         target.IsEnabled = import.IsEnabled;
+        target.ServiceProjectId = import.ServiceProjectId;
+        target.SourcePath = import.SourcePath;
+        target.InvocationHint = import.InvocationHint;
+        target.IsWorkflow = import.IsWorkflow;
 
         if (!targetIsBuiltIn)
         {

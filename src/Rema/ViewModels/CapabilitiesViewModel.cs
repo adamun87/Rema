@@ -25,6 +25,12 @@ public partial class CapabilitiesViewModel : ObservableObject
     [ObservableProperty] private bool _canDeleteSelectedCapability;
     [ObservableProperty] private bool _hasSelectedCapability;
     [ObservableProperty] private string _selectedSourceText = "";
+    [ObservableProperty] private string _selectedSourcePathText = "";
+    [ObservableProperty] private string _selectedInvocationHintText = "";
+    [ObservableProperty] private bool _selectedIsWorkflow;
+    [ObservableProperty] private bool _hasSelectedSourcePath;
+    [ObservableProperty] private bool _hasSelectedInvocationHint;
+    [ObservableProperty] private bool _hasSelectedInvocationMetadata;
 
     public string Kind { get; }
     public string Title { get; }
@@ -60,10 +66,13 @@ public partial class CapabilitiesViewModel : ObservableObject
                 c.Name.Contains(search, StringComparison.OrdinalIgnoreCase)
                 || c.Description.Contains(search, StringComparison.OrdinalIgnoreCase)
                 || c.Content.Contains(search, StringComparison.OrdinalIgnoreCase)
+                || c.Source.Contains(search, StringComparison.OrdinalIgnoreCase)
+                || (c.SourcePath?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false)
+                || (c.InvocationHint?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false)
                 || c.Tags.Any(t => t.Contains(search, StringComparison.OrdinalIgnoreCase)));
         }
 
-        foreach (var capability in query.OrderByDescending(c => c.IsBuiltIn).ThenBy(c => c.Name))
+        foreach (var capability in query.OrderBy(c => c.IsBuiltIn).ThenBy(c => c.Name))
             Capabilities.Add(capability);
 
         HasCapabilities = Capabilities.Count > 0;
@@ -75,6 +84,12 @@ public partial class CapabilitiesViewModel : ObservableObject
     {
         HasSelectedCapability = value is not null;
         SelectedSourceText = value?.Source ?? "";
+        SelectedSourcePathText = value?.SourcePath ?? "";
+        SelectedInvocationHintText = value?.InvocationHint ?? "";
+        SelectedIsWorkflow = value?.IsWorkflow ?? false;
+        HasSelectedSourcePath = !string.IsNullOrWhiteSpace(SelectedSourcePathText);
+        HasSelectedInvocationHint = !string.IsNullOrWhiteSpace(SelectedInvocationHintText);
+        HasSelectedInvocationMetadata = HasSelectedInvocationHint || SelectedIsWorkflow;
         if (value is null) return;
         EditName = value.Name;
         EditDescription = value.Description;

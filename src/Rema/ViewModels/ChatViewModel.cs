@@ -37,6 +37,7 @@ public sealed partial class ChatViewModel : ObservableObject
     [ObservableProperty] private bool _isStreaming;
     [ObservableProperty] private string _promptText = "";
     [ObservableProperty] private string _statusText = "";
+    public int ChatFontSize => _dataStore.Data.Settings.FontSize;
 
     // Suggestion chips shown on the welcome panel
     public ObservableCollection<string> SuggestionChips { get; } =
@@ -58,10 +59,19 @@ public sealed partial class ChatViewModel : ObservableObject
         _dataStore = dataStore;
         _copilotService = copilotService;
         _azureDevOpsService = azureDevOpsService;
+        _transcriptBuilder.ApplySettings(_dataStore.Data.Settings);
 
         // Populate chat history newest-first
         for (var i = _dataStore.Data.Chats.Count - 1; i >= 0; i--)
             Chats.Add(_dataStore.Data.Chats[i]);
+    }
+
+    public void RefreshSettings()
+    {
+        _transcriptBuilder.ApplySettings(_dataStore.Data.Settings);
+        _transcriptBuilder.Rebuild(_messages);
+        TranscriptRebuilt?.Invoke();
+        OnPropertyChanged(nameof(ChatFontSize));
     }
 
     // ── Suggestion Chips ──
@@ -94,7 +104,9 @@ public sealed partial class ChatViewModel : ObservableObject
             {
                 var chat = new Chat
                 {
-                    Title = prompt.Length > 40 ? prompt[..40].Trim() + "…" : prompt,
+                    Title = _dataStore.Data.Settings.AutoGenerateTitles
+                        ? prompt.Length > 40 ? prompt[..40].Trim() + "…" : prompt
+                        : "New chat",
                 };
                 _dataStore.Data.Chats.Add(chat);
                 Chats.Insert(0, chat); // Prepend so newest appears first in sidebar
@@ -303,6 +315,12 @@ public sealed partial class ChatViewModel : ObservableObject
                     reasoningContent.Append(rd.Data.DeltaContent);
                     Dispatcher.UIThread.Post(() =>
                     {
+                        if (!_dataStore.Data.Settings.ShowStreamingUpdates)
+                        {
+                            StatusText = "Thinking…";
+                            return;
+                        }
+
                         if (reasoningVm is null)
                         {
                             var msg = new ChatMessage
@@ -356,6 +374,13 @@ public sealed partial class ChatViewModel : ObservableObject
                     assistantContent.Append(delta.Data.DeltaContent);
                     Dispatcher.UIThread.Post(() =>
                     {
+                        if (!_dataStore.Data.Settings.ShowStreamingUpdates)
+                        {
+                            StatusText = "Writing…";
+                            if (_typingIndicator is not null) _typingIndicator.Label = "Writing…";
+                            return;
+                        }
+
                         if (assistantVm is null)
                         {
                             var msg = new ChatMessage
@@ -528,33 +553,41 @@ public sealed partial class ChatViewModel : ObservableObject
 
     private Dictionary<string, object>? BuildMcpServers()
     {
-        var servers = new Dictionary<string, object>();
+        var servers = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
         foreach (var project in _dataStore.Data.ServiceProjects)
         {
-            if (project.McpServer is not { IsEnabled: true } mcp) continue;
-            if (string.IsNullOrWhiteSpace(mcp.Name)) continue;
-
-            if (mcp.ServerType == "local" || mcp.ServerType == "stdio")
-            {
-                servers[mcp.Name] = new
-                {
-                    type = "stdio",
-                    command = mcp.Command,
-                    args = mcp.Args,
-                    env = mcp.Env.Count > 0 ? (object)mcp.Env : new Dictionary<string, string>(),
-                };
-            }
-            else // sse / http
-            {
-                servers[mcp.Name] = new
-                {
-                    type = "sse",
-                    url = mcp.Url,
-                    headers = mcp.Headers.Count > 0 ? (object)mcp.Headers : new Dictionary<string, string>(),
-                };
-            }
+            AddMcpServer(project.McpServer, servers);
+            foreach (var mcp in project.McpServers)
+                AddMcpServer(mcp, servers);
         }
         return servers.Count > 0 ? servers : null;
+    }
+
+    private static void AddMcpServer(McpServerConfig? mcp, Dictionary<string, object> servers)
+    {
+        if (mcp is not { IsEnabled: true } || string.IsNullOrWhiteSpace(mcp.Name))
+            return;
+
+        var key = mcp.Name.Trim();
+        if (mcp.ServerType == "local" || mcp.ServerType == "stdio")
+        {
+            servers[key] = new
+            {
+                type = "stdio",
+                command = mcp.Command,
+                args = mcp.Args,
+                env = mcp.Env.Count > 0 ? (object)mcp.Env : new Dictionary<string, string>(),
+            };
+        }
+        else
+        {
+            servers[key] = new
+            {
+                type = "sse",
+                url = mcp.Url,
+                headers = mcp.Headers.Count > 0 ? (object)mcp.Headers : new Dictionary<string, string>(),
+            };
+        }
     }
 
     // ── Helpers ──

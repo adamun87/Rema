@@ -108,9 +108,11 @@ You have access to ADO pipeline tools:
 - `ado_trigger_pipeline` — Trigger a new pipeline run
 - `ado_get_logs` — Get build or release logs for diagnosis
 - `ado_work_items` — Get work items linked to a build/release
+- `rema_list_capabilities` — Discover enabled Rema skills, MCPs, agents, and workflows
+- `rema_invoke_capability` — Retrieve invocation details and start a tracked repo workflow when applicable
 
 Use these tools to answer questions about deployment status, investigate failures,
-and perform release operations on behalf of the release manager.
+perform release operations, and delegate to repo-discovered capabilities when they are relevant.
 """);
 
         if (capabilities is { Count: > 0 })
@@ -120,7 +122,17 @@ and perform release operations on behalf of the release manager.
             {
                 sb.AppendLine($"### {group.Key}");
                 foreach (var capability in group.OrderBy(c => c.Name))
-                    sb.AppendLine($"- **{capability.Name}**: {capability.Description}");
+                {
+                    var hint = string.IsNullOrWhiteSpace(capability.InvocationHint)
+                        ? ""
+                        : $" Invoke via: {capability.InvocationHint}";
+                    var source = string.IsNullOrWhiteSpace(capability.SourcePath)
+                        ? capability.Source
+                        : capability.SourcePath;
+                    sb.AppendLine($"- **{capability.Name}**: {capability.Description}{hint}");
+                    if (!string.IsNullOrWhiteSpace(source))
+                        sb.AppendLine($"  Source: {source}");
+                }
             }
             sb.AppendLine();
         }

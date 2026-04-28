@@ -3,7 +3,8 @@
              xmlns:vm="using:Rema.ViewModels"
              xmlns:sc="using:StrataTheme.Controls"
              x:Class="Rema.Views.ChatView"
-             x:DataType="vm:ChatViewModel">
+             x:DataType="vm:ChatViewModel"
+             FontSize="{Binding ChatFontSize}">
 
   <UserControl.Styles>
     <Style Selector="Button.suggestion-chip">

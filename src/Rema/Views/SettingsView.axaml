@@ -81,6 +81,17 @@
                   IsChecked="{Binding IsDarkTheme, Mode=TwoWay}" />
         <CheckBox Content="{loc:Str Settings_CompactDensity}"
                   IsChecked="{Binding IsCompactDensity, Mode=TwoWay}" />
+        <StackPanel Spacing="4">
+          <TextBlock FontSize="12"
+                     Foreground="{DynamicResource Brush.TextSecondary}">
+            <Run Text="Font size: " />
+            <Run Text="{Binding FontSize}" />
+          </TextBlock>
+          <Slider Minimum="11" Maximum="22"
+                  Value="{Binding FontSize, Mode=TwoWay}"
+                  TickFrequency="1"
+                  IsSnapToTickEnabled="True" />
+        </StackPanel>
       </StackPanel>
 
       <!-- AI / Model -->
@@ -93,6 +104,16 @@
                   IsChecked="{Binding SendWithEnter, Mode=TwoWay}" />
         <CheckBox Content="{loc:Str Settings_ShowToolCalls}"
                   IsChecked="{Binding ShowToolCalls, Mode=TwoWay}" />
+        <CheckBox Content="Show message timestamps"
+                  IsChecked="{Binding ShowTimestamps, Mode=TwoWay}" />
+        <CheckBox Content="Show reasoning"
+                  IsChecked="{Binding ShowReasoning, Mode=TwoWay}" />
+        <CheckBox Content="Expand reasoning while streaming"
+                  IsChecked="{Binding ExpandReasoningWhileStreaming, Mode=TwoWay}" />
+        <CheckBox Content="Show streaming updates as they arrive"
+                  IsChecked="{Binding ShowStreamingUpdates, Mode=TwoWay}" />
+        <CheckBox Content="Auto-generate chat titles from first message"
+                  IsChecked="{Binding AutoGenerateTitles, Mode=TwoWay}" />
 
         <StackPanel Spacing="4">
           <TextBlock Text="{loc:Str Settings_Model}" FontSize="12"

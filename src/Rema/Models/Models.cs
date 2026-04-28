@@ -67,6 +67,7 @@ public class ServiceProject
     public List<PipelineConfig> PipelineConfigs { get; set; } = [];
     public List<HealthQuery> HealthQueries { get; set; } = [];
     public McpServerConfig? McpServer { get; set; }
+    public List<McpServerConfig> McpServers { get; set; } = [];
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
 }
 
@@ -314,10 +315,31 @@ public class CapabilityDefinition
     public string Content { get; set; } = "";
     public string Source { get; set; } = "built-in";
     public string? DeepLink { get; set; }
+    public Guid? ServiceProjectId { get; set; }
+    public string? SourcePath { get; set; }
+    public string? InvocationHint { get; set; }
     public List<string> Tags { get; set; } = [];
     public bool IsBuiltIn { get; set; }
     public bool IsEnabled { get; set; } = true;
+    public bool IsWorkflow { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
+}
+
+public class WorkflowExecution
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid? CapabilityId { get; set; }
+    public string CapabilityName { get; set; } = "";
+    public string CapabilityKind { get; set; } = "";
+    public string Goal { get; set; } = "";
+    public string Status { get; set; } = "Running"; // Running, Completed, Failed, Canceled
+    public int ProgressPercent { get; set; }
+    public List<string> LogMessages { get; set; } = [];
+    public string? Result { get; set; }
+    public string? Error { get; set; }
+    public DateTimeOffset StartedAt { get; set; } = DateTimeOffset.Now;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.Now;
+    public DateTimeOffset? CompletedAt { get; set; }
 }
 
 // ── Memories ──
@@ -350,6 +372,11 @@ public class RemaSettings
     // ── Chat ──
     public bool SendWithEnter { get; set; } = true;
     public bool ShowToolCalls { get; set; } = true;
+    public bool ShowTimestamps { get; set; } = true;
+    public bool ShowReasoning { get; set; } = true;
+    public bool ExpandReasoningWhileStreaming { get; set; } = true;
+    public bool ShowStreamingUpdates { get; set; } = true;
+    public bool AutoGenerateTitles { get; set; } = true;
 
     // ── AI & Models ──
     public string PreferredModel { get; set; } = "claude-sonnet-4";
@@ -396,4 +423,5 @@ public class RemaAppData
     public List<ScriptTemplate> ScriptTemplates { get; set; } = [];
     public List<CapabilityDefinition> Capabilities { get; set; } = [];
     public List<Memory> Memories { get; set; } = [];
+    public List<WorkflowExecution> WorkflowExecutions { get; set; } = [];
 }

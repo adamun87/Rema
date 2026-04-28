@@ -21,6 +21,8 @@ public partial class ServiceProjectsViewModel : ObservableObject
     private readonly CopilotService _copilotService;
     private readonly DeploymentVersionDiscoveryService _deploymentVersionDiscoveryService;
     private readonly SafeFlyDiffService _safeFlyDiffService = new();
+    private List<CapabilityDefinition> _pendingDiscoveredCapabilities = [];
+    private List<McpServerConfig> _pendingDiscoveredMcpServers = [];
 
     [ObservableProperty] private ServiceProject? _selectedProject;
     [ObservableProperty] private bool _isEditing;
@@ -49,6 +51,7 @@ public partial class ServiceProjectsViewModel : ObservableObject
     /// <summary>Raised when the user clicks Browse — the View handles the folder picker dialog.</summary>
     public event Action? BrowseRepoPathRequested;
     public event Action? BrowseSafeFlyOutputRequested;
+    public event Action? RepoCapabilitiesChanged;
 
     public ServiceProjectsViewModel(
         DataStore dataStore,
@@ -107,6 +110,8 @@ public partial class ServiceProjectsViewModel : ObservableObject
         DiscoveryStatus = "";
         DiscoveryLog.Clear();
         EditPipelines.Clear();
+        _pendingDiscoveredCapabilities = [];
+        _pendingDiscoveredMcpServers = [];
     }
 
     // ── Discovery ──
@@ -132,6 +137,8 @@ public partial class ServiceProjectsViewModel : ObservableObject
 
         IsDiscovering = true;
         DiscoveryLog.Clear();
+        _pendingDiscoveredCapabilities = [];
+        _pendingDiscoveredMcpServers = [];
         var details = new List<string>();
 
         // ── Step 1: Directory name ──
@@ -261,6 +268,26 @@ public partial class ServiceProjectsViewModel : ObservableObject
             LogStep($"  ✓ Pipelines: {pipelineInfo}");
         }
 
+        // ── Step 5b: Repo capabilities ──
+        LogStep("🧩 Discovering repo MCPs, skills, and agents…");
+        await Task.Delay(50);
+
+        var repoCapabilities = RepoCapabilityDiscoveryService.Discover(
+            repoPath,
+            string.IsNullOrWhiteSpace(EditName) ? Path.GetFileName(repoPath) ?? "repository" : EditName);
+        _pendingDiscoveredCapabilities = repoCapabilities.Capabilities;
+        _pendingDiscoveredMcpServers = repoCapabilities.McpServers;
+        if (_pendingDiscoveredCapabilities.Count > 0)
+        {
+            details.Add($"{_pendingDiscoveredCapabilities.Count} repo capabilities");
+            LogStep($"  ✓ Found {_pendingDiscoveredCapabilities.Count} repo MCPs/skills/agents");
+        }
+        if (_pendingDiscoveredMcpServers.Count > 0)
+        {
+            details.Add($"{_pendingDiscoveredMcpServers.Count} MCP servers");
+            LogStep($"  ✓ Found {_pendingDiscoveredMcpServers.Count} MCP server configs");
+        }
+
         // ── Step 6: LLM analysis of gathered content ──
         if (!string.IsNullOrWhiteSpace(gatheredContent) && _copilotService.IsConnected)
         {
@@ -316,6 +343,17 @@ public partial class ServiceProjectsViewModel : ObservableObject
             ? $"✅ Discovered: {string.Join(", ", details)}"
             : "No additional info found";
         LogStep(DiscoveryStatus);
+
+        // Auto-apply and save for existing projects so capabilities are visible immediately.
+        if (SelectedProject is not null && (_pendingDiscoveredCapabilities.Count > 0 || _pendingDiscoveredMcpServers.Count > 0))
+        {
+            var project = SelectedProject;
+            ApplyFieldsToProject(project);
+            SavePipelines(project);
+            ApplyPendingRepoDiscovery(project);
+            _ = _dataStore.SaveAsync();
+            RepoCapabilitiesChanged?.Invoke();
+        }
     }
 
     // ── LLM Analysis ──
@@ -719,6 +757,7 @@ public partial class ServiceProjectsViewModel : ObservableObject
 
         ApplyFieldsToProject(project);
         SavePipelines(project);
+        ApplyPendingRepoDiscovery(project);
         _ = _dataStore.SaveAsync();
         Refresh();
         SelectedProject = Projects.FirstOrDefault(p => p.Id == project.Id);
@@ -729,6 +768,7 @@ public partial class ServiceProjectsViewModel : ObservableObject
             await DiscoverFromRepoAsync();
             ApplyFieldsToProject(project);
             SavePipelines(project);
+            ApplyPendingRepoDiscovery(project);
             _ = _dataStore.SaveAsync();
         }
     }
@@ -742,6 +782,33 @@ public partial class ServiceProjectsViewModel : ObservableObject
         project.KustoCluster = string.IsNullOrWhiteSpace(EditKustoCluster) ? null : EditKustoCluster.Trim();
         project.KustoDatabase = string.IsNullOrWhiteSpace(EditKustoDatabase) ? null : EditKustoDatabase.Trim();
         project.Instructions = string.IsNullOrWhiteSpace(EditInstructions) ? null : EditInstructions.Trim();
+    }
+
+    private void ApplyPendingRepoDiscovery(ServiceProject project)
+    {
+        if (_pendingDiscoveredMcpServers.Count > 0)
+        {
+            project.McpServers = RepoCapabilityDiscoveryService.MergeMcpServers(
+                project.McpServers,
+                _pendingDiscoveredMcpServers);
+            project.McpServer ??= project.McpServers.FirstOrDefault();
+        }
+
+        if (_pendingDiscoveredCapabilities.Count == 0)
+            return;
+
+        foreach (var capability in _pendingDiscoveredCapabilities)
+        {
+            capability.ServiceProjectId = project.Id;
+            capability.Source = $"discovered from {project.Name}";
+        }
+
+        var merge = RepoCapabilityDiscoveryService.MergeInto(_dataStore.Data, _pendingDiscoveredCapabilities);
+        if (merge.Added > 0 || merge.Updated > 0)
+        {
+            LogStep($"  ✓ Synced {merge.Added} new / {merge.Updated} updated repo capabilities");
+            RepoCapabilitiesChanged?.Invoke();
+        }
     }
 
     [RelayCommand]

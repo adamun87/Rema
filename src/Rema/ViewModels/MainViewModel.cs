@@ -76,8 +76,20 @@ public partial class MainViewModel : ObservableObject
         {
             if (e.PropertyName == nameof(SettingsViewModel.IsDarkTheme))
                 IsDarkTheme = SettingsVM.IsDarkTheme;
+
+            if (e.PropertyName is nameof(SettingsViewModel.FontSize)
+                or nameof(SettingsViewModel.ShowToolCalls)
+                or nameof(SettingsViewModel.ShowTimestamps)
+                or nameof(SettingsViewModel.ShowReasoning)
+                or nameof(SettingsViewModel.ExpandReasoningWhileStreaming)
+                or nameof(SettingsViewModel.ShowStreamingUpdates)
+                or nameof(SettingsViewModel.AutoGenerateTitles))
+            {
+                ChatVM.RefreshSettings();
+            }
         };
         SettingsVM.ConfigurationImported += RefreshImportedConfigurationViews;
+        ServiceProjectsVM.RepoCapabilitiesChanged += RefreshCapabilityViews;
 
         _copilotService.Reconnected += () =>
         {
@@ -102,6 +114,11 @@ public partial class MainViewModel : ObservableObject
         ServiceProjectsVM.Refresh();
         ShiftsVM.Refresh();
         MemoriesVM.Refresh();
+        RefreshCapabilityViews();
+    }
+
+    private void RefreshCapabilityViews()
+    {
         SkillsVM.Refresh();
         McpServersVM.Refresh();
         ToolsVM.Refresh();
