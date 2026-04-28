@@ -5,7 +5,7 @@
              x:Class="Rema.Views.SettingsView"
              x:DataType="vm:SettingsViewModel">
 
-  <ScrollViewer Padding="32">
+  <ScrollViewer Padding="32" VerticalScrollBarVisibility="Auto" AllowAutoHide="False">
     <StackPanel Spacing="24" MaxWidth="600">
 
       <TextBlock Text="{loc:Str Settings_Title}"
@@ -24,6 +24,39 @@
           <TextBox Text="{Binding UserName, Mode=TwoWay}" />
         </StackPanel>
       </StackPanel>
+
+      <!-- Configuration export — placed near top so it's visible without scrolling -->
+      <Border Background="{DynamicResource Brush.Surface}"
+              BorderBrush="{DynamicResource Brush.Border}"
+              BorderThickness="1"
+              CornerRadius="12"
+              Padding="18">
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Right" VerticalAlignment="Center" Spacing="6" Margin="16,0,0,0">
+            <Button Classes="accent"
+                    Content="Export configuration…"
+                    HorizontalAlignment="Right"
+                    Padding="18,8"
+                    Command="{Binding ExportConfigurationCommand}" />
+            <TextBlock Text="{Binding ExportStatus}"
+                       FontSize="11"
+                       Foreground="{DynamicResource Brush.TextTertiary}"
+                       TextWrapping="Wrap"
+                       MaxWidth="200"
+                       HorizontalAlignment="Right"
+                       IsVisible="{Binding ExportStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          </StackPanel>
+          <StackPanel Spacing="4">
+            <TextBlock Text="Configuration Export"
+                       FontSize="14" FontWeight="SemiBold"
+                       Foreground="{DynamicResource Brush.TextPrimary}" />
+            <TextBlock Text="Export service projects, memories, and capabilities for another user."
+                       FontSize="12"
+                       Foreground="{DynamicResource Brush.TextSecondary}"
+                       TextWrapping="Wrap" />
+          </StackPanel>
+        </DockPanel>
+      </Border>
 
       <!-- Appearance -->
       <StackPanel Spacing="12">
@@ -110,37 +143,6 @@
         <CheckBox Content="{loc:Str Settings_NotificationsEnabled}"
                   IsChecked="{Binding NotificationsEnabled, Mode=TwoWay}" />
       </StackPanel>
-
-      <!-- Configuration export -->
-      <Border Background="{DynamicResource Brush.Surface}"
-              BorderBrush="{DynamicResource Brush.Border}"
-              BorderThickness="1"
-              CornerRadius="12"
-              Padding="18">
-        <Grid RowDefinitions="Auto,8,Auto,14,Auto,8,Auto">
-          <TextBlock Grid.Row="0"
-                     Text="Configuration Export"
-                     FontSize="16" FontWeight="SemiBold"
-                     Foreground="{DynamicResource Brush.TextPrimary}" />
-          <TextBlock Grid.Row="2"
-                     Text="Export Rema onboarding configuration, service projects, memories, and agency marketplace capabilities for another user."
-                     FontSize="12"
-                     Foreground="{DynamicResource Brush.TextSecondary}"
-                     TextWrapping="Wrap" />
-          <Button Grid.Row="4"
-                  Classes="accent"
-                  Content="Export configuration…"
-                  HorizontalAlignment="Left"
-                  Padding="18,8"
-                  Command="{Binding ExportConfigurationCommand}" />
-          <TextBlock Grid.Row="6"
-                     Text="{Binding ExportStatus}"
-                     FontSize="12"
-                     Foreground="{DynamicResource Brush.TextTertiary}"
-                     TextWrapping="Wrap"
-                     IsVisible="{Binding ExportStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-        </Grid>
-      </Border>
 
     </StackPanel>
   </ScrollViewer>
