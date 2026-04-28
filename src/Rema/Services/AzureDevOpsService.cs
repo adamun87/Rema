@@ -180,58 +180,90 @@ public sealed class AzureDevOpsService
         if (!document.RootElement.TryGetProperty("records", out var records) || records.ValueKind != JsonValueKind.Array)
             return TimelineSummary.Empty;
 
+        var timelineRecords = records.EnumerateArray()
+            .Select(ToTimelineRecord)
+            .Where(r => r is not null)
+            .Cast<TimelineRecord>()
+            .ToList();
+
+        var progressRecords = SelectProgressRecords(timelineRecords);
+
         var succeeded = 0;
         var failed = 0;
         var skipped = 0;
         var pending = 0;
         string? currentStage = null;
         string? failedStage = null;
-        string? pendingApproval = null;
+        var pendingApproval = timelineRecords
+            .Where(r => IsApprovalLike(r.Name))
+            .Where(r => IsPendingOrInProgress(r.State, r.Result))
+            .Select(r => r.Name)
+            .FirstOrDefault();
 
-        foreach (var record in records.EnumerateArray())
+        foreach (var record in progressRecords)
         {
-            var type = GetString(record, "type");
-            if (!IsStepLikeRecord(type)) continue;
-
-            var name = GetString(record, "name");
-            var state = GetString(record, "state") ?? "";
-            var result = GetString(record, "result") ?? "";
-            var resultLower = result.ToLowerInvariant();
-            var stateLower = state.ToLowerInvariant();
+            var resultLower = record.Result.ToLowerInvariant();
 
             if (resultLower is "succeeded" or "succeededwithissues")
                 succeeded++;
             else if (resultLower is "failed" or "canceled")
             {
                 failed++;
-                failedStage ??= name;
+                failedStage ??= record.Name;
             }
             else if (resultLower is "skipped")
                 skipped++;
             else
             {
                 pending++;
-                currentStage ??= name;
-                if (IsApprovalLike(name))
-                    pendingApproval ??= name;
+                currentStage ??= record.Name;
             }
 
-            if (stateLower is "inprogress" or "pending")
-                currentStage ??= name;
+            if (IsPendingOrInProgress(record.State, record.Result))
+                currentStage ??= record.Name;
         }
 
         currentStage = failedStage ?? pendingApproval ?? currentStage;
         return new TimelineSummary(succeeded, failed, skipped, pending, succeeded + failed + skipped + pending, currentStage, pendingApproval);
     }
 
-    private static bool IsStepLikeRecord(string? type)
+    private static TimelineRecord? ToTimelineRecord(JsonElement record)
     {
-        if (string.IsNullOrWhiteSpace(type)) return false;
-        return type.Equals("Task", StringComparison.OrdinalIgnoreCase)
-            || type.Equals("Checkpoint", StringComparison.OrdinalIgnoreCase)
-            || type.Equals("Phase", StringComparison.OrdinalIgnoreCase)
-            || type.Equals("Stage", StringComparison.OrdinalIgnoreCase)
-            || type.Equals("Job", StringComparison.OrdinalIgnoreCase);
+        var type = GetString(record, "type");
+        if (string.IsNullOrWhiteSpace(type)) return null;
+
+        return new TimelineRecord(
+            type,
+            GetString(record, "name"),
+            GetString(record, "state") ?? "",
+            GetString(record, "result") ?? "");
+    }
+
+    private static IReadOnlyList<TimelineRecord> SelectProgressRecords(IReadOnlyList<TimelineRecord> records)
+    {
+        // ADO timelines include nested Stage -> Phase -> Job -> Task/Checkpoint records.
+        // The UX should summarize user-visible progress, not every low-level task.
+        foreach (var type in new[] { "Stage", "Phase", "Job", "Task", "Checkpoint" })
+        {
+            var candidates = records
+                .Where(r => r.Type.Equals(type, StringComparison.OrdinalIgnoreCase))
+                .Where(r => !IsApprovalLike(r.Name))
+                .ToList();
+
+            if (candidates.Count > 0)
+                return candidates;
+        }
+
+        return [];
+    }
+
+    private static bool IsPendingOrInProgress(string state, string result)
+    {
+        if (!string.IsNullOrWhiteSpace(result))
+            return false;
+
+        return state.Equals("inprogress", StringComparison.OrdinalIgnoreCase)
+            || state.Equals("pending", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsApprovalLike(string? name)
@@ -563,4 +595,10 @@ public sealed class AzureDevOpsService
     {
         public static TimelineSummary Empty { get; } = new(0, 0, 0, 0, 0, null, null);
     }
+
+    private sealed record TimelineRecord(
+        string Type,
+        string? Name,
+        string State,
+        string Result);
 }
