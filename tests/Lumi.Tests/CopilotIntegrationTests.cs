@@ -688,6 +688,74 @@ public class CopilotIntegrationTests : IAsyncLifetime
         await session.DisposeAsync();
     }
 
+    [SkippableFact]
+    public async Task GitHubMcpWebSearch_CanBeInvokedByNormalSession()
+    {
+        SkipIfDisabled();
+
+        var mcpServers = new Dictionary<string, object>();
+        var token = CopilotService.TryGetGitHubTokenForMcp();
+        GitHubMcpWebSearchBootstrap.Ensure(mcpServers, token);
+        var serverConfig = Assert.IsType<McpRemoteServerConfig>(mcpServers[GitHubMcpWebSearchBootstrap.ServerName]);
+        var hasAuthHeader = serverConfig.Headers?.ContainsKey("Authorization") == true;
+
+        var config = SessionConfigBuilder.Build(
+            systemPrompt: "You MUST use web_search whenever the user asks you to search the web. Do not answer web-search requests without using the tool.",
+            model: null, workingDirectory: null, skillDirectories: null,
+            customAgents: null, tools: null, mcpServers: mcpServers,
+            reasoningEffort: null, userInputHandler: null,
+            onPermission: null, hooks: null);
+
+        var session = await _service.CreateSessionAsync(config);
+        var mcpList = await Timeout(session.Rpc.Mcp.ListAsync(), 30);
+        var mcpSummary = string.Join(", ", mcpList.Servers.Select(server => $"{server.Name}:{server.Status}:{server.Error}"));
+        Assert.Contains(mcpList.Servers, server => server.Name == GitHubMcpWebSearchBootstrap.ServerName);
+
+        var toolNames = new List<string>();
+        var assistantResponse = "";
+        var doneTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        using var sub = session.On(evt =>
+        {
+            switch (evt)
+            {
+                case ToolExecutionStartEvent tool:
+                    toolNames.Add(tool.Data.ToolName);
+                    if (!string.IsNullOrWhiteSpace(tool.Data.McpToolName))
+                        toolNames.Add(tool.Data.McpToolName);
+                    break;
+                case AssistantMessageEvent msg:
+                    assistantResponse = msg.Data.Content ?? "";
+                    break;
+                case SessionIdleEvent:
+                    doneTcs.TrySetResult(true);
+                    break;
+                case SessionErrorEvent err:
+                    doneTcs.TrySetException(new Exception(err.Data.Message));
+                    break;
+            }
+        });
+
+        try
+        {
+            await session.SendAsync(new MessageOptions
+            {
+                Prompt = "Search the web for the exact query 'GitHub Copilot' using web_search, then summarize one result in one sentence."
+            });
+            await Timeout(doneTcs.Task, 90);
+
+            Assert.True(
+                toolNames.Any(toolName =>
+                    string.Equals(toolName, "web_search", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(toolName, "github-mcp-server-web_search", StringComparison.OrdinalIgnoreCase)),
+                $"Token found: {!string.IsNullOrWhiteSpace(token)}; auth header: {hasAuthHeader}; MCP servers: {mcpSummary}; assistant response: {assistantResponse}");
+        }
+        finally
+        {
+            await session.DisposeAsync();
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════════════════
     //  9. Custom agents — sub-agents registered on config
     // ═══════════════════════════════════════════════════════════════════════

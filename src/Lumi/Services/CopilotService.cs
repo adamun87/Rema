@@ -648,10 +648,11 @@ public class CopilotService : IAsyncDisposable
 
     private static void ConfigureAuthentication(CopilotClientOptions options)
     {
-        var token = TryReadStoredGitHubToken();
+        var token = TryGetGitHubTokenForMcp();
         if (!string.IsNullOrWhiteSpace(token))
         {
             options.GitHubToken = token;
+            options.Environment = BuildCliEnvironmentWithGitHubToken(token);
             options.UseLoggedInUser = false;
             return;
         }
@@ -659,7 +660,39 @@ public class CopilotService : IAsyncDisposable
         options.UseLoggedInUser = true;
     }
 
-    private static string? TryReadStoredGitHubToken()
+    internal static string? TryGetGitHubTokenForMcp()
+    {
+        foreach (var name in new[]
+        {
+            "GITHUB_PERSONAL_ACCESS_TOKEN",
+            "GITHUB_COPILOT_GITHUB_TOKEN",
+        })
+        {
+            var token = Environment.GetEnvironmentVariable(name);
+            if (!string.IsNullOrWhiteSpace(token))
+                return token;
+        }
+
+        return TryReadStoredGitHubToken();
+    }
+
+    private static IReadOnlyDictionary<string, string> BuildCliEnvironmentWithGitHubToken(string token)
+    {
+        var env = Environment.GetEnvironmentVariables()
+            .Cast<System.Collections.DictionaryEntry>()
+            .Where(entry => entry.Key is string && entry.Value is string)
+            .ToDictionary(
+                entry => (string)entry.Key,
+                entry => (string)entry.Value!,
+                StringComparer.OrdinalIgnoreCase);
+
+        env["GITHUB_PERSONAL_ACCESS_TOKEN"] = token;
+        env["GITHUB_COPILOT_GITHUB_TOKEN"] = token;
+
+        return env;
+    }
+
+    internal static string? TryReadStoredGitHubToken()
     {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             return null;
@@ -689,8 +722,19 @@ public class CopilotService : IAsyncDisposable
         if (!File.Exists(configPath))
             return default;
 
-        using var document = JsonDocument.Parse(File.ReadAllText(configPath));
-        if (!document.RootElement.TryGetProperty("last_logged_in_user", out var lastUser)
+        return ParseStoredCopilotIdentity(File.ReadAllText(configPath));
+    }
+
+    internal static (string? Login, string? Host) ParseStoredCopilotIdentity(string json)
+    {
+        using var document = JsonDocument.Parse(json, new JsonDocumentOptions
+        {
+            AllowTrailingCommas = true,
+            CommentHandling = JsonCommentHandling.Skip
+        });
+
+        if ((!document.RootElement.TryGetProperty("last_logged_in_user", out var lastUser)
+                && !document.RootElement.TryGetProperty("lastLoggedInUser", out lastUser))
             || lastUser.ValueKind != JsonValueKind.Object)
         {
             return default;

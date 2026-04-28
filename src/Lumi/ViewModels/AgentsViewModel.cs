@@ -145,10 +145,11 @@ public partial class AgentsViewModel : ObservableObject
     {
         AvailableTools.Clear();
         // Empty ToolNames means "all tools" — show all as selected
-        var hasRestrictions = agent?.ToolNames.Count > 0;
+        var toolNames = agent?.ToolNames ?? [];
+        var hasRestrictions = toolNames.Count > 0;
         foreach (var (name, displayName, group, description) in KnownTools)
         {
-            var isAssigned = !hasRestrictions || agent!.ToolNames.Contains(name);
+            var isAssigned = !hasRestrictions || toolNames.Contains(name);
             AvailableTools.Add(new ToolToggle(name, displayName, group, description, isAssigned));
         }
     }

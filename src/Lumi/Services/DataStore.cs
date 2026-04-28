@@ -1271,7 +1271,7 @@ public class DataStore
             SkillIds = [architectureSkill.Id, debugSkill.Id, codeReviewSkill.Id],
             ToolNames = [
                 "code_review", "generate_tests", "explain_code", "analyze_project",
-                "lumi_search", "lumi_fetch", "lumi_research",
+                "web_search", "lumi_fetch",
                 "announce_file", "fetch_skill", "recall_memory",
             ],
             SystemPrompt = """

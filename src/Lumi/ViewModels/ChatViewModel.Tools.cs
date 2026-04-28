@@ -90,7 +90,7 @@ public partial class ChatViewModel
         return tools;
     }
 
-    private async Task<Dictionary<string, object>?> BuildMcpServersAsync(
+    private async Task<Dictionary<string, object>> BuildMcpServersAsync(
         string workDir,
         Chat chat,
         LumiAgent? activeAgent,
@@ -157,7 +157,9 @@ public partial class ChatViewModel
         // Add workspace MCP servers from .vscode/mcp.json (VS Code convention)
         await MergeWorkspaceMcpServersAsync(workDir, dict, ct);
 
-        return dict.Count > 0 ? dict : null;
+        GitHubMcpWebSearchBootstrap.Ensure(dict, CopilotService.TryGetGitHubTokenForMcp());
+
+        return dict;
     }
 
     /// <summary>
