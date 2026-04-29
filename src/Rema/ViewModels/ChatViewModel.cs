@@ -42,6 +42,12 @@ public sealed partial class ChatViewModel : ObservableObject
     [ObservableProperty] private long _totalOutputTokens;
     [ObservableProperty] private long _contextCurrentTokens;
     [ObservableProperty] private long _contextTokenLimit;
+
+    // Post-turn suggestion chips on the composer
+    [ObservableProperty] private string _suggestionA = "";
+    [ObservableProperty] private string _suggestionB = "";
+    [ObservableProperty] private string _suggestionC = "";
+    [ObservableProperty] private bool _isSuggestionsGenerating;
     public int ChatFontSize => _dataStore.Data.Settings.FontSize;
 
     public bool HasTokenUsage => TotalInputTokens > 0 || TotalOutputTokens > 0;
@@ -106,6 +112,7 @@ public sealed partial class ChatViewModel : ObservableObject
         _copilotService = copilotService;
         _azureDevOpsService = azureDevOpsService;
         _transcriptBuilder.ApplySettings(_dataStore.Data.Settings);
+        _transcriptBuilder.OnUserEditConfirmed = OnUserEditConfirmedAsync;
 
         // Populate chat history newest-first
         for (var i = _dataStore.Data.Chats.Count - 1; i >= 0; i--)
@@ -140,6 +147,9 @@ public sealed partial class ChatViewModel : ObservableObject
 
         _lastUserPrompt = prompt;
         PromptText = "";
+        SuggestionA = "";
+        SuggestionB = "";
+        SuggestionC = "";
         IsBusy = true;
         StatusText = "Thinking…";
 
@@ -581,6 +591,7 @@ public sealed partial class ChatViewModel : ObservableObject
                     {
                         IsStreaming = false;
                         StatusText = "";
+                        _ = GenerateSuggestionsAsync();
                     });
                     break;
 
@@ -675,6 +686,56 @@ public sealed partial class ChatViewModel : ObservableObject
         return tcs.Task;
     }
 
+    // ── Post-Turn Suggestions ──
+
+    private async Task GenerateSuggestionsAsync()
+    {
+        if (CurrentChat is null) return;
+
+        SuggestionA = "";
+        SuggestionB = "";
+        SuggestionC = "";
+        IsSuggestionsGenerating = true;
+
+        try
+        {
+            var lastMessages = CurrentChat.Messages.TakeLast(4)
+                .Select(m => $"{m.Role}: {(m.Content?.Length > 200 ? m.Content[..200] : m.Content)}")
+                .ToList();
+            var context = string.Join("\n", lastMessages);
+
+            var fastModel = await _copilotService.GetFastestModelIdAsync();
+            var result = await _copilotService.UseLightweightSessionAsync(
+                new LightweightSessionOptions
+                {
+                    SystemPrompt = "Generate exactly 3 short follow-up suggestions (max 8 words each) for a chat conversation. Return ONLY 3 lines, one suggestion per line. No numbering, no bullets, no quotes.",
+                    Model = fastModel,
+                    Streaming = false,
+                },
+                async (session, ct) =>
+                {
+                    var response = await session.SendAndWaitAsync(
+                        new MessageOptions { Prompt = context },
+                        TimeSpan.FromSeconds(15), ct);
+                    return response?.Data?.Content ?? "";
+                });
+
+            var lines = result.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                SuggestionA = lines.Length > 0 ? lines[0] : "";
+                SuggestionB = lines.Length > 1 ? lines[1] : "";
+                SuggestionC = lines.Length > 2 ? lines[2] : "";
+                IsSuggestionsGenerating = false;
+            });
+        }
+        catch
+        {
+            Dispatcher.UIThread.Post(() => IsSuggestionsGenerating = false);
+        }
+    }
+
     // ── Chat Loading ──
 
     public async Task LoadChatAsync(Chat chat)
@@ -711,11 +772,44 @@ public sealed partial class ChatViewModel : ObservableObject
         TotalOutputTokens = 0;
         ContextCurrentTokens = 0;
         ContextTokenLimit = 0;
+        SuggestionA = "";
+        SuggestionB = "";
+        SuggestionC = "";
         TranscriptRebuilt?.Invoke();
     }
 
     [RelayCommand]
     private Task SelectChat(Chat chat) => LoadChatAsync(chat);
+
+    // ── Edit + Resend ──
+
+    private async void OnUserEditConfirmedAsync(ChatMessage originalMsg, string editedText)
+    {
+        if (CurrentChat is null || string.IsNullOrWhiteSpace(editedText)) return;
+
+        // Truncate chat messages after (and including) the edited message
+        var idx = CurrentChat.Messages.IndexOf(originalMsg);
+        if (idx < 0) return;
+
+        // Remove all messages from the edited one onward
+        while (CurrentChat.Messages.Count > idx)
+            CurrentChat.Messages.RemoveAt(CurrentChat.Messages.Count - 1);
+
+        // Detach the session so a new one will be created with fresh context
+        DetachPersistedSession(CurrentChat);
+
+        // Rebuild internal message list to match
+        _messages.Clear();
+        foreach (var msg in CurrentChat.Messages)
+            _messages.Add(new ChatMessageViewModel(msg));
+
+        _transcriptBuilder.Rebuild(_messages);
+        TranscriptRebuilt?.Invoke();
+
+        // Send the edited text as a new message
+        PromptText = editedText;
+        await SendMessageAsync();
+    }
 
     // ── Retry ──
 

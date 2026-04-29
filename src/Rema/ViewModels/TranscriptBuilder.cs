@@ -28,6 +28,12 @@ public sealed class TranscriptBuilder
     private int _itemCounter;
     private RemaSettings _settings = new();
 
+    /// <summary>
+    /// Callback set by ChatViewModel — invoked when a user confirms an inline edit
+    /// on a previous message. Parameters: (ChatMessage originalMsg, string editedText).
+    /// </summary>
+    public Action<ChatMessage, string>? OnUserEditConfirmed { get; set; }
+
     public void ApplySettings(RemaSettings settings)
     {
         _settings = settings;
@@ -241,6 +247,11 @@ public sealed class TranscriptBuilder
             Author = msgVm.Author ?? "You",
             TimestampText = TimestampOrEmpty(msgVm),
         };
+
+        // Wire inline-edit callback
+        var msg = msgVm.Message;
+        item.OnEditConfirmed = (editedText) => OnUserEditConfirmed?.Invoke(msg, editedText);
+
         _currentTurn!.Items.Add(item);
     }
 

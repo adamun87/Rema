@@ -32,7 +32,12 @@
     <DataTemplate DataType="vm:UserMessageItem">
       <sc:StrataChatMessage Role="User" HorizontalAlignment="Right" MaxWidth="560"
                             Author="{Binding Author}"
-                            Timestamp="{Binding TimestampText}">
+                            Timestamp="{Binding TimestampText}"
+                            IsEditable="True"
+                            IsEditing="{Binding IsEditing, Mode=TwoWay}"
+                            EditText="{Binding EditText, Mode=TwoWay}"
+                            EditConfirmedCommand="{Binding ConfirmEditCommand}"
+                            ApplyEditToContent="False">
         <sc:StrataChatMessage.Content>
           <SelectableTextBlock Text="{Binding Content}" TextWrapping="Wrap" />
         </sc:StrataChatMessage.Content>
@@ -411,7 +416,11 @@
                                PromptText="{Binding PromptText, Mode=TwoWay}"
                                IsBusy="{Binding IsBusy}"
                                Placeholder="Ask Rema…"
-                               CanAttach="False" />
+                               CanAttach="False"
+                               SuggestionA="{Binding SuggestionA}"
+                               SuggestionB="{Binding SuggestionB}"
+                               SuggestionC="{Binding SuggestionC}"
+                               IsSuggestionsGenerating="{Binding IsSuggestionsGenerating}" />
       </StackPanel>
     </sc:StrataChatShell.Composer>
 

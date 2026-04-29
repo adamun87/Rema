@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
+using Rema.Services;
 using Rema.ViewModels;
 
 namespace Rema.Views;
@@ -16,6 +17,7 @@ public partial class MainWindow : Window
     private Button?[] _navButtons = [];
     private Control? _onboardingPanel;
     private MainViewModel? _wiredVm;
+    private GlobalHotkeyService? _hotkeyService;
 
     public MainWindow()
     {
@@ -69,6 +71,8 @@ public partial class MainWindow : Window
         Opened += (_, _) =>
         {
             RestoreWindowBounds();
+            _hotkeyService = new GlobalHotkeyService();
+            _hotkeyService.Start(this);
         };
     }
 
@@ -159,6 +163,7 @@ public partial class MainWindow : Window
     protected override void OnClosing(WindowClosingEventArgs e)
     {
         CaptureBoundsToSettings();
+        _hotkeyService?.Dispose();
         base.OnClosing(e);
     }
 

@@ -29,6 +29,18 @@ public sealed partial class UserMessageItem : TranscriptItem
     [ObservableProperty] private string _content = "";
     [ObservableProperty] private string _author = "";
     [ObservableProperty] private string _timestampText = "";
+    [ObservableProperty] private bool _isEditing;
+    [ObservableProperty] private string? _editText;
+
+    /// <summary>Called by the view when the user confirms an inline edit.</summary>
+    public Action<string>? OnEditConfirmed { get; set; }
+
+    [RelayCommand]
+    private void ConfirmEdit()
+    {
+        if (!string.IsNullOrWhiteSpace(EditText))
+            OnEditConfirmed?.Invoke(EditText);
+    }
 }
 
 public sealed partial class AssistantMessageItem : TranscriptItem

@@ -1,6 +1,9 @@
 using System;
+using System.Linq;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Markup.Xaml;
+using Avalonia.Platform.Storage;
 using Rema.ViewModels;
 using StrataTheme.Controls;
 
@@ -18,6 +21,11 @@ public partial class ChatView : UserControl
         _chatShell = this.FindControl<StrataChatShell>("ChatShell");
         _composer = this.FindControl<StrataChatComposer>("Composer");
         // Copy is handled internally by StrataChatMessage (clipboard + optional CopyCommand binding)
+
+        // Enable drag-drop file upload
+        DragDrop.SetAllowDrop(this, true);
+        AddHandler(DragDrop.DragOverEvent, OnDragOver);
+        AddHandler(DragDrop.DropEvent, OnDrop);
     }
 
     protected override void OnDataContextChanged(EventArgs e)
@@ -74,4 +82,30 @@ public partial class ChatView : UserControl
     }
 
     private void OnTranscriptRebuilt() { }
+
+    private void OnDragOver(object? sender, DragEventArgs e)
+    {
+        e.DragEffects = e.DataTransfer.Contains(DataFormat.File)
+            ? DragDropEffects.Copy
+            : DragDropEffects.None;
+    }
+
+    private void OnDrop(object? sender, DragEventArgs e)
+    {
+        if (!e.DataTransfer.Contains(DataFormat.File)) return;
+        var files = e.DataTransfer.TryGetFiles();
+        if (files is null || _wiredVm is null) return;
+
+        var paths = files
+            .Select(f => f.TryGetLocalPath())
+            .Where(p => p is not null)
+            .ToList();
+
+        if (paths.Count == 0) return;
+
+        var attachment = string.Join("\n", paths.Select(p => $"[Attached: {p}]"));
+        _wiredVm.PromptText = string.IsNullOrEmpty(_wiredVm.PromptText)
+            ? attachment
+            : _wiredVm.PromptText + "\n" + attachment;
+    }
 }
