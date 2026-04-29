@@ -307,7 +307,33 @@
   </UserControl.DataTemplates>
 
   <!-- ═══ Main Layout ═══ -->
-  <sc:StrataChatShell x:Name="ChatShell" IsStreaming="{Binding IsBusy}">
+  <sc:StrataChatShell x:Name="ChatShell" IsStreaming="{Binding IsBusy}"
+                      PresenceText="{Binding GitStatusText}">
+
+    <!-- Git status header -->
+    <sc:StrataChatShell.Header>
+      <DockPanel IsVisible="{Binding HasGitInfo}" LastChildFill="False">
+        <!-- Branch name -->
+        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <TextBlock Text="⎇" FontSize="12" Foreground="{DynamicResource Brush.TextTertiary}"
+                     VerticalAlignment="Center" />
+          <TextBlock Text="{Binding GitBranch}" FontSize="12" FontWeight="SemiBold"
+                     Foreground="{DynamicResource Brush.TextPrimary}" VerticalAlignment="Center" />
+          <Border CornerRadius="4" Padding="6,1"
+                  Background="{DynamicResource Brush.Surface2}">
+            <TextBlock Text="{Binding GitModeText}" FontSize="10"
+                       Foreground="{DynamicResource Brush.TextSecondary}" />
+          </Border>
+        </StackPanel>
+
+        <!-- Refresh button -->
+        <Button DockPanel.Dock="Right" Classes="subtle" Padding="4"
+                Command="{Binding RefreshGitStatusCommand}"
+                ToolTip.Tip="Refresh git status" Cursor="Hand">
+          <TextBlock Text="↻" FontSize="14" Foreground="{DynamicResource Brush.TextTertiary}" />
+        </Button>
+      </DockPanel>
+    </sc:StrataChatShell.Header>
 
     <!-- Transcript -->
     <sc:StrataChatShell.Transcript>

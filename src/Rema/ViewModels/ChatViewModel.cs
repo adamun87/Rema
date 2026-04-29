@@ -16,6 +16,7 @@ public sealed partial class ChatViewModel : ObservableObject
     private readonly DataStore _dataStore;
     private readonly CopilotService _copilotService;
     private readonly AzureDevOpsService _azureDevOpsService;
+    private readonly GitStatusService _gitStatus = new();
 
     private readonly TranscriptBuilder _transcriptBuilder = new();
     private readonly List<ChatMessageViewModel> _messages = [];
@@ -57,6 +58,37 @@ public sealed partial class ChatViewModel : ObservableObject
     // ── Voice Input ──
     [ObservableProperty] private bool _isRecording;
     private VoiceInputService? _voiceService;
+
+    // ── Git Status ──
+    [ObservableProperty] private string _gitBranch = "";
+    [ObservableProperty] private string _gitMode = "";
+    [ObservableProperty] private string _gitStatusText = "";
+    [ObservableProperty] private bool _hasGitInfo;
+
+    public string GitHeaderText => HasGitInfo ? $"⎇ {GitBranch}" : "";
+    public string GitModeText => HasGitInfo ? (GitMode == "worktree" ? "worktree" : "local") : "";
+
+    partial void OnGitBranchChanged(string value)
+    {
+        OnPropertyChanged(nameof(GitHeaderText));
+        OnPropertyChanged(nameof(GitModeText));
+    }
+
+    partial void OnHasGitInfoChanged(bool value)
+    {
+        OnPropertyChanged(nameof(GitHeaderText));
+        OnPropertyChanged(nameof(GitModeText));
+    }
+
+    [RelayCommand]
+    private async Task RefreshGitStatusAsync()
+    {
+        await _gitStatus.RefreshAsync();
+        GitBranch = _gitStatus.Branch;
+        GitMode = _gitStatus.IsWorktree ? "worktree" : "local";
+        GitStatusText = _gitStatus.StatusSummary;
+        HasGitInfo = !string.IsNullOrEmpty(_gitStatus.Branch);
+    }
 
     public int ChatFontSize => _dataStore.Data.Settings.FontSize;
 
@@ -127,6 +159,8 @@ public sealed partial class ChatViewModel : ObservableObject
         // Populate chat history newest-first
         for (var i = _dataStore.Data.Chats.Count - 1; i >= 0; i--)
             Chats.Add(_dataStore.Data.Chats[i]);
+
+        _ = RefreshGitStatusAsync();
     }
 
     public void RefreshSettings()
