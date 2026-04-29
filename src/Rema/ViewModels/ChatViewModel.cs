@@ -292,6 +292,7 @@ public sealed partial class ChatViewModel : ObservableObject
             var tools = RemaChatToolService.CreateTools(_dataStore, _azureDevOpsService);
 
             _activeSessionWasRecreated = false;
+            UserInputHandler userInputHandler = HandleUserInputAsync;
 
             if (chat.CopilotSessionId is not null)
             {
@@ -299,7 +300,8 @@ public sealed partial class ChatViewModel : ObservableObject
                 try
                 {
                     var resumeConfig = SessionConfigBuilder.BuildForResume(
-                        systemPrompt, model, reasoningEffort, tools, mcpServers, null, null);
+                        systemPrompt, model, reasoningEffort, tools, mcpServers, null, null,
+                        userInputHandler);
                     var session = await client.ResumeSessionAsync(
                         chat.CopilotSessionId, resumeConfig, ct);
                     _activeSession = session;
@@ -308,7 +310,8 @@ public sealed partial class ChatViewModel : ObservableObject
                 {
                     DetachPersistedSession(chat);
                     var config = SessionConfigBuilder.Build(
-                        systemPrompt, model, reasoningEffort, tools, mcpServers, null, null);
+                        systemPrompt, model, reasoningEffort, tools, mcpServers, null, null,
+                        userInputHandler);
                     var session = await client.CreateSessionAsync(config, ct);
                     chat.CopilotSessionId = session.SessionId;
                     _activeSession = session;
@@ -320,7 +323,8 @@ public sealed partial class ChatViewModel : ObservableObject
             {
                 // New session
                 var config = SessionConfigBuilder.Build(
-                    systemPrompt, model, reasoningEffort, tools, mcpServers, null, null);
+                    systemPrompt, model, reasoningEffort, tools, mcpServers, null, null,
+                    userInputHandler);
                 var session = await client.CreateSessionAsync(config, ct);
                 chat.CopilotSessionId = session.SessionId;
                 _activeSession = session;
@@ -642,28 +646,33 @@ public sealed partial class ChatViewModel : ObservableObject
                     });
                     break;
 
-                // ── User-input question card ──
-
-                case UserInputRequestedEvent inputReq:
-                    Dispatcher.UIThread.Post(() =>
-                    {
-                        var d = inputReq.Data;
-                        var questionItem = new QuestionItem(
-                            d.RequestId,
-                            d.Question,
-                            d.Choices?.ToList(),
-                            d.AllowFreeform ?? true,
-                            (_, answer) =>
-                            {
-                                // Response is handled by the SDK via the RequestId
-                            },
-                            $"question-{_questionCounter++}");
-                        _transcriptBuilder.AddDirectItem(questionItem);
-                        ScrollToEndRequested?.Invoke();
-                    });
-                    break;
+                // UserInputRequestedEvent is NOT used — we register a
+                // handler via session.RegisterUserInputHandler() instead
+                // so the SDK gets a response back.
             }
         });
+    }
+
+    private Task<UserInputResponse> HandleUserInputAsync(
+        UserInputRequest request, UserInputInvocation _)
+    {
+        var tcs = new TaskCompletionSource<UserInputResponse>();
+        Dispatcher.UIThread.Post(() =>
+        {
+            var questionItem = new QuestionItem(
+                request.Question,
+                request.Question,
+                request.Choices?.ToList(),
+                request.AllowFreeform ?? true,
+                (__, answer) => tcs.TrySetResult(new UserInputResponse
+                {
+                    Answer = answer,
+                }),
+                $"question-{_questionCounter++}");
+            _transcriptBuilder.AddDirectItem(questionItem);
+            ScrollToEndRequested?.Invoke();
+        });
+        return tcs.Task;
     }
 
     // ── Chat Loading ──

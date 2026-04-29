@@ -23,7 +23,8 @@ public static class SessionConfigBuilder
         List<AIFunction>? tools,
         Dictionary<string, object>? mcpServers,
         PermissionRequestHandler? onPermission,
-        SessionHooks? hooks)
+        SessionHooks? hooks,
+        UserInputHandler? onUserInput = null)
     {
         var config = new SessionConfig
         {
@@ -32,6 +33,7 @@ public static class SessionConfigBuilder
             Streaming = true,
             InfiniteSessions = new InfiniteSessionConfig { Enabled = true },
             OnPermissionRequest = onPermission ?? PermissionHandler.ApproveAll,
+            OnUserInputRequest = onUserInput,
         };
 
         if (!string.IsNullOrEmpty(systemPrompt))
@@ -65,7 +67,8 @@ public static class SessionConfigBuilder
         List<AIFunction>? tools,
         Dictionary<string, object>? mcpServers,
         PermissionRequestHandler? onPermission,
-        SessionHooks? hooks)
+        SessionHooks? hooks,
+        UserInputHandler? onUserInput = null)
     {
         var config = new ResumeSessionConfig
         {
@@ -74,6 +77,7 @@ public static class SessionConfigBuilder
             Streaming = true,
             InfiniteSessions = new InfiniteSessionConfig { Enabled = true },
             OnPermissionRequest = onPermission ?? PermissionHandler.ApproveAll,
+            OnUserInputRequest = onUserInput,
         };
 
         if (!string.IsNullOrEmpty(systemPrompt))

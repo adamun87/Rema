@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
@@ -69,6 +70,17 @@ public partial class App : Application
             {
                 Dispatcher.UIThread.Post(() =>
                 {
+#if DEBUG
+                    if (desktop.Args?.Contains("--debug-agent-harness") == true)
+                    {
+                        DebugFixture.Populate(vm.ChatVM.MountedTranscriptTurns);
+                        vm.ChatVM.TotalInputTokens = 42_150;
+                        vm.ChatVM.TotalOutputTokens = 1_380;
+                        vm.ChatVM.ContextCurrentTokens = 42_150;
+                        vm.ChatVM.ContextTokenLimit = 128_000;
+                        return;
+                    }
+#endif
                     _ = vm.InitializeAsync();
                 }, DispatcherPriority.Background);
             };
