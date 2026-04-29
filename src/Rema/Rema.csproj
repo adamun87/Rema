@@ -41,4 +41,8 @@
     <ProjectReference Include="..\..\Strata\src\StrataTheme\StrataTheme.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Lumi.Tests" />
+  </ItemGroup>
+
 </Project>
