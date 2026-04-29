@@ -37,7 +37,52 @@ public sealed partial class ChatViewModel : ObservableObject
     [ObservableProperty] private bool _isStreaming;
     [ObservableProperty] private string _promptText = "";
     [ObservableProperty] private string _statusText = "";
+    [ObservableProperty] private long _totalInputTokens;
+    [ObservableProperty] private long _totalOutputTokens;
+    [ObservableProperty] private long _contextCurrentTokens;
+    [ObservableProperty] private long _contextTokenLimit;
     public int ChatFontSize => _dataStore.Data.Settings.FontSize;
+
+    public bool HasTokenUsage => TotalInputTokens > 0 || TotalOutputTokens > 0;
+    public string TokenUsageSummary => ContextTokenLimit > 0
+        ? $"{ContextUsagePercent}%"
+        : FormatTokenCount(TotalInputTokens + TotalOutputTokens);
+    public string TokenUsageSuffixText => ContextTokenLimit > 0 ? "context" : "tokens";
+    public string TokenInputDisplay => $"{TotalInputTokens:N0}";
+    public string TokenOutputDisplay => $"{TotalOutputTokens:N0}";
+    public string TokenTotalDisplay => $"{TotalInputTokens + TotalOutputTokens:N0}";
+    public bool HasContextUsage => ContextTokenLimit > 0;
+    public int ContextUsagePercent => ContextTokenLimit > 0
+        ? (int)Math.Round(100.0 * ContextCurrentTokens / ContextTokenLimit)
+        : 0;
+    public string ContextUsageDisplay => ContextTokenLimit > 0
+        ? $"{FormatTokenCount(ContextCurrentTokens)} / {FormatTokenCount(ContextTokenLimit)}"
+        : "";
+
+    partial void OnTotalInputTokensChanged(long value) => NotifyTokenPropertiesChanged();
+    partial void OnTotalOutputTokensChanged(long value) => NotifyTokenPropertiesChanged();
+    partial void OnContextCurrentTokensChanged(long value) => NotifyTokenPropertiesChanged();
+    partial void OnContextTokenLimitChanged(long value) => NotifyTokenPropertiesChanged();
+
+    private void NotifyTokenPropertiesChanged()
+    {
+        OnPropertyChanged(nameof(HasTokenUsage));
+        OnPropertyChanged(nameof(TokenUsageSummary));
+        OnPropertyChanged(nameof(TokenUsageSuffixText));
+        OnPropertyChanged(nameof(TokenInputDisplay));
+        OnPropertyChanged(nameof(TokenOutputDisplay));
+        OnPropertyChanged(nameof(TokenTotalDisplay));
+        OnPropertyChanged(nameof(HasContextUsage));
+        OnPropertyChanged(nameof(ContextUsagePercent));
+        OnPropertyChanged(nameof(ContextUsageDisplay));
+    }
+
+    private static string FormatTokenCount(long tokens) => tokens switch
+    {
+        < 1_000 => $"{tokens}",
+        < 1_000_000 => $"{tokens / 1_000.0:0.#}K",
+        _ => $"{tokens / 1_000_000.0:0.##}M"
+    };
 
     // Suggestion chips shown on the welcome panel
     public ObservableCollection<string> SuggestionChips { get; } =
@@ -504,6 +549,31 @@ public sealed partial class ChatViewModel : ObservableObject
                         StatusText = "";
                     });
                     break;
+
+                case AssistantUsageEvent usage:
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        var d = usage.Data;
+                        var turnInput = (long)(d.InputTokens ?? 0);
+                        TotalInputTokens += turnInput;
+                        TotalOutputTokens += (long)(d.OutputTokens ?? 0);
+                        if (turnInput > 0)
+                            ContextCurrentTokens = turnInput;
+                        chat.TotalInputTokens = TotalInputTokens;
+                        chat.TotalOutputTokens = TotalOutputTokens;
+                    });
+                    break;
+
+                case SessionUsageInfoEvent usageInfo:
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        var d = usageInfo.Data;
+                        if (d.TokenLimit > 0)
+                            ContextTokenLimit = (long)d.TokenLimit;
+                        if (d.CurrentTokens > 0)
+                            ContextCurrentTokens = (long)d.CurrentTokens;
+                    });
+                    break;
             }
         });
     }
@@ -515,6 +585,11 @@ public sealed partial class ChatViewModel : ObservableObject
         CurrentChat = chat;
         _messages.Clear();
         _activeSession = null;
+
+        TotalInputTokens = chat.TotalInputTokens;
+        TotalOutputTokens = chat.TotalOutputTokens;
+        ContextCurrentTokens = 0;
+        ContextTokenLimit = 0;
 
         await _dataStore.LoadChatMessagesAsync(chat);
 
@@ -533,6 +608,10 @@ public sealed partial class ChatViewModel : ObservableObject
         _messages.Clear();
         _activeSession = null;
         _transcriptBuilder.Reset();
+        TotalInputTokens = 0;
+        TotalOutputTokens = 0;
+        ContextCurrentTokens = 0;
+        ContextTokenLimit = 0;
         TranscriptRebuilt?.Invoke();
     }
 

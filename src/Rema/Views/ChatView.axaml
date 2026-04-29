@@ -138,6 +138,140 @@
                  Margin="0,2,0,0" />
     </DataTemplate>
 
+    <!-- ═══ Terminal Preview ═══ -->
+    <DataTemplate DataType="vm:TerminalPreviewItem">
+      <StackPanel Spacing="4">
+        <sc:StrataAiToolCall ToolName="{Binding ToolName}"
+                             Status="{Binding Status}"
+                             DurationMs="{Binding DurationMs}"
+                             IsExpanded="{Binding IsExpanded}"
+                             MaxWidth="420" />
+        <Border Background="{DynamicResource Brush.Surface1}" CornerRadius="6" Padding="10,8" Margin="0,0,0,4"
+                IsVisible="{Binding IsExpanded}">
+          <StackPanel Spacing="4">
+            <TextBlock Text="{Binding Command}" FontFamily="Cascadia Code,Consolas,monospace"
+                       FontSize="11" Foreground="{DynamicResource Brush.TextSecondary}" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding Output}" FontFamily="Cascadia Code,Consolas,monospace"
+                       FontSize="11" Foreground="{DynamicResource Brush.TextTertiary}" TextWrapping="Wrap"
+                       IsVisible="{Binding Output, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                       MaxLines="20" />
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </DataTemplate>
+
+    <!-- ═══ Sub-agent ═══ -->
+    <DataTemplate DataType="vm:SubagentToolCallItem">
+      <sc:StrataThink Label="{Binding Title}"
+                      Meta="{Binding Meta}"
+                      IsExpanded="{Binding IsExpanded}"
+                      IsActive="{Binding IsActive}"
+                      ProgressValue="{Binding ProgressValue}">
+        <sc:StrataThink.HeaderExtra>
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Border IsVisible="{Binding HasModeLabel}" CornerRadius="4" Padding="6,1"
+                    Background="{DynamicResource Brush.AccentSubtle}">
+              <TextBlock Text="{Binding ModeLabel}" FontSize="10"
+                         Foreground="{DynamicResource Brush.AccentDefault}" />
+            </Border>
+            <TextBlock Text="{Binding DurationText}" FontSize="10"
+                       Foreground="{DynamicResource Brush.TextTertiary}"
+                       IsVisible="{Binding DurationText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          </StackPanel>
+        </sc:StrataThink.HeaderExtra>
+        <sc:StrataThink.Content>
+          <StackPanel Spacing="4">
+            <TextBlock Text="{Binding ModelDisplayName}" FontSize="10"
+                       Foreground="{DynamicResource Brush.TextTertiary}"
+                       IsVisible="{Binding HasModelName}" Margin="0,0,0,4" />
+            <ItemsControl ItemsSource="{Binding Activities}" IsVisible="{Binding HasActivities}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="vm:ToolCallItem">
+                  <sc:StrataAiToolCall ToolName="{Binding ToolName}"
+                                       Status="{Binding Status}"
+                                       DurationMs="{Binding DurationMs}"
+                                       IsExpanded="{Binding IsExpanded}"
+                                       InputParameters="{Binding InputParameters}"
+                                       MoreInfo="{Binding MoreInfo}"
+                                       MaxWidth="420" Margin="0,0,6,6" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </sc:StrataThink.Content>
+      </sc:StrataThink>
+    </DataTemplate>
+
+    <!-- ═══ File Changes Summary ═══ -->
+    <DataTemplate DataType="vm:FileChangesSummaryItem">
+      <sc:StrataThink Label="{Binding Label}">
+        <sc:StrataThink.HeaderExtra>
+          <StackPanel Orientation="Horizontal" Spacing="4">
+            <TextBlock Text="{Binding TotalStatsAdded}" FontSize="11" FontWeight="SemiBold"
+                       Foreground="{DynamicResource Brush.SuccessDefault}" />
+            <TextBlock Text="{Binding TotalStatsRemoved}" FontSize="11" FontWeight="SemiBold"
+                       Foreground="{DynamicResource Brush.DangerDefault}"
+                       IsVisible="{Binding HasTotalRemovals}" />
+          </StackPanel>
+        </sc:StrataThink.HeaderExtra>
+        <sc:StrataThink.Content>
+          <ItemsControl ItemsSource="{Binding FileChanges}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate><StackPanel Spacing="2" /></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate DataType="vm:FileChangeItem">
+                <Border Padding="6,4" CornerRadius="4">
+                  <DockPanel>
+                    <TextBlock DockPanel.Dock="Left" Text="{Binding ActionIcon}" Margin="0,0,6,0"
+                               FontSize="13" VerticalAlignment="Center" />
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4"
+                                VerticalAlignment="Center" Margin="8,0,0,0">
+                      <TextBlock Text="{Binding StatsAdded}" FontSize="11" FontWeight="Medium"
+                                 Foreground="{DynamicResource Brush.SuccessDefault}" />
+                      <TextBlock Text="{Binding StatsRemoved}" FontSize="11" FontWeight="Medium"
+                                 Foreground="{DynamicResource Brush.DangerDefault}"
+                                 IsVisible="{Binding HasRemovals}" />
+                    </StackPanel>
+                    <StackPanel>
+                      <TextBlock Text="{Binding FileName}" FontSize="11" FontWeight="SemiBold" />
+                      <TextBlock Text="{Binding Directory}" FontSize="11"
+                                 Foreground="{DynamicResource Brush.TextTertiary}"
+                                 TextTrimming="CharacterEllipsis"
+                                 IsVisible="{Binding Directory, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    </StackPanel>
+                  </DockPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </sc:StrataThink.Content>
+      </sc:StrataThink>
+    </DataTemplate>
+
+    <!-- ═══ Question Card ═══ -->
+    <DataTemplate DataType="vm:QuestionItem">
+      <sc:StrataQuestionCard Question="{Binding Question}"
+                             OptionsList="{Binding OptionsList}"
+                             AllowFreeText="{Binding AllowFreeText}"
+                             SelectedAnswer="{Binding SelectedAnswer, Mode=TwoWay}"
+                             IsAnswered="{Binding IsAnswered, Mode=TwoWay}" />
+    </DataTemplate>
+
+    <!-- ═══ File Attachment ═══ -->
+    <DataTemplate DataType="vm:FileAttachmentItem">
+      <Button Classes="subtle" Command="{Binding OpenFileCommand}" Padding="8,6" Cursor="Hand">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <TextBlock Text="📎" FontSize="14" VerticalAlignment="Center" />
+          <TextBlock Text="{Binding FileName}" FontSize="12"
+                     Foreground="{DynamicResource Brush.AccentDefault}" VerticalAlignment="Center" />
+        </StackPanel>
+      </Button>
+    </DataTemplate>
+
   </UserControl.DataTemplates>
 
   <!-- ═══ Main Layout ═══ -->
@@ -200,11 +334,58 @@
 
     <!-- Composer -->
     <sc:StrataChatShell.Composer>
-      <sc:StrataChatComposer x:Name="Composer"
-                             PromptText="{Binding PromptText, Mode=TwoWay}"
-                             IsBusy="{Binding IsBusy}"
-                             Placeholder="Ask Rema…"
-                             CanAttach="False" />
+      <StackPanel>
+        <!-- Token usage badge -->
+        <Border IsVisible="{Binding HasTokenUsage}"
+                Padding="8,2" CornerRadius="8" Margin="0,0,0,4"
+                Background="{DynamicResource Brush.Surface2}"
+                Opacity="0.7" HorizontalAlignment="Right">
+          <ToolTip.Tip>
+            <StackPanel Spacing="6" MinWidth="180">
+              <TextBlock Text="Token Usage" FontWeight="SemiBold" FontSize="12"
+                         Foreground="{DynamicResource Brush.TextPrimary}" />
+              <Border Height="1" Background="{DynamicResource Brush.BorderSubtle}" />
+              <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" Margin="0,2,0,0">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Input" FontSize="11"
+                           Foreground="{DynamicResource Brush.TextSecondary}" />
+                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding TokenInputDisplay}" FontSize="11"
+                           Foreground="{DynamicResource Brush.TextPrimary}" HorizontalAlignment="Right" Margin="16,0,0,0" />
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Output" FontSize="11" Margin="0,4,0,0"
+                           Foreground="{DynamicResource Brush.TextSecondary}" />
+                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding TokenOutputDisplay}" FontSize="11" Margin="16,4,0,0"
+                           Foreground="{DynamicResource Brush.TextPrimary}" HorizontalAlignment="Right" />
+              </Grid>
+              <Border Height="1" Background="{DynamicResource Brush.BorderSubtle}" />
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0" Text="Total" FontSize="11" FontWeight="SemiBold"
+                           Foreground="{DynamicResource Brush.TextPrimary}" />
+                <TextBlock Grid.Column="1" Text="{Binding TokenTotalDisplay}" FontSize="11" FontWeight="SemiBold"
+                           Foreground="{DynamicResource Brush.AccentDefault}" HorizontalAlignment="Right" Margin="16,0,0,0" />
+              </Grid>
+              <Border Height="1" Background="{DynamicResource Brush.BorderSubtle}"
+                      IsVisible="{Binding HasContextUsage}" />
+              <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasContextUsage}">
+                <TextBlock Grid.Column="0" Text="Context window" FontSize="11"
+                           Foreground="{DynamicResource Brush.TextSecondary}" />
+                <TextBlock Grid.Column="1" Text="{Binding ContextUsageDisplay}" FontSize="11"
+                           Foreground="{DynamicResource Brush.TextPrimary}" HorizontalAlignment="Right" Margin="16,0,0,0" />
+              </Grid>
+            </StackPanel>
+          </ToolTip.Tip>
+          <StackPanel Orientation="Horizontal" Spacing="4">
+            <TextBlock Text="⚡" FontSize="10" VerticalAlignment="Center" />
+            <TextBlock Text="{Binding TokenUsageSummary}" FontSize="10.5"
+                       Foreground="{DynamicResource Brush.TextTertiary}" VerticalAlignment="Center" />
+            <TextBlock Text="{Binding TokenUsageSuffixText}" FontSize="10.5"
+                       Foreground="{DynamicResource Brush.TextTertiary}" Opacity="0.7" VerticalAlignment="Center" />
+          </StackPanel>
+        </Border>
+        <sc:StrataChatComposer x:Name="Composer"
+                               PromptText="{Binding PromptText, Mode=TwoWay}"
+                               IsBusy="{Binding IsBusy}"
+                               Placeholder="Ask Rema…"
+                               CanAttach="False" />
+      </StackPanel>
     </sc:StrataChatShell.Composer>
 
   </sc:StrataChatShell>
