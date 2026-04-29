@@ -312,6 +312,26 @@
     <!-- Transcript -->
     <sc:StrataChatShell.Transcript>
       <Panel>
+        <!-- Search overlay (Ctrl+F) -->
+        <Border IsVisible="{Binding IsSearchOpen}" ZIndex="10"
+                VerticalAlignment="Top" HorizontalAlignment="Right"
+                Margin="16,8" Padding="8,6" CornerRadius="8"
+                Background="{DynamicResource Brush.Surface2}"
+                BoxShadow="0 2 8 0 #40000000">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <TextBox Text="{Binding SearchQuery, Mode=TwoWay}"
+                     PlaceholderText="Search…" Width="200" FontSize="12"
+                     x:Name="SearchBox" />
+            <TextBlock Text="{Binding SearchResultText}" FontSize="11"
+                       Foreground="{DynamicResource Brush.TextTertiary}"
+                       VerticalAlignment="Center" MinWidth="60" />
+            <Button Classes="subtle" Command="{Binding ToggleSearchCommand}"
+                    Padding="4" ToolTip.Tip="Close">
+              <TextBlock Text="✕" FontSize="12" />
+            </Button>
+          </StackPanel>
+        </Border>
+
         <!-- Welcome panel (shown when no chat active) -->
         <StackPanel x:Name="WelcomePanel" HorizontalAlignment="Center"
                     VerticalAlignment="Center" Spacing="16"
@@ -417,6 +437,8 @@
                                IsBusy="{Binding IsBusy}"
                                Placeholder="Ask Rema…"
                                CanAttach="False"
+                               IsRecording="{Binding IsRecording}"
+                               VoiceCommand="{Binding ToggleVoiceCommand}"
                                SuggestionA="{Binding SuggestionA}"
                                SuggestionB="{Binding SuggestionB}"
                                SuggestionC="{Binding SuggestionC}"

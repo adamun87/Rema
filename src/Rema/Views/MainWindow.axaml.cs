@@ -279,5 +279,19 @@ public partial class MainWindow : Window
             vm.ChatVM.NewChat();
             e.Handled = true;
         }
+
+        // Ctrl+K — global search
+        if (ctrl && e.Key == Key.K)
+        {
+            vm.ToggleGlobalSearchCommand.Execute(null);
+            e.Handled = true;
+        }
+
+        // Escape — close global search
+        if (e.Key == Key.Escape && vm.IsGlobalSearchOpen)
+        {
+            vm.ToggleGlobalSearchCommand.Execute(null);
+            e.Handled = true;
+        }
     }
 }

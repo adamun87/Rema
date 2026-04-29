@@ -83,6 +83,19 @@ public partial class ChatView : UserControl
 
     private void OnTranscriptRebuilt() { }
 
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (e.Handled) return;
+
+        var ctrl = (e.KeyModifiers & KeyModifiers.Control) != 0;
+        if (ctrl && e.Key == Key.F && _wiredVm is not null)
+        {
+            _wiredVm.ToggleSearchCommand.Execute(null);
+            e.Handled = true;
+        }
+    }
+
     private void OnDragOver(object? sender, DragEventArgs e)
     {
         e.DragEffects = e.DataTransfer.Contains(DataFormat.File)

@@ -48,6 +48,16 @@ public sealed partial class ChatViewModel : ObservableObject
     [ObservableProperty] private string _suggestionB = "";
     [ObservableProperty] private string _suggestionC = "";
     [ObservableProperty] private bool _isSuggestionsGenerating;
+
+    // ── Chat Search (Ctrl+F) ──
+    [ObservableProperty] private bool _isSearchOpen;
+    [ObservableProperty] private string _searchQuery = "";
+    [ObservableProperty] private string _searchResultText = "";
+
+    // ── Voice Input ──
+    [ObservableProperty] private bool _isRecording;
+    private VoiceInputService? _voiceService;
+
     public int ChatFontSize => _dataStore.Data.Settings.FontSize;
 
     public bool HasTokenUsage => TotalInputTokens > 0 || TotalOutputTokens > 0;
@@ -819,6 +829,86 @@ public sealed partial class ChatViewModel : ObservableObject
         if (string.IsNullOrEmpty(_lastUserPrompt)) return;
         PromptText = _lastUserPrompt;
         await SendMessageAsync();
+    }
+
+    // ── Chat Search (Ctrl+F) ──
+
+    [RelayCommand]
+    private void ToggleSearch()
+    {
+        IsSearchOpen = !IsSearchOpen;
+        if (!IsSearchOpen)
+        {
+            SearchQuery = "";
+            SearchResultText = "";
+        }
+    }
+
+    partial void OnSearchQueryChanged(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            SearchResultText = "";
+            return;
+        }
+
+        var count = 0;
+        foreach (var turn in MountedTranscriptTurns)
+        {
+            foreach (var item in turn.Items)
+            {
+                var text = item switch
+                {
+                    UserMessageItem u => u.Content,
+                    AssistantMessageItem a => a.Content,
+                    ErrorMessageItem e => e.Content,
+                    ReasoningItem r => r.Content,
+                    _ => null
+                };
+                if (text is not null)
+                    count += CountOccurrences(text, value);
+            }
+        }
+        SearchResultText = count > 0 ? $"{count} match{(count == 1 ? "" : "es")}" : "No matches";
+    }
+
+    private static int CountOccurrences(string text, string pattern)
+    {
+        if (string.IsNullOrEmpty(pattern)) return 0;
+        int count = 0, idx = 0;
+        while ((idx = text.IndexOf(pattern, idx, StringComparison.OrdinalIgnoreCase)) >= 0)
+        {
+            count++;
+            idx += pattern.Length;
+        }
+        return count;
+    }
+
+    // ── Voice Input ──
+
+    [RelayCommand]
+    private void ToggleVoice()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        if (IsRecording)
+        {
+            _voiceService?.StopListening();
+            IsRecording = false;
+        }
+        else
+        {
+            _voiceService ??= new VoiceInputService();
+            _voiceService.TextRecognized += text =>
+            {
+                Dispatcher.UIThread.Post(() =>
+                {
+                    PromptText += (string.IsNullOrEmpty(PromptText) ? "" : " ") + text;
+                });
+            };
+            _voiceService.StartListening();
+            IsRecording = true;
+        }
     }
 
     // ── MCP Servers ──

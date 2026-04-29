@@ -39,6 +39,11 @@ public partial class MainViewModel : ObservableObject
     public CapabilitiesViewModel ToolsVM { get; }
     public CapabilitiesViewModel AgentsVM { get; }
 
+    // ── Global Search (Ctrl+K) ──
+    [ObservableProperty] private bool _isGlobalSearchOpen;
+    [ObservableProperty] private string _globalSearchQuery = "";
+    [ObservableProperty] private ObservableCollection<GlobalSearchResult> _globalSearchResults = [];
+
     public MainViewModel(DataStore dataStore, CopilotService copilotService)
     {
         _dataStore = dataStore;
@@ -173,5 +178,82 @@ public partial class MainViewModel : ObservableObject
     private void SetNav(int index)
     {
         SelectedNavIndex = index;
+    }
+
+    // ── Global Search (Ctrl+K) ──
+
+    [RelayCommand]
+    private void ToggleGlobalSearch()
+    {
+        IsGlobalSearchOpen = !IsGlobalSearchOpen;
+        if (!IsGlobalSearchOpen)
+        {
+            GlobalSearchQuery = "";
+            GlobalSearchResults.Clear();
+        }
+    }
+
+    partial void OnGlobalSearchQueryChanged(string value)
+    {
+        GlobalSearchResults.Clear();
+        if (string.IsNullOrWhiteSpace(value) || value.Length < 2) return;
+
+        var q = value.Trim();
+
+        // Search chats by title
+        foreach (var chat in _dataStore.Data.Chats
+            .Where(c => c.Title.Contains(q, StringComparison.OrdinalIgnoreCase))
+            .Take(5))
+        {
+            GlobalSearchResults.Add(new GlobalSearchResult
+            {
+                Icon = "💬",
+                Title = chat.Title,
+                Category = "Chat",
+                Action = () => { ChatVM.SelectChatCommand.Execute(chat); }
+            });
+        }
+
+        // Search memories
+        foreach (var mem in _dataStore.Data.Memories
+            .Where(m => m.Key.Contains(q, StringComparison.OrdinalIgnoreCase)
+                      || m.Content.Contains(q, StringComparison.OrdinalIgnoreCase))
+            .Take(5))
+        {
+            GlobalSearchResults.Add(new GlobalSearchResult
+            {
+                Icon = "🧠",
+                Title = mem.Key,
+                Category = "Memory",
+            });
+        }
+
+        // Search capabilities
+        foreach (var cap in _dataStore.Data.Capabilities
+            .Where(c => c.IsEnabled && (c.Name.Contains(q, StringComparison.OrdinalIgnoreCase)
+                      || (c.Description?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false)))
+            .Take(5))
+        {
+            GlobalSearchResults.Add(new GlobalSearchResult
+            {
+                Icon = cap.Kind switch { "Skill" => "⚡", "Agent" => "🤖", "Mcp" => "🔌", _ => "🧩" },
+                Title = cap.Name,
+                Category = cap.Kind,
+            });
+        }
+    }
+}
+
+public partial class GlobalSearchResult : ObservableObject
+{
+    public string Icon { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string Category { get; set; } = "";
+    public Action? Action { get; set; }
+
+    [RelayCommand]
+    private void Execute()
+    {
+        Action?.Invoke();
     }
 }

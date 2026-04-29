@@ -278,6 +278,41 @@
       <views:OnboardingView x:Name="OnboardingPanel" DataContext="{Binding OnboardingVM}"
                             ZIndex="100" />
 
+      <!-- Global search overlay (Ctrl+K) -->
+      <Border x:Name="GlobalSearchOverlay" ZIndex="99" IsVisible="{Binding IsGlobalSearchOpen}"
+              VerticalAlignment="Top" HorizontalAlignment="Center"
+              Margin="0,60,0,0" Width="480" MaxHeight="400"
+              Background="{DynamicResource Brush.Surface1}" CornerRadius="12"
+              BoxShadow="0 8 32 0 #60000000" Padding="12">
+        <StackPanel Spacing="8">
+          <TextBox Text="{Binding GlobalSearchQuery, Mode=TwoWay}"
+                   PlaceholderText="Search chats, memories, capabilities…"
+                   FontSize="14" x:Name="GlobalSearchInput" />
+          <ItemsControl ItemsSource="{Binding GlobalSearchResults}" MaxHeight="300">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate><StackPanel Spacing="2" /></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Button Classes="subtle" Command="{Binding ExecuteCommand}" HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Left" Padding="8,6" Cursor="Hand">
+                  <DockPanel>
+                    <TextBlock DockPanel.Dock="Left" Text="{Binding Icon}" FontSize="14"
+                               VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <TextBlock DockPanel.Dock="Right" Text="{Binding Category}" FontSize="10"
+                               Foreground="{DynamicResource Brush.TextTertiary}"
+                               VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding Title}" FontSize="12"
+                               Foreground="{DynamicResource Brush.TextPrimary}"
+                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                  </DockPanel>
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+
       <!-- Dashboard (index 0) -->
       <ScrollViewer x:Name="Page0" DataContext="{Binding ShiftsVM}"
                     HorizontalScrollBarVisibility="Disabled"
