@@ -571,21 +571,24 @@ public sealed partial class ChatViewModel : ObservableObject
         var key = mcp.Name.Trim();
         if (mcp.ServerType == "local" || mcp.ServerType == "stdio")
         {
-            servers[key] = new
+            // Use Dictionary instead of anonymous types — the Copilot SDK serializes
+            // SessionConfig with its own source-generated JsonSerializerContext which
+            // cannot handle anonymous types.
+            servers[key] = new Dictionary<string, object>
             {
-                type = "stdio",
-                command = mcp.Command,
-                args = mcp.Args,
-                env = mcp.Env.Count > 0 ? (object)mcp.Env : new Dictionary<string, string>(),
+                ["type"] = "stdio",
+                ["command"] = mcp.Command,
+                ["args"] = mcp.Args,
+                ["env"] = mcp.Env.Count > 0 ? mcp.Env : new Dictionary<string, string>(),
             };
         }
         else
         {
-            servers[key] = new
+            servers[key] = new Dictionary<string, object>
             {
-                type = "sse",
-                url = mcp.Url,
-                headers = mcp.Headers.Count > 0 ? (object)mcp.Headers : new Dictionary<string, string>(),
+                ["type"] = "sse",
+                ["url"] = mcp.Url,
+                ["headers"] = mcp.Headers.Count > 0 ? mcp.Headers : new Dictionary<string, string>(),
             };
         }
     }
