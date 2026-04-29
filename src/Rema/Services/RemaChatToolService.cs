@@ -1,7 +1,9 @@
 using System;
 using System.ComponentModel;
 using System.Linq;
+using System.Net.Http;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.AI;
 using Rema.Models;
 
@@ -9,12 +11,13 @@ namespace Rema.Services;
 
 public static class RemaChatToolService
 {
-    public static List<AIFunction> CreateTools(DataStore dataStore, AzureDevOpsService azureDevOpsService)
+    public static List<AIFunction> CreateTools(DataStore dataStore, AzureDevOpsService azureDevOpsService,
+        CopilotService? copilotService = null)
     {
         var safeFlyDiffService = new SafeFlyDiffService();
         var deploymentVersionDiscoveryService = new DeploymentVersionDiscoveryService(azureDevOpsService);
 
-        return
+        List<AIFunction> tools =
         [
             AIFunctionFactory.Create(
                 ([Description("Optional capability kind to filter by: Skill, Mcp, Tool, or Agent.")] string? kind = null) =>
@@ -172,7 +175,263 @@ public static class RemaChatToolService
                     });
                 },
                 "safefly_create_request_files",
-                "Create SafeFly request markdown, changed-files inventory, and application diff patch for a saved service project.")
+                "Create SafeFly request markdown, changed-files inventory, and application diff patch for a saved service project."),
+
+            // ── Memory Tools ──
+
+            AIFunctionFactory.Create(
+                async (
+                    [Description("Short key/title for the memory (e.g. 'preferred-model', 'team-name').")] string key,
+                    [Description("Full content of the memory.")] string content,
+                    [Description("Category for organization (e.g. 'General', 'Personal', 'Work', 'Technical').")] string? category = "General") =>
+                {
+                    var existing = dataStore.Data.Memories
+                        .FirstOrDefault(m => m.Key.Equals(key, StringComparison.OrdinalIgnoreCase));
+                    if (existing is not null)
+                    {
+                        existing.Content = content;
+                        existing.Category = category ?? existing.Category;
+                        existing.UpdatedAt = DateTimeOffset.Now;
+                        await dataStore.SaveAsync();
+                        return JsonSerializer.Serialize(new { existing.Id, existing.Key, action = "updated" });
+                    }
+
+                    var memory = new Memory
+                    {
+                        Key = key,
+                        Content = content,
+                        Category = category ?? "General",
+                        Source = "chat",
+                    };
+                    dataStore.Data.Memories.Add(memory);
+                    await dataStore.SaveAsync();
+                    return JsonSerializer.Serialize(new { memory.Id, memory.Key, action = "created" });
+                },
+                "memory_save",
+                "Save or update a persistent memory. If a memory with the same key exists, it is updated. Memories are included in the system prompt across all future sessions."),
+
+            AIFunctionFactory.Create(
+                ([Description("Key of the memory to retrieve full content for.")] string key) =>
+                {
+                    var memory = dataStore.Data.Memories
+                        .FirstOrDefault(m => m.Key.Equals(key, StringComparison.OrdinalIgnoreCase));
+                    if (memory is null)
+                        return JsonSerializer.Serialize(new { found = false, key });
+
+                    return JsonSerializer.Serialize(new
+                    {
+                        found = true,
+                        memory.Key,
+                        memory.Content,
+                        memory.Category,
+                        memory.Source,
+                        memory.CreatedAt,
+                        memory.UpdatedAt,
+                    });
+                },
+                "memory_recall",
+                "Retrieve the full content of a specific memory by its key."),
+
+            AIFunctionFactory.Create(
+                async ([Description("Key of the memory to delete.")] string key) =>
+                {
+                    var memory = dataStore.Data.Memories
+                        .FirstOrDefault(m => m.Key.Equals(key, StringComparison.OrdinalIgnoreCase));
+                    if (memory is null)
+                        return JsonSerializer.Serialize(new { deleted = false, reason = "not found" });
+
+                    dataStore.Data.Memories.Remove(memory);
+                    await dataStore.SaveAsync();
+                    return JsonSerializer.Serialize(new { deleted = true, key });
+                },
+                "memory_delete",
+                "Delete a persistent memory by its key."),
+
+            AIFunctionFactory.Create(
+                ([Description("Optional category to filter by.")] string? category = null) =>
+                {
+                    var query = dataStore.Data.Memories.AsEnumerable();
+                    if (!string.IsNullOrWhiteSpace(category))
+                        query = query.Where(m => m.Category.Equals(category, StringComparison.OrdinalIgnoreCase));
+
+                    var result = query
+                        .OrderBy(m => m.Category)
+                        .ThenBy(m => m.Key)
+                        .Select(m => new { m.Key, m.Category, Preview = m.Content.Length > 80 ? m.Content[..80] + "…" : m.Content })
+                        .ToList();
+
+                    return JsonSerializer.Serialize(result);
+                },
+                "memory_list",
+                "List all persistent memories, optionally filtered by category. Returns key, category, and a short preview."),
+
+            // ── Web Fetch Tool ──
+
+            AIFunctionFactory.Create(
+                async ([Description("The full URL to fetch (must start with http:// or https://).")] string url) =>
+                {
+                    using var httpClient = new HttpClient();
+                    httpClient.Timeout = TimeSpan.FromSeconds(15);
+                    httpClient.DefaultRequestHeaders.UserAgent.ParseAdd(
+                        "Mozilla/5.0 (compatible; Rema/1.0)");
+
+                    var response = await httpClient.GetAsync(url);
+                    response.EnsureSuccessStatusCode();
+
+                    var html = await response.Content.ReadAsStringAsync();
+
+                    // Strip HTML tags for a text-only view, truncate to avoid token waste
+                    var text = StripHtml(html);
+                    const int maxLen = 12_000;
+                    var truncated = text.Length > maxLen;
+                    if (truncated) text = text[..maxLen];
+
+                    return JsonSerializer.Serialize(new
+                    {
+                        url,
+                        status = (int)response.StatusCode,
+                        contentLength = html.Length,
+                        text,
+                        truncated,
+                    });
+                },
+                "web_fetch",
+                "Fetch a webpage and return its text content. Returns up to 12K characters. Use for reading documentation, articles, or API responses."),
+
+            // ── File Announcement Tool ──
+
+            AIFunctionFactory.Create(
+                ([Description("Absolute path of the file to announce to the user.")] string filePath) =>
+                {
+                    return JsonSerializer.Serialize(new
+                    {
+                        announced = true,
+                        filePath,
+                        fileName = System.IO.Path.GetFileName(filePath),
+                    });
+                },
+                "announce_file",
+                "Show a clickable file attachment chip in the chat for a file you created or produced. Call once per deliverable file."),
+
+            // ── Coding Tools (use lightweight LLM sessions) ──
         ];
+
+        if (copilotService is not null)
+            tools.AddRange(CreateCodingTools(copilotService));
+
+        return tools;
+    }
+
+    private static List<AIFunction> CreateCodingTools(CopilotService copilotService)
+    {
+        return
+        [
+            AIFunctionFactory.Create(
+                async (
+                    [Description("The source code to review.")] string code,
+                    [Description("The programming language (e.g. csharp, python, typescript).")] string language,
+                    [Description("Context: what the code does, specific concerns.")] string? context = null) =>
+                {
+                    var prompt = $"""
+                        Review this {language} code for bugs, security vulnerabilities, performance issues, and best practice violations.
+                        Return structured feedback with severity levels (critical/warning/info) and fix suggestions.
+                        Only surface issues that genuinely matter — no style or formatting nits.
+
+                        {(context is not null ? $"Context: {context}\n" : "")}
+                        ```{language}
+                        {code}
+                        ```
+                        """;
+
+                    return await RunLightweightAsync(copilotService, prompt);
+                },
+                "code_review",
+                "Analyze code for bugs, security vulnerabilities, performance issues, and best practice violations. Returns structured feedback with severity and fixes."),
+
+            AIFunctionFactory.Create(
+                async (
+                    [Description("The source code to generate tests for.")] string code,
+                    [Description("The programming language (e.g. csharp, python, typescript).")] string language,
+                    [Description("The test framework to use (e.g. xunit, pytest, jest).")] string framework,
+                    [Description("Context: what to test, edge cases, conventions.")] string? context = null) =>
+                {
+                    var prompt = $"""
+                        Generate comprehensive unit tests for this {language} code using {framework}.
+                        Cover happy paths, edge cases, error handling, and boundary conditions.
+                        Return ready-to-run test code.
+
+                        {(context is not null ? $"Context: {context}\n" : "")}
+                        ```{language}
+                        {code}
+                        ```
+                        """;
+
+                    return await RunLightweightAsync(copilotService, prompt);
+                },
+                "generate_tests",
+                "Generate comprehensive unit tests for source code. Covers happy paths, edge cases, error handling. Returns ready-to-run test code."),
+
+            AIFunctionFactory.Create(
+                async (
+                    [Description("The source code to explain.")] string code,
+                    [Description("The programming language (e.g. csharp, python, typescript).")] string language,
+                    [Description("Depth: 'overview', 'detailed', or 'teaching'.")] string depth = "detailed",
+                    [Description("Optional aspect to focus on (e.g. 'the async pattern', 'error handling').")] string? focus = null) =>
+                {
+                    var prompt = $"""
+                        Explain this {language} code at a {depth} level.
+                        Break it into understandable parts with call flow and data flow.
+                        {(focus is not null ? $"Focus on: {focus}" : "")}
+
+                        ```{language}
+                        {code}
+                        ```
+                        """;
+
+                    return await RunLightweightAsync(copilotService, prompt);
+                },
+                "explain_code",
+                "Deep code explanation: break down code into understandable parts with call flow, data flow, and pattern identification."),
+        ];
+    }
+
+    private static async Task<string> RunLightweightAsync(CopilotService copilotService, string prompt)
+    {
+        try
+        {
+            var fastModel = await copilotService.GetFastestModelIdAsync();
+            return await copilotService.UseLightweightSessionAsync(
+                new LightweightSessionOptions
+                {
+                    SystemPrompt = "You are a code analysis expert. Be concise and actionable.",
+                    Model = fastModel,
+                    Streaming = false,
+                },
+                async (session, ct) =>
+                {
+                    var response = await session.SendAndWaitAsync(
+                        new GitHub.Copilot.SDK.MessageOptions { Prompt = prompt },
+                        TimeSpan.FromSeconds(60), ct);
+                    return response?.Data?.Content ?? "No response from model.";
+                });
+        }
+        catch (Exception ex)
+        {
+            return $"Error: {ex.Message}";
+        }
+    }
+
+    private static string StripHtml(string html)
+    {
+        // Remove script/style blocks
+        html = Regex.Replace(html, @"<(script|style)[^>]*>[\s\S]*?</\1>", "", RegexOptions.IgnoreCase);
+        // Remove tags
+        html = Regex.Replace(html, @"<[^>]+>", " ");
+        // Decode common entities
+        html = html.Replace("&amp;", "&").Replace("&lt;", "<").Replace("&gt;", ">")
+                    .Replace("&quot;", "\"").Replace("&#39;", "'").Replace("&nbsp;", " ");
+        // Collapse whitespace
+        html = Regex.Replace(html, @"\s+", " ").Trim();
+        return html;
     }
 }

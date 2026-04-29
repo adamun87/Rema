@@ -95,6 +95,29 @@ public static class ToolDisplayHelper
                 name = "Discover deployed versions";
                 break;
 
+            // ── Memory ──
+            case "memory_save":
+                info = ExtractJsonField(argsJson, "key");
+                name = "Save memory";
+                break;
+            case "memory_recall":
+                info = ExtractJsonField(argsJson, "key");
+                name = "Recall memory";
+                break;
+            case "memory_delete":
+                info = ExtractJsonField(argsJson, "key");
+                name = "Delete memory";
+                break;
+            case "memory_list":
+                name = "List memories";
+                break;
+
+            // ── File ──
+            case "announce_file":
+                info = ExtractJsonField(argsJson, "filePath");
+                name = "Announce file";
+                break;
+
             // ── GitHub ──
             case "github-search_code":
                 info = ExtractJsonField(argsJson, "query");
@@ -151,6 +174,8 @@ public static class ToolDisplayHelper
         "rema_list_capabilities" => "🧩",
         "rema_list_tracked_runs" => "📋",
         "rema_discover_deployed_versions" => "🧭",
+        "memory_save" or "memory_recall" or "memory_delete" or "memory_list" => "🧠",
+        "announce_file" => "📎",
         "think" or "report_intent" => "💭",
         "task" => "🤖",
         _ => "⚙️",
@@ -158,7 +183,9 @@ public static class ToolDisplayHelper
 
     public static bool IsCompactEligible(string toolName) => toolName is
         "think" or "report_intent" or "sql" or "glob" or "grep" or "find_files"
-        or "read_file" or "view" or "web_fetch" or "fetch_url";
+        or "read_file" or "view" or "web_fetch" or "fetch_url"
+        or "memory_save" or "memory_recall" or "memory_delete" or "memory_list"
+        or "announce_file";
 
     public static string? FormatToolArgsFriendly(string toolName, string? argsJson)
     {

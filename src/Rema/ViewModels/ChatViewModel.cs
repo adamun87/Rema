@@ -289,7 +289,7 @@ public sealed partial class ChatViewModel : ObservableObject
 
             // Collect MCP servers from all enabled service projects
             var mcpServers = BuildMcpServers();
-            var tools = RemaChatToolService.CreateTools(_dataStore, _azureDevOpsService);
+            var tools = RemaChatToolService.CreateTools(_dataStore, _azureDevOpsService, _copilotService);
 
             _activeSessionWasRecreated = false;
             UserInputHandler userInputHandler = HandleUserInputAsync;
