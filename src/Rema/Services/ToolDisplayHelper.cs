@@ -118,6 +118,18 @@ public static class ToolDisplayHelper
                 name = "Announce file";
                 break;
 
+            // ── Coding ──
+            case "code_review":
+                name = "Code review";
+                break;
+            case "generate_tests":
+                name = "Generate tests";
+                break;
+            case "explain_code":
+                info = ExtractJsonField(argsJson, "focus");
+                name = "Explain code";
+                break;
+
             // ── GitHub ──
             case "github-search_code":
                 info = ExtractJsonField(argsJson, "query");
@@ -176,6 +188,7 @@ public static class ToolDisplayHelper
         "rema_discover_deployed_versions" => "🧭",
         "memory_save" or "memory_recall" or "memory_delete" or "memory_list" => "🧠",
         "announce_file" => "📎",
+        "code_review" or "generate_tests" or "explain_code" => "🧑‍💻",
         "think" or "report_intent" => "💭",
         "task" => "🤖",
         _ => "⚙️",
