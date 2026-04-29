@@ -331,6 +331,11 @@ public static class RemaChatToolService
         if (copilotService is not null)
             tools.AddRange(CreateCodingTools(copilotService));
 
+        if (OperatingSystem.IsWindows())
+            tools.AddRange(CreateUIAutomationTools());
+
+        tools.AddRange(CreateBrowserTools());
+
         return tools;
     }
 
@@ -404,6 +409,97 @@ public static class RemaChatToolService
                 },
                 "explain_code",
                 "Deep code explanation: break down code into understandable parts with call flow, data flow, and pattern identification."),
+        ];
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private static List<AIFunction> CreateUIAutomationTools()
+    {
+        return
+        [
+            AIFunctionFactory.Create(
+                () => UIAutomationService.ListWindows(),
+                "ui_list_windows",
+                "List all visible windows on the desktop. Returns window titles, process names, and PIDs."),
+
+            AIFunctionFactory.Create(
+                ([Description("Window title (partial match) to inspect.")] string title,
+                 [Description("How deep to walk the UI tree (1-5, default 3).")] int depth = 3) =>
+                    UIAutomationService.InspectWindow(title, Math.Clamp(depth, 1, 5)),
+                "ui_inspect",
+                "Get the UI element tree of a window. Returns element names, types, automation IDs, and nesting."),
+
+            AIFunctionFactory.Create(
+                ([Description("Window title (partial match).")] string title,
+                 [Description("Search query — matches against name, automation ID, control type.")] string query) =>
+                    UIAutomationService.FindElement(title, query),
+                "ui_find",
+                "Search for UI elements in a window by name, automation ID, or control type."),
+
+            AIFunctionFactory.Create(
+                ([Description("Window title (partial match).")] string title,
+                 [Description("Name or AutomationId of the element to click.")] string elementName) =>
+                    UIAutomationService.ClickElement(title, elementName),
+                "ui_click",
+                "Click a UI element by name or automation ID. Uses Invoke, Toggle, or Select pattern."),
+
+            AIFunctionFactory.Create(
+                ([Description("Window title (partial match).")] string title,
+                 [Description("Name or AutomationId of the text input element.")] string elementName,
+                 [Description("Text to type or set in the element.")] string text) =>
+                    UIAutomationService.TypeText(title, elementName, text),
+                "ui_type",
+                "Type or set text in a UI element by name or automation ID."),
+
+            AIFunctionFactory.Create(
+                ([Description("Window title (partial match).")] string title,
+                 [Description("Name or AutomationId of the element to read.")] string elementName) =>
+                    UIAutomationService.ReadElement(title, elementName),
+                "ui_read",
+                "Read detailed info about a UI element: name, value, type, enabled state, bounds."),
+        ];
+    }
+
+    private static List<AIFunction> CreateBrowserTools()
+    {
+        var browserService = new BrowserAutomationService();
+
+        return
+        [
+            AIFunctionFactory.Create(
+                async ([Description("The URL to navigate to.")] string url) =>
+                    await browserService.NavigateAsync(url),
+                "browser_navigate",
+                "Navigate the browser to a URL. Launches Edge/Chrome with remote debugging if needed."),
+
+            AIFunctionFactory.Create(
+                async () => await browserService.GetPageContentAsync(),
+                "browser_get_content",
+                "Get the text content of the current browser page (up to 8K characters)."),
+
+            AIFunctionFactory.Create(
+                async () => await browserService.GetPageInfoAsync(),
+                "browser_get_info",
+                "Get page title, URL, links, and interactive elements (inputs, buttons) from the current page."),
+
+            AIFunctionFactory.Create(
+                async ([Description("CSS selector of the element to click (e.g. '#submit', '.btn', 'a[href]').")] string selector) =>
+                    await browserService.ClickElementAsync(selector),
+                "browser_click",
+                "Click an element on the current page by CSS selector."),
+
+            AIFunctionFactory.Create(
+                async (
+                    [Description("CSS selector of the input element.")] string selector,
+                    [Description("Text to type into the element.")] string text) =>
+                    await browserService.TypeTextAsync(selector, text),
+                "browser_type",
+                "Type text into an input element on the current page by CSS selector."),
+
+            AIFunctionFactory.Create(
+                async () => await browserService.ListTabsAsync(),
+                "browser_list_tabs",
+                "List all open browser tabs with their titles and URLs."),
         ];
     }
 

@@ -130,6 +130,54 @@ public static class ToolDisplayHelper
                 name = "Explain code";
                 break;
 
+            // ── UI Automation ──
+            case "ui_list_windows":
+                name = "List windows";
+                break;
+            case "ui_inspect":
+                info = ExtractJsonField(argsJson, "title");
+                name = "Inspect window";
+                break;
+            case "ui_find":
+                info = ExtractJsonField(argsJson, "query");
+                name = "Find UI element";
+                break;
+            case "ui_click":
+                info = ExtractJsonField(argsJson, "elementName");
+                name = "Click element";
+                break;
+            case "ui_type":
+                info = ExtractJsonField(argsJson, "elementName");
+                name = "Type text";
+                break;
+            case "ui_read":
+                info = ExtractJsonField(argsJson, "elementName");
+                name = "Read element";
+                break;
+
+            // ── Browser Automation ──
+            case "browser_navigate":
+                info = ExtractJsonField(argsJson, "url");
+                name = "Navigate browser";
+                break;
+            case "browser_get_content":
+                name = "Get page content";
+                break;
+            case "browser_get_info":
+                name = "Get page info";
+                break;
+            case "browser_click":
+                info = ExtractJsonField(argsJson, "selector");
+                name = "Click element";
+                break;
+            case "browser_type":
+                info = ExtractJsonField(argsJson, "selector");
+                name = "Type in browser";
+                break;
+            case "browser_list_tabs":
+                name = "List tabs";
+                break;
+
             // ── GitHub ──
             case "github-search_code":
                 info = ExtractJsonField(argsJson, "query");
@@ -189,6 +237,8 @@ public static class ToolDisplayHelper
         "memory_save" or "memory_recall" or "memory_delete" or "memory_list" => "🧠",
         "announce_file" => "📎",
         "code_review" or "generate_tests" or "explain_code" => "🧑‍💻",
+        "ui_list_windows" or "ui_inspect" or "ui_find" or "ui_click" or "ui_type" or "ui_read" => "🖥️",
+        "browser_navigate" or "browser_get_content" or "browser_get_info" or "browser_click" or "browser_type" or "browser_list_tabs" => "🌐",
         "think" or "report_intent" => "💭",
         "task" => "🤖",
         _ => "⚙️",
