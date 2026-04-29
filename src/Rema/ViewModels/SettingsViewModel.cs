@@ -69,7 +69,7 @@ public partial class SettingsViewModel : ObservableObject
         _isPollingEnabled = s.IsPollingEnabled;
         _pollingIntervalSeconds = s.PollingIntervalSeconds;
         _notificationsEnabled = s.NotificationsEnabled;
-        _preferredModel = s.PreferredModel;
+        _preferredModel = !string.IsNullOrWhiteSpace(s.PreferredModel) ? s.PreferredModel : "claude-sonnet-4";
         _reasoningEffort = s.ReasoningEffort;
         SeedAvailableModels();
     }
@@ -266,7 +266,7 @@ public partial class SettingsViewModel : ObservableObject
             IsPollingEnabled = s.IsPollingEnabled;
             PollingIntervalSeconds = s.PollingIntervalSeconds;
             NotificationsEnabled = s.NotificationsEnabled;
-            PreferredModel = s.PreferredModel;
+            PreferredModel = !string.IsNullOrWhiteSpace(s.PreferredModel) ? s.PreferredModel : "claude-sonnet-4";
             ReasoningEffort = s.ReasoningEffort;
             ApplyAvailableModels(AvailableModels.ToList());
         }

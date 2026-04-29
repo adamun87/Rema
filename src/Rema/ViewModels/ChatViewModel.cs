@@ -281,7 +281,9 @@ public sealed partial class ChatViewModel : ObservableObject
                 _dataStore.Data.Memories,
                 _dataStore.Data.Capabilities);
 
-            var model = _dataStore.Data.Settings.PreferredModel ?? "claude-sonnet-4";
+            var model = !string.IsNullOrWhiteSpace(_dataStore.Data.Settings.PreferredModel)
+                ? _dataStore.Data.Settings.PreferredModel
+                : "claude-sonnet-4";
             var reasoningEffort = _dataStore.Data.Settings.ReasoningEffort;
 
             // Collect MCP servers from all enabled service projects
