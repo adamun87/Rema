@@ -21,6 +21,7 @@ public sealed partial class ChatViewModel : ObservableObject
     private readonly TranscriptBuilder _transcriptBuilder = new();
     private readonly List<ChatMessageViewModel> _messages = [];
     private CopilotSession? _activeSession;
+    private IDisposable? _sessionSubscription;
     private CancellationTokenSource? _sendCts;
     private TypingIndicatorItem? _typingIndicator;
     private string? _lastUserPrompt;
@@ -468,12 +469,16 @@ public sealed partial class ChatViewModel : ObservableObject
 
     private void SubscribeToSession(CopilotSession session, Chat chat)
     {
+        // Dispose previous subscription so old handler is unregistered
+        _sessionSubscription?.Dispose();
+
         var assistantContent = new StringBuilder();
         var reasoningContent = new StringBuilder();
         ChatMessageViewModel? assistantVm = null;
         ChatMessageViewModel? reasoningVm = null;
 
-        session.On(ev =>
+        // Store the subscription to prevent GC from collecting and unsubscribing the handler
+        _sessionSubscription = session.On(ev =>
         {
             switch (ev)
             {
@@ -697,6 +702,18 @@ public sealed partial class ChatViewModel : ObservableObject
                         chat.Messages.Add(resultMsg);
 
                         StatusText = "Thinking…";
+                    });
+                    break;
+
+                case SessionErrorEvent sessionError:
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        RemoveTypingIndicator();
+                        var errorMsg = sessionError.Data.Message ?? "An error occurred";
+                        if (!string.IsNullOrEmpty(sessionError.Data.ErrorType))
+                            errorMsg = $"[{sessionError.Data.ErrorType}] {errorMsg}";
+                        AddErrorMessage(errorMsg);
+                        ScrollToEndRequested?.Invoke();
                     });
                     break;
 

@@ -267,48 +267,7 @@ public static class RemaChatToolService
 
             // ── Web Fetch Tool ──
 
-            AIFunctionFactory.Create(
-                async ([Description("The full URL to fetch (must start with http:// or https://).")] string url) =>
-                {
-                    try
-                    {
-                        using var httpClient = new HttpClient();
-                        httpClient.Timeout = TimeSpan.FromSeconds(15);
-                        httpClient.DefaultRequestHeaders.UserAgent.ParseAdd(
-                            "Mozilla/5.0 (compatible; Rema/1.0)");
-
-                        using var response = await httpClient.GetAsync(url);
-                        if (!response.IsSuccessStatusCode)
-                            return JsonSerializer.Serialize(new
-                            {
-                                url,
-                                error = $"HTTP {(int)response.StatusCode}: {response.StatusCode}",
-                            });
-
-                        var html = await response.Content.ReadAsStringAsync();
-
-                        // Strip HTML tags for a text-only view, truncate to avoid token waste
-                        var text = StripHtml(html);
-                        const int maxLen = 12_000;
-                        var truncated = text.Length > maxLen;
-                        if (truncated) text = text[..maxLen];
-
-                        return JsonSerializer.Serialize(new
-                        {
-                            url,
-                            status = (int)response.StatusCode,
-                            contentLength = html.Length,
-                            text,
-                            truncated,
-                        });
-                    }
-                    catch (Exception ex)
-                    {
-                        return JsonSerializer.Serialize(new { url, error = ex.Message });
-                    }
-                },
-                "web_fetch",
-                "Fetch a webpage and return its text content. Returns up to 12K characters. Use for reading documentation, articles, or API responses."),
+            // web_fetch is provided as a built-in SDK tool — no need to define it here.
 
             // ── File Announcement Tool ──
 
