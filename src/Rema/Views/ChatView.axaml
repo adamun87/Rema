@@ -272,6 +272,33 @@
       </Button>
     </DataTemplate>
 
+    <!-- ═══ Source Citations ═══ -->
+    <DataTemplate DataType="vm:SourcesListItem">
+      <sc:StrataThink Label="Sources" IsExpanded="{Binding IsExpanded}">
+        <sc:StrataThink.Content>
+          <ItemsControl ItemsSource="{Binding Sources}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate><StackPanel Spacing="2" /></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate DataType="vm:SourceItem">
+                <Button Classes="subtle" Command="{Binding OpenCommand}" Padding="4,3" Cursor="Hand">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <TextBlock Text="🔗" FontSize="11" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding Title}" FontSize="11"
+                               Foreground="{DynamicResource Brush.AccentDefault}" VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" MaxWidth="300" />
+                    <TextBlock Text="{Binding Domain}" FontSize="10"
+                               Foreground="{DynamicResource Brush.TextTertiary}" VerticalAlignment="Center" />
+                  </StackPanel>
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </sc:StrataThink.Content>
+      </sc:StrataThink>
+    </DataTemplate>
+
   </UserControl.DataTemplates>
 
   <!-- ═══ Main Layout ═══ -->

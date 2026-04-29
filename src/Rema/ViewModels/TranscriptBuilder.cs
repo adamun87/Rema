@@ -20,7 +20,9 @@ public sealed class TranscriptBuilder
     public ObservableCollection<TranscriptTurn> Turns => _target;
     private TranscriptTurn? _currentTurn;
     private ToolGroupItem? _currentToolGroup;
-    private readonly Dictionary<string, ToolCallItem> _toolCallsById = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ToolCallItemBase> _toolCallsById = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, SubagentToolCallItem> _subagentsById = new(StringComparer.Ordinal);
+    private FileChangesSummaryItem? _currentFileChanges;
     private string? _lastRole;
     private int _turnCounter;
     private int _itemCounter;
@@ -40,7 +42,9 @@ public sealed class TranscriptBuilder
         _target.Clear();
         _currentTurn = null;
         _currentToolGroup = null;
+        _currentFileChanges = null;
         _toolCallsById.Clear();
+        _subagentsById.Clear();
         _lastRole = null;
         _turnCounter = 0;
         _itemCounter = 0;
@@ -49,6 +53,7 @@ public sealed class TranscriptBuilder
             ProcessMessageToTranscript(msg);
 
         CloseCurrentToolGroup();
+        CloseCurrentFileChanges();
     }
 
     /// <summary>Resets the transcript to empty (used when starting a new chat).</summary>
@@ -57,7 +62,9 @@ public sealed class TranscriptBuilder
         _target.Clear();
         _currentTurn = null;
         _currentToolGroup = null;
+        _currentFileChanges = null;
         _toolCallsById.Clear();
+        _subagentsById.Clear();
         _lastRole = null;
         _turnCounter = 0;
         _itemCounter = 0;
@@ -117,16 +124,105 @@ public sealed class TranscriptBuilder
         _currentTurn.Items.Add(item);
     }
 
+    // ── Direct items (bypass tool groups) ──
+
+    /// <summary>Adds a standalone transcript item to the current turn (e.g. QuestionItem).</summary>
+    public void AddDirectItem(TranscriptItem item)
+    {
+        CloseCurrentToolGroup();
+        EnsureTurn("assistant");
+        _currentTurn!.Items.Add(item);
+    }
+
+    // ── Sub-agent tracking ──
+
+    public void AddSubagent(string toolCallId, SubagentToolCallItem item)
+    {
+        _subagentsById[toolCallId] = item;
+        CloseCurrentToolGroup();
+        EnsureTurn("assistant");
+        _currentTurn!.Items.Add(item);
+    }
+
+    public void UpdateSubagentStatus(string toolCallId, StrataAiToolCallStatus status,
+        string? error = null)
+    {
+        if (!_subagentsById.TryGetValue(toolCallId, out var item)) return;
+        item.Status = status;
+        if (error is not null) item.Meta = error;
+    }
+
+    // ── File changes tracking ──
+
+    public void AddFileChange(string filePath, bool isCreate, string? oldText, string? newText)
+    {
+        EnsureTurn("assistant");
+
+        if (_currentFileChanges is null)
+        {
+            _currentFileChanges = new FileChangesSummaryItem(NextItemId())
+            {
+                Label = "File changes",
+            };
+            _currentTurn!.Items.Add(_currentFileChanges);
+        }
+
+        // Find or create a FileChangeItem for this path
+        var existing = _currentFileChanges.FileChanges
+            .FirstOrDefault(f => string.Equals(f.FilePath, filePath, StringComparison.OrdinalIgnoreCase));
+
+        if (existing is not null)
+        {
+            existing.AddEdit(oldText, newText);
+        }
+        else
+        {
+            var fci = new FileChangeItem(filePath, isCreate);
+            fci.AddEdit(oldText, newText);
+            _currentFileChanges.FileChanges.Add(fci);
+        }
+
+        UpdateFileChangesSummary();
+    }
+
+    public void CloseCurrentFileChanges()
+    {
+        _currentFileChanges = null;
+    }
+
+    private void UpdateFileChangesSummary()
+    {
+        if (_currentFileChanges is null) return;
+
+        var totalAdded = _currentFileChanges.FileChanges.Sum(f => f.LinesAdded);
+        var totalRemoved = _currentFileChanges.FileChanges.Sum(f => f.LinesRemoved);
+
+        _currentFileChanges.Label = _currentFileChanges.FileChanges.Count == 1
+            ? "1 file changed"
+            : $"{_currentFileChanges.FileChanges.Count} files changed";
+        _currentFileChanges.TotalStatsAdded = $"+{totalAdded}";
+        _currentFileChanges.TotalStatsRemoved = totalRemoved > 0 ? $"−{totalRemoved}" : "";
+        _currentFileChanges.HasTotalRemovals = totalRemoved > 0;
+    }
+
     // ── Update tool status ──
 
     public void UpdateToolStatus(string toolCallId, StrataAiToolCallStatus status,
         double durationMs = 0, string? moreInfo = null)
     {
-        if (!_toolCallsById.TryGetValue(toolCallId, out var tc)) return;
+        if (!_toolCallsById.TryGetValue(toolCallId, out var tcBase)) return;
 
-        tc.Status = status;
-        if (durationMs > 0) tc.DurationMs = durationMs;
-        if (moreInfo is not null) tc.MoreInfo = moreInfo;
+        if (tcBase is ToolCallItem tc)
+        {
+            tc.Status = status;
+            if (durationMs > 0) tc.DurationMs = durationMs;
+            if (moreInfo is not null) tc.MoreInfo = moreInfo;
+        }
+        else if (tcBase is TerminalPreviewItem tp)
+        {
+            tp.Status = status;
+            if (durationMs > 0) tp.DurationMs = durationMs;
+        }
 
         // Update parent group meta
         UpdateGroupMeta();
@@ -227,6 +323,96 @@ public sealed class TranscriptBuilder
             _ => StrataAiToolCallStatus.InProgress,
         };
 
+        // ── File attachment (announce_file) ──
+        if (toolName is "announce_file")
+        {
+            CloseCurrentToolGroup();
+            var filePath = ToolDisplayHelper.ExtractJsonField(msg.Content, "path")
+                ?? ToolDisplayHelper.ExtractJsonField(msg.Content, "file_path") ?? "";
+            var attachment = new FileAttachmentItem(NextItemId())
+            {
+                FileName = System.IO.Path.GetFileName(filePath),
+                FilePath = filePath,
+            };
+            _currentTurn!.Items.Add(attachment);
+            return;
+        }
+
+        // ── File changes tracking ──
+        if (toolName is "edit" or "edit_file" or "create" or "create_file"
+            && status is StrataAiToolCallStatus.Completed or StrataAiToolCallStatus.InProgress)
+        {
+            var filePath = ToolDisplayHelper.ExtractJsonField(msg.Content, "path")
+                ?? ToolDisplayHelper.ExtractJsonField(msg.Content, "file_path");
+            if (filePath is not null)
+            {
+                var isCreate = toolName is "create" or "create_file";
+                var oldText = ToolDisplayHelper.ExtractJsonField(msg.Content, "old_str");
+                var newText = ToolDisplayHelper.ExtractJsonField(msg.Content, "new_str")
+                    ?? ToolDisplayHelper.ExtractJsonField(msg.Content, "file_text");
+                AddFileChange(filePath, isCreate, oldText, newText);
+            }
+            // Still show in tool group too — fall through
+        }
+        else
+        {
+            // Non-file tool encountered → close any pending file changes summary
+            CloseCurrentFileChanges();
+        }
+
+        // ── Terminal preview (shell tools) ──
+        if (toolName is "powershell" or "bash" or "shell" or "read_powershell" or "write_powershell")
+        {
+            var command = ToolDisplayHelper.ExtractJsonField(msg.Content, "command")
+                ?? ToolDisplayHelper.ExtractJsonField(msg.Content, "input") ?? "";
+            var terminal = new TerminalPreviewItem(NextItemId())
+            {
+                ToolName = friendlyName,
+                Command = command,
+                Output = msg.ToolOutput ?? "",
+                Status = status,
+                IsExpanded = false,
+            };
+
+            _toolCallsById[toolCallId] = terminal;
+
+            // Wire streaming updates
+            msgVm.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(ChatMessageViewModel.ToolStatus))
+                {
+                    terminal.Status = msgVm.ToolStatus switch
+                    {
+                        "Completed" or "completed" => StrataAiToolCallStatus.Completed,
+                        "Failed" or "failed" => StrataAiToolCallStatus.Failed,
+                        _ => StrataAiToolCallStatus.InProgress,
+                    };
+                    UpdateGroupMeta();
+                }
+            };
+
+            // Add to current group or start a new one
+            if (_currentToolGroup is not null)
+            {
+                _currentToolGroup.ToolCalls.Add(terminal);
+            }
+            else
+            {
+                _currentToolGroup = new ToolGroupItem(NextItemId())
+                {
+                    Label = $"{ToolDisplayHelper.GetToolGlyph(toolName)} {friendlyName}",
+                    IsActive = status == StrataAiToolCallStatus.InProgress,
+                    IsExpanded = false,
+                };
+                _currentToolGroup.ToolCalls.Add(terminal);
+                _currentTurn!.Items.Add(_currentToolGroup);
+            }
+
+            UpdateGroupMeta();
+            return;
+        }
+
+        // ── Default tool call ──
         var toolCall = new ToolCallItem(NextItemId())
         {
             ToolName = friendlyName,
@@ -323,14 +509,17 @@ public sealed class TranscriptBuilder
 
         foreach (var tc in _currentToolGroup.ToolCalls)
         {
-            if (tc is ToolCallItem item)
+            var itemStatus = tc switch
             {
-                switch (item.Status)
-                {
-                    case StrataAiToolCallStatus.Completed: completed++; break;
-                    case StrataAiToolCallStatus.Failed: failed++; break;
-                    default: inProgress++; break;
-                }
+                ToolCallItem tci => tci.Status,
+                TerminalPreviewItem tpi => tpi.Status,
+                _ => StrataAiToolCallStatus.InProgress,
+            };
+            switch (itemStatus)
+            {
+                case StrataAiToolCallStatus.Completed: completed++; break;
+                case StrataAiToolCallStatus.Failed: failed++; break;
+                default: inProgress++; break;
             }
         }
 
@@ -349,13 +538,18 @@ public sealed class TranscriptBuilder
             _currentToolGroup.Meta = $"{total} done";
 
         // Update group label with first tool's friendly name
-        if (_currentToolGroup.ToolCalls.Count > 0 &&
-            _currentToolGroup.ToolCalls[0] is ToolCallItem first)
+        if (_currentToolGroup.ToolCalls.Count > 0)
         {
             var glyph = "⚙️";
+            var firstName = _currentToolGroup.ToolCalls[0] switch
+            {
+                ToolCallItem tci => tci.ToolName,
+                TerminalPreviewItem tpi => tpi.ToolName,
+                _ => "",
+            };
             _currentToolGroup.Label = total > 1
-                ? $"{glyph} {first.ToolName} +{total - 1} more"
-                : $"{glyph} {first.ToolName}";
+                ? $"{glyph} {firstName} +{total - 1} more"
+                : $"{glyph} {firstName}";
         }
     }
 

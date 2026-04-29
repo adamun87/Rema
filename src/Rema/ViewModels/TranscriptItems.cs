@@ -330,6 +330,16 @@ public sealed partial class QuestionItem : TranscriptItem
     }
 }
 
+// ── Source Citations List ──
+
+public sealed partial class SourcesListItem : TranscriptItem
+{
+    public SourcesListItem(string stableId) : base(stableId) { }
+
+    public ObservableCollection<SourceItem> Sources { get; } = [];
+    [ObservableProperty] private bool _isExpanded;
+}
+
 // ── File Attachment ──
 
 public sealed partial class FileAttachmentItem : TranscriptItem

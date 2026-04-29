@@ -24,6 +24,7 @@ public sealed partial class ChatViewModel : ObservableObject
     private TypingIndicatorItem? _typingIndicator;
     private string? _lastUserPrompt;
     private bool _activeSessionWasRecreated;
+    private int _questionCounter;
 
     // ── Observable Properties ──
 
@@ -515,6 +516,38 @@ public sealed partial class ChatViewModel : ObservableObject
                 case ToolExecutionCompleteEvent toolComplete:
                     Dispatcher.UIThread.Post(() =>
                     {
+                        // Persist tool result — carry ToolName so transcript can rebuild correctly on reload
+                        var startRecord = _messages
+                            .Select(m => m.Message)
+                            .FirstOrDefault(m => m.ToolCallId == toolComplete.Data.ToolCallId
+                                                 && m.ToolName is not null);
+
+                        // Track file changes for the summary card
+                        if (startRecord?.ToolName is "edit" or "edit_file" or "create" or "create_file"
+                            && toolComplete.Data.Success)
+                        {
+                            var filePath = ToolDisplayHelper.ExtractJsonField(
+                                startRecord.Content, "path")
+                                ?? ToolDisplayHelper.ExtractJsonField(
+                                    startRecord.Content, "file_path");
+                            if (filePath is not null)
+                            {
+                                var isCreate = startRecord.ToolName is "create" or "create_file";
+                                var oldText = ToolDisplayHelper.ExtractJsonField(
+                                    startRecord.Content, "old_str");
+                                var newText = ToolDisplayHelper.ExtractJsonField(
+                                    startRecord.Content, "new_str")
+                                    ?? ToolDisplayHelper.ExtractJsonField(
+                                        startRecord.Content, "file_text");
+                                _transcriptBuilder.AddFileChange(filePath, isCreate, oldText, newText);
+                            }
+                        }
+                        else
+                        {
+                            // Non-file tool → close any pending file changes summary
+                            _transcriptBuilder.CloseCurrentFileChanges();
+                        }
+
                         var status = toolComplete.Data.Success
                             ? StrataTheme.Controls.StrataAiToolCallStatus.Completed
                             : StrataTheme.Controls.StrataAiToolCallStatus.Failed;
@@ -523,11 +556,6 @@ public sealed partial class ChatViewModel : ObservableObject
                             toolComplete.Data.ToolCallId,
                             status);
 
-                        // Persist tool result — carry ToolName so transcript can rebuild correctly on reload
-                        var startRecord = _messages
-                            .Select(m => m.Message)
-                            .FirstOrDefault(m => m.ToolCallId == toolComplete.Data.ToolCallId
-                                                 && m.ToolName is not null);
                         var resultMsg = new ChatMessage
                         {
                             Role = "tool",
@@ -576,6 +604,64 @@ public sealed partial class ChatViewModel : ObservableObject
                             ContextCurrentTokens = (long)d.CurrentTokens;
                     });
                     break;
+
+                // ── Sub-agent lifecycle ──
+
+                case SubagentStartedEvent subStart:
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        var d = subStart.Data;
+                        var item = new SubagentToolCallItem($"subagent-{d.ToolCallId}")
+                        {
+                            DisplayName = d.AgentDisplayName ?? d.AgentName ?? "Sub-agent",
+                            TaskDescription = d.AgentDescription,
+                            Status = StrataTheme.Controls.StrataAiToolCallStatus.InProgress,
+                            IsExpanded = true,
+                        };
+                        _transcriptBuilder.AddSubagent(d.ToolCallId, item);
+                        ScrollToEndRequested?.Invoke();
+                    });
+                    break;
+
+                case SubagentCompletedEvent subComplete:
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        _transcriptBuilder.UpdateSubagentStatus(
+                            subComplete.Data.ToolCallId,
+                            StrataTheme.Controls.StrataAiToolCallStatus.Completed);
+                    });
+                    break;
+
+                case SubagentFailedEvent subFailed:
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        _transcriptBuilder.UpdateSubagentStatus(
+                            subFailed.Data.ToolCallId,
+                            StrataTheme.Controls.StrataAiToolCallStatus.Failed,
+                            subFailed.Data.Error);
+                    });
+                    break;
+
+                // ── User-input question card ──
+
+                case UserInputRequestedEvent inputReq:
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        var d = inputReq.Data;
+                        var questionItem = new QuestionItem(
+                            d.RequestId,
+                            d.Question,
+                            d.Choices?.ToList(),
+                            d.AllowFreeform ?? true,
+                            (_, answer) =>
+                            {
+                                // Response is handled by the SDK via the RequestId
+                            },
+                            $"question-{_questionCounter++}");
+                        _transcriptBuilder.AddDirectItem(questionItem);
+                        ScrollToEndRequested?.Invoke();
+                    });
+                    break;
             }
         });
     }
@@ -587,6 +673,7 @@ public sealed partial class ChatViewModel : ObservableObject
         CurrentChat = chat;
         _messages.Clear();
         _activeSession = null;
+        _questionCounter = 0;
 
         TotalInputTokens = chat.TotalInputTokens;
         TotalOutputTokens = chat.TotalOutputTokens;
@@ -610,6 +697,7 @@ public sealed partial class ChatViewModel : ObservableObject
         _messages.Clear();
         _activeSession = null;
         _transcriptBuilder.Reset();
+        _questionCounter = 0;
         TotalInputTokens = 0;
         TotalOutputTokens = 0;
         ContextCurrentTokens = 0;
