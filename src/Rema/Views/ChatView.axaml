@@ -463,6 +463,8 @@
                                IsBusy="{Binding IsBusy}"
                                Placeholder="Ask Rema…"
                                CanAttach="False"
+                               Models="{Binding AvailableModels}"
+                               SelectedModel="{Binding SelectedModel, Mode=TwoWay}"
                                IsRecording="{Binding IsRecording}"
                                VoiceCommand="{Binding ToggleVoiceCommand}"
                                SuggestionA="{Binding SuggestionA}"

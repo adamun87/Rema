@@ -156,11 +156,83 @@ public sealed partial class ChatViewModel : ObservableObject
         _transcriptBuilder.ApplySettings(_dataStore.Data.Settings);
         _transcriptBuilder.OnUserEditConfirmed = OnUserEditConfirmedAsync;
 
+        // Initialize selected model from settings
+        _selectedModel = !string.IsNullOrWhiteSpace(_dataStore.Data.Settings.PreferredModel)
+            ? _dataStore.Data.Settings.PreferredModel
+            : "claude-sonnet-4";
+
         // Populate chat history newest-first
         for (var i = _dataStore.Data.Chats.Count - 1; i >= 0; i--)
             Chats.Add(_dataStore.Data.Chats[i]);
 
+        _ = InitModelsAsync();
         _ = RefreshGitStatusAsync();
+    }
+
+    // ── Model Selection ──
+
+    public ObservableCollection<string> AvailableModels { get; } = [];
+    [ObservableProperty] private string _selectedModel = "claude-sonnet-4";
+
+    partial void OnSelectedModelChanged(string value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            _dataStore.Data.Settings.PreferredModel = value;
+            _ = _dataStore.SaveAsync();
+        }
+    }
+
+    private async Task InitModelsAsync()
+    {
+        try
+        {
+            await _copilotService.ConnectAsync();
+            var models = await _copilotService.GetModelsAsync();
+            var modelIds = models
+                .Select(m => m.Id)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => ApplyModels(modelIds));
+        }
+        catch
+        {
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => ApplyModels(SeedModels));
+        }
+    }
+
+    private static readonly string[] SeedModels =
+    [
+        "claude-haiku-4.5",
+        "claude-sonnet-4",
+        "claude-sonnet-4.5",
+        "claude-sonnet-4.6",
+        "claude-opus-4.5",
+        "claude-opus-4.6",
+        "claude-opus-4.6-1m",
+        "gpt-4.1",
+        "gpt-5-mini",
+        "gpt-5.2",
+        "gpt-5.2-codex",
+        "gpt-5.3-codex",
+        "gpt-5.4",
+        "gpt-5.4-mini",
+    ];
+
+    private void ApplyModels(IEnumerable<string> models)
+    {
+        var selected = SelectedModel;
+        AvailableModels.Clear();
+        foreach (var m in models.Append(selected)
+            .Where(m => !string.IsNullOrWhiteSpace(m))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(m => m, StringComparer.OrdinalIgnoreCase))
+        {
+            AvailableModels.Add(m);
+        }
     }
 
     public void RefreshSettings()
@@ -336,9 +408,7 @@ public sealed partial class ChatViewModel : ObservableObject
                 _dataStore.Data.Memories,
                 _dataStore.Data.Capabilities);
 
-            var model = !string.IsNullOrWhiteSpace(_dataStore.Data.Settings.PreferredModel)
-                ? _dataStore.Data.Settings.PreferredModel
-                : "claude-sonnet-4";
+            var model = SelectedModel;
             var reasoningEffort = _dataStore.Data.Settings.ReasoningEffort;
 
             // Collect MCP servers from all enabled service projects
