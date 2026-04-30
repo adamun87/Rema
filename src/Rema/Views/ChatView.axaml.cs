@@ -81,7 +81,11 @@ public partial class ChatView : UserControl
         _chatShell?.JumpToLatest();
     }
 
-    private void OnTranscriptRebuilt() { }
+    private void OnTranscriptRebuilt()
+    {
+        // Force the ScrollViewer to recalculate layout after a full rebuild
+        _chatShell?.JumpToLatest();
+    }
 
     protected override void OnKeyDown(KeyEventArgs e)
     {

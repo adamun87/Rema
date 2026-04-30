@@ -87,6 +87,10 @@ public partial class ShiftsViewModel : ObservableObject
     // ── Active Operations (from chat workflows) ──
     [ObservableProperty] private bool _hasActiveOperations;
 
+    // ── Total pending attention count (for nav badge) ──
+    [ObservableProperty] private int _pendingAttentionCount;
+    [ObservableProperty] private bool _hasPendingAttention;
+
     // ── Collections ──
     public ObservableCollection<TrackedItemDisplay> ActiveTrackedItems { get; } = [];
     public ObservableCollection<WorkflowExecution> ActiveOperations { get; } = [];
@@ -156,8 +160,9 @@ public partial class ShiftsViewModel : ObservableObject
         // Refresh active operations (workflow executions from chat)
         ActiveOperations.Clear();
         foreach (var op in _dataStore.Data.WorkflowExecutions
-                     .Where(w => w.Status is "Running" or "Pending")
-                     .OrderByDescending(w => w.UpdatedAt))
+                     .Where(w => w.Status is "Running" or "Pending" or "WaitingForInput")
+                     .OrderByDescending(w => w.Status == "WaitingForInput") // Show waiting-for-input first
+                     .ThenByDescending(w => w.UpdatedAt))
             ActiveOperations.Add(op);
         // Also show recently completed/failed (last 24h) so user sees them
         foreach (var op in _dataStore.Data.WorkflowExecutions
@@ -191,6 +196,12 @@ public partial class ShiftsViewModel : ObservableObject
         FailedCount = ActiveTrackedItems.Count(i =>
             i.Item.Status.Contains("failed", StringComparison.OrdinalIgnoreCase)
             || i.Item.Status.Contains("canceled", StringComparison.OrdinalIgnoreCase));
+
+        // Total pending attention = tracked items needing action + operations waiting for input + failed operations
+        var waitingOps = ActiveOperations.Count(o => o.Status is "WaitingForInput");
+        var failedOps = ActiveOperations.Count(o => o.Status is "Failed");
+        PendingAttentionCount = NeedsActionCount + waitingOps + failedOps;
+        HasPendingAttention = PendingAttentionCount > 0;
 
         ServiceProjects.Clear();
         foreach (var p in _dataStore.Data.ServiceProjects.OrderBy(p => p.Name))

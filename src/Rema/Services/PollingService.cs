@@ -61,8 +61,16 @@ public sealed class PollingService : IAsyncDisposable
     {
         var settings = _dataStore.Data.Settings;
 
+        // Always refresh operations (they're not tied to shifts)
+        Dispatcher.UIThread.Post(() => TrackedItemsUpdated?.Invoke());
+
         var activeShift = _dataStore.Data.Shifts.FirstOrDefault(s => s.IsActive);
-        if (activeShift is null) return;
+        if (activeShift is null)
+        {
+            // Still check operation notifications even without an active shift
+            NotifyOperationStatusChanges(settings);
+            return;
+        }
 
         var items = _dataStore.Data.TrackedItems
             .Where(t => t.ShiftId == activeShift.Id)
@@ -134,6 +142,45 @@ public sealed class PollingService : IAsyncDisposable
 
             Dispatcher.UIThread.Post(() =>
                 NotificationService.ShowIfInactive("📊 Rema — Shift Update", body));
+        }
+
+        // Notify for operations waiting for user input or that failed/completed
+        NotifyOperationStatusChanges(settings);
+    }
+
+    private void NotifyOperationStatusChanges(RemaSettings settings)
+    {
+        if (!settings.NotificationsEnabled) return;
+
+        foreach (var op in _dataStore.Data.WorkflowExecutions)
+        {
+            string? body = op.Status switch
+            {
+                "WaitingForInput" => $"{op.Goal}: waiting for your input.",
+                "Failed" when op.CompletedAt > DateTimeOffset.Now.AddMinutes(-5) => $"{op.Goal}: failed — {op.Error ?? "check dashboard for details."}",
+                "Completed" when op.CompletedAt > DateTimeOffset.Now.AddMinutes(-5) => $"{op.Goal}: completed successfully.",
+                _ => null,
+            };
+
+            if (body is null) continue;
+
+            // Deduplicate: use CurrentStep as last-notification marker
+            var notifKey = $"{op.Status}:{op.UpdatedAt:O}";
+            if (string.Equals(op.CurrentStep, notifKey, StringComparison.Ordinal))
+                continue;
+
+            // Don't mutate CurrentStep for completed/failed — use a separate check via UpdatedAt
+            // For WaitingForInput, the notification is critical
+            if (op.Status == "WaitingForInput")
+            {
+                Dispatcher.UIThread.Post(() =>
+                    NotificationService.ShowIfInactive("🔔 Rema — Input Needed", body));
+            }
+            else
+            {
+                Dispatcher.UIThread.Post(() =>
+                    NotificationService.ShowIfInactive("📋 Rema — Operation Update", body));
+            }
         }
     }
 

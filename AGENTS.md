@@ -123,22 +123,43 @@ src/Lumi/
 ## Build & Test
 
 ```bash
-dotnet build src/Lumi/Lumi.csproj
-cd src/Lumi && dotnet run
+dotnet build src/Rema/Rema.csproj
+cd src/Rema && dotnet run
 ```
 
 No test project exists yet. StrataTheme is referenced via the `Strata/` git submodule.
 
 ### UI Testing with Avalonia MCP
 
-Lumi has an Avalonia MCP server configured in `.vscode/mcp.json`. This gives you live access to the running app — you can see the UI, click buttons, type text, inspect controls, check bindings, and take screenshots. **Use it.**
+Rema has an Avalonia MCP server configured in `.vscode/mcp.json`. This gives you live access to the running app — you can see the UI, click buttons, type text, inspect controls, check bindings, and take screenshots. **Use it.**
 
-**Every time you make a UI change, you must test it with the MCP tools.** Don't just build and hope it works — run the app, poke at it, and confirm your changes look and behave correctly. This is your primary way of verifying UI work since there are no UI tests.
+**Every time you make a UI change, you MUST test it with the MCP tools.** Don't just build and hope it works — run the app, poke at it, and confirm your changes look and behave correctly. This is your primary way of verifying UI work since there are no UI tests.
+
+#### Mandatory Validation Checklist
+
+For **every** code change:
+1. `dotnet build src/Rema/Rema.csproj` — 0 errors required
+
+For **every** UI/XAML/ViewModel change:
+1. Start the app: `dotnet run --project src/Rema/Rema.csproj`
+2. `get_binding_errors` — **ALWAYS check this first**. Binding errors are silent failures.
+3. `find_control` — verify new controls exist in the visual tree
+4. `get_control_properties` — verify values, visibility, dimensions
+5. `take_screenshot` — visual verification
+6. `click_control` / `input_text` — test interactions
+7. `get_data_context` — verify ViewModel state flows correctly
+
+For **chat/transcript** changes:
+1. Use `--debug-agent-harness` flag to test with fixture data
+2. Verify scroll behavior after adding messages
+3. Verify streaming state clears when turn ends
+
+**Do NOT mark a task complete without running the validation checklist.**
 
 #### Workflow
 
 1. Run `dotnet tool restore` once to ensure the CLI tool is available
-2. Start Lumi: `cd src/Lumi && dotnet run`
+2. Start Rema: `cd src/Rema && dotnet run`
 3. Use the MCP tools to verify your work
 
 #### Debug-only agent harnesses
@@ -180,15 +201,18 @@ Many tools take a `controlId` parameter. Three formats work:
 
 ## Showing UI Changes to the User
 
-If the feature or fix you implement can be visibly seen by the user (e.g., layout changes, new controls, styling updates, new views), **keep the debug instance of Lumi running** after you finish — do not close it. In your message to the user, explain exactly where they should look to see the change (e.g., "Open the Agents tab and look at the top-right corner" or "Start a new chat and notice the updated welcome panel"). This lets the user immediately verify your work in the live app without having to relaunch it themselves.
+If the feature or fix you implement can be visibly seen by the user (e.g., layout changes, new controls, styling updates, new views), **keep the debug instance of Rema running** after you finish — do not close it. In your message to the user, explain exactly where they should look to see the change (e.g., "Open the Dashboard and look at the Active Operations section" or "Start a new chat and notice the updated welcome panel"). This lets the user immediately verify your work in the live app without having to relaunch it themselves.
 
 ## Key Conventions
 
-- **Single JSON file persistence** — no database. New data collections go in `AppData` class in `Models.cs`
-- **Chat transcript is built in code-behind** (`ChatView.axaml.cs`), not with data templates. New message types need a case in `AddMessageControl()`
+- **Single JSON file persistence** — no database. New data collections go in `RemaAppData` class in `Models.cs`
+- **Chat transcript** uses data templates in `ChatView.axaml` with `TranscriptBuilder` for message processing
 - **System prompt assembly** — new context sources should extend `SystemPromptBuilder.Build()`
-- **Tool display names** — add friendly mappings in `ChatView.axaml.cs` `GetFriendlyToolDisplay()` and `ChatViewModel.cs` `FormatToolDisplayName()`
+- **Tool display names** — add friendly mappings in `ToolDisplayHelper.cs` `GetFriendlyToolDisplay()` and `GetToolGlyph()`
+- **Built-in capabilities** — add new skills/tools/agents to `BuiltInCapabilityCatalog.cs`
 - **CRUD ViewModels** follow identical master-detail pattern — `SelectedX`, `IsEditing`, `EditX` properties, `New/Edit/Save/Cancel/Delete` commands
 - **Strata controls** — always use Strata UI components for chat elements. Inspect the StrataTheme source for API
-- **Modify StrataTheme when needed** — if a UI change makes more sense as a StrataTheme feature or fix (new control, new property, style tweak, bug fix), go ahead and make the change directly in the `Strata/` submodule. Don't work around library limitations in Lumi when the right fix belongs in Strata.
+- **Modify StrataTheme when needed** — if a UI change makes more sense as a StrataTheme feature or fix (new control, new property, style tweak, bug fix), go ahead and make the change directly in the `Strata/` submodule. Don't work around library limitations in Rema when the right fix belongs in Strata.
+- **Dashboard operations** — long-running workflows should use `rema_register_operation` / `rema_update_operation` tools to appear on the dashboard
+- **Notifications** — use `NotificationService.ShowIfInactive()` for OS notifications. `PollingService` handles periodic notification checks.
 - **No over-engineering** — this is a personal app, keep implementations simple and direct

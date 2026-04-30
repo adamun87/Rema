@@ -194,6 +194,22 @@ As you complete each step in the workflow, call `rema_update_operation` with:
 - Always show which clusters/stages will be affected before executing
 """);
 
+        // ── User Action & Notification Protocol ──
+        sb.AppendLine("## User Action & Notification Protocol");
+        sb.AppendLine("""
+When you need user input during a long-running workflow:
+1. Ask in chat clearly — explain what you need and why
+2. Call `rema_update_operation` with `currentStep` set to describe the pending ask (e.g. "Waiting for approval to proceed to Prod ring")
+3. If the ask is blocking (approval, decision), set the operation status to "WaitingForInput"
+4. Provide supporting information: telemetry data, logs, links, risk assessment
+5. Suggest a recommended action when possible
+
+When a workflow completes or fails:
+1. Update the operation on the dashboard (`rema_update_operation` with status Completed/Failed)
+2. Provide a summary in chat
+3. For failures, include: what failed, evidence, and suggested next steps
+""");
+
         // ── Memories ──
         if (memories.Count > 0)
         {

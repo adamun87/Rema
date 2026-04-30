@@ -374,6 +374,7 @@ public sealed partial class ChatViewModel : ObservableObject
             IsBusy = false;
             IsStreaming = false;
             StatusText = "";
+            ClearStreamingState();
         }
     }
 
@@ -382,6 +383,7 @@ public sealed partial class ChatViewModel : ObservableObject
     {
         _sendCts?.Cancel();
         RemoveTypingIndicator();
+        ClearStreamingState();
         IsBusy = false;
         IsStreaming = false;
         StatusText = "";
@@ -723,6 +725,7 @@ public sealed partial class ChatViewModel : ObservableObject
                     {
                         IsStreaming = false;
                         StatusText = "";
+                        ClearStreamingState();
                         _ = GenerateSuggestionsAsync();
                     });
                     break;
@@ -1090,6 +1093,7 @@ public sealed partial class ChatViewModel : ObservableObject
 
     private void AddErrorMessage(string message)
     {
+        ClearStreamingState();
         var msg = new ChatMessage
         {
             Role = "error",
@@ -1100,6 +1104,19 @@ public sealed partial class ChatViewModel : ObservableObject
         _messages.Add(vm);
         // The transcript builder will create the ErrorMessageItem; wire retry afterward
         _transcriptBuilder.ProcessMessageToTranscript(vm, RetryLastMessageCommand);
+    }
+
+    /// <summary>
+    /// Ensures no message items are left in a streaming state (which causes the
+    /// chat to look stuck/frozen). Called when a turn ends, errors, or is cancelled.
+    /// </summary>
+    private void ClearStreamingState()
+    {
+        foreach (var msg in _messages)
+        {
+            if (msg.IsStreaming)
+                msg.IsStreaming = false;
+        }
     }
 
     private void DetachPersistedSession(Chat chat)
