@@ -325,21 +325,58 @@ public class CapabilityDefinition
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
 }
 
-public class WorkflowExecution
+public class WorkflowExecution : INotifyPropertyChanged
 {
+    private string _status = "Running";
+    private int _progressPercent;
+    private string? _currentStep;
+    private string? _result;
+    private string? _error;
+
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid? CapabilityId { get; set; }
+    public Guid? OriginatingChatId { get; set; }
     public string CapabilityName { get; set; } = "";
     public string CapabilityKind { get; set; } = "";
     public string Goal { get; set; } = "";
-    public string Status { get; set; } = "Running"; // Running, Completed, Failed, Canceled
-    public int ProgressPercent { get; set; }
+
+    public string Status
+    {
+        get => _status;
+        set { if (_status == value) return; _status = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Status))); }
+    }
+
+    public int ProgressPercent
+    {
+        get => _progressPercent;
+        set { if (_progressPercent == value) return; _progressPercent = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ProgressPercent))); }
+    }
+
+    public string? CurrentStep
+    {
+        get => _currentStep;
+        set { if (_currentStep == value) return; _currentStep = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CurrentStep))); }
+    }
+
     public List<string> LogMessages { get; set; } = [];
-    public string? Result { get; set; }
-    public string? Error { get; set; }
+
+    public string? Result
+    {
+        get => _result;
+        set { if (_result == value) return; _result = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Result))); }
+    }
+
+    public string? Error
+    {
+        get => _error;
+        set { if (_error == value) return; _error = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Error))); }
+    }
+
     public DateTimeOffset StartedAt { get; set; } = DateTimeOffset.Now;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.Now;
     public DateTimeOffset? CompletedAt { get; set; }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
 }
 
 // ── Memories ──

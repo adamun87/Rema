@@ -94,6 +94,22 @@ public static class ToolDisplayHelper
             case "rema_discover_deployed_versions":
                 name = "Discover deployed versions";
                 break;
+            case "rema_register_operation":
+                info = ExtractJsonField(argsJson, "goal");
+                name = "Register operation";
+                break;
+            case "rema_update_operation":
+                info = ExtractJsonField(argsJson, "currentStep") ?? ExtractJsonField(argsJson, "status");
+                name = "Update operation";
+                break;
+            case "rema_propose_deployment_plan":
+                info = ExtractJsonField(argsJson, "serviceProjectName");
+                name = "Propose deployment plan";
+                break;
+            case "rema_invoke_capability":
+                info = ExtractJsonField(argsJson, "capabilityName");
+                name = "Invoke capability";
+                break;
 
             // ── Memory ──
             case "memory_save":
@@ -234,6 +250,9 @@ public static class ToolDisplayHelper
         "rema_list_capabilities" => "🧩",
         "rema_list_tracked_runs" => "📋",
         "rema_discover_deployed_versions" => "🧭",
+        "rema_register_operation" or "rema_update_operation" => "📌",
+        "rema_propose_deployment_plan" => "📋",
+        "rema_invoke_capability" => "🧩",
         "memory_save" or "memory_recall" or "memory_delete" or "memory_list" => "🧠",
         "announce_file" => "📎",
         "code_review" or "generate_tests" or "explain_code" => "🧑‍💻",

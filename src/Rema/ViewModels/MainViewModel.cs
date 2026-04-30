@@ -67,6 +67,7 @@ public partial class MainViewModel : ObservableObject
         AgentsVM = new CapabilitiesViewModel(dataStore, "Agent");
 
         _pollingService.TrackedItemsUpdated += () => ShiftsVM.Refresh();
+        ShiftsVM.NavigateToChatRequested += NavigateToChat;
 
         OnboardingVM.OnboardingCompleted += () =>
         {
@@ -178,6 +179,17 @@ public partial class MainViewModel : ObservableObject
     private void SetNav(int index)
     {
         SelectedNavIndex = index;
+    }
+
+    // ── Navigate to a specific chat (from dashboard operation cards) ──
+
+    public void NavigateToChat(Guid chatId)
+    {
+        var chat = _dataStore.Data.Chats.FirstOrDefault(c => c.Id == chatId);
+        if (chat is null) return;
+
+        SelectedNavIndex = 2; // Chat tab
+        ChatVM.SelectChatCommand.Execute(chat);
     }
 
     // ── Global Search (Ctrl+K) ──

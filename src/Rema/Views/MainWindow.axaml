@@ -383,6 +383,91 @@
             </Border>
           </UniformGrid>
 
+          <!-- Active Operations (from chat workflows) -->
+          <StackPanel Spacing="10" IsVisible="{Binding HasActiveOperations}">
+            <TextBlock Text="Active operations" FontSize="16" FontWeight="SemiBold"
+                       Foreground="{DynamicResource Brush.TextPrimary}" />
+            <ItemsControl ItemsSource="{Binding ActiveOperations}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="models:WorkflowExecution">
+                  <Border Background="{DynamicResource Brush.Surface}"
+                          BorderBrush="{DynamicResource Brush.Border}"
+                          BorderThickness="1" CornerRadius="10"
+                          Padding="14,12" Margin="0,0,0,8">
+                    <StackPanel Spacing="6">
+                      <DockPanel>
+                        <!-- Status badge -->
+                        <Border DockPanel.Dock="Right"
+                                CornerRadius="4" Padding="7,2"
+                                Background="{DynamicResource Brush.SurfaceVariant}">
+                          <TextBlock Text="{Binding Status}" FontSize="11" />
+                        </Border>
+                        <!-- Kind + Goal -->
+                        <StackPanel>
+                          <TextBlock Text="{Binding Goal}" FontSize="14" FontWeight="SemiBold"
+                                     Foreground="{DynamicResource Brush.TextPrimary}"
+                                     TextWrapping="Wrap" />
+                          <TextBlock FontSize="12" Foreground="{DynamicResource Brush.TextSecondary}">
+                            <Run Text="{Binding CapabilityKind}" />
+                            <Run Text=" · " />
+                            <Run Text="{Binding CapabilityName}" />
+                          </TextBlock>
+                        </StackPanel>
+                      </DockPanel>
+
+                      <!-- Progress bar -->
+                      <ProgressBar Value="{Binding ProgressPercent}" Maximum="100"
+                                   Height="4" CornerRadius="2"
+                                   Foreground="{DynamicResource Brush.Accent}" />
+
+                      <!-- Current step -->
+                      <TextBlock Text="{Binding CurrentStep}" FontSize="12"
+                                 Foreground="{DynamicResource Brush.TextSecondary}"
+                                 TextWrapping="Wrap"
+                                 IsVisible="{Binding CurrentStep, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+                      <!-- Error -->
+                      <TextBlock Text="{Binding Error}" FontSize="12"
+                                 Foreground="#DC2626" TextWrapping="Wrap"
+                                 IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+                      <!-- Result -->
+                      <TextBlock Text="{Binding Result}" FontSize="12"
+                                 Foreground="#16A34A" TextWrapping="Wrap"
+                                 IsVisible="{Binding Result, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+                      <!-- Timestamps + actions -->
+                      <DockPanel>
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6">
+                          <Button Classes="subtle" Padding="6,3" MinHeight="0" CornerRadius="4"
+                                  FontSize="11"
+                                  IsVisible="{Binding OriginatingChatId, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                  Command="{Binding $parent[ItemsControl].((vm:ShiftsViewModel)DataContext).GoToOperationChatCommand}"
+                                  CommandParameter="{Binding}">
+                            <TextBlock Text="Go to chat →" Foreground="{DynamicResource Brush.Accent}" FontSize="11" />
+                          </Button>
+                          <Button Classes="subtle" Padding="6,3" MinHeight="0" CornerRadius="4"
+                                  FontSize="11"
+                                  Command="{Binding $parent[ItemsControl].((vm:ShiftsViewModel)DataContext).DismissOperationCommand}"
+                                  CommandParameter="{Binding}">
+                            <TextBlock Text="✕" FontSize="11" Foreground="{DynamicResource Brush.TextTertiary}" />
+                          </Button>
+                        </StackPanel>
+                        <TextBlock FontSize="11" Foreground="{DynamicResource Brush.TextTertiary}"
+                                   VerticalAlignment="Center">
+                          <Run Text="Started " />
+                          <Run Text="{Binding StartedAt, StringFormat='{}{0:HH:mm}'}" />
+                          <Run Text=" · Updated " />
+                          <Run Text="{Binding UpdatedAt, StringFormat='{}{0:HH:mm}'}" />
+                        </TextBlock>
+                      </DockPanel>
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+
           <Grid ColumnDefinitions="2*,16,*">
             <StackPanel Grid.Column="0" Spacing="10">
               <TextBlock Text="Tracked runs" FontSize="16" FontWeight="SemiBold"

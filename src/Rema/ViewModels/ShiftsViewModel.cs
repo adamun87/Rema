@@ -84,8 +84,12 @@ public partial class ShiftsViewModel : ObservableObject
     [ObservableProperty] private int _failedCount;
     [ObservableProperty] private bool _isRefreshing;
 
+    // ── Active Operations (from chat workflows) ──
+    [ObservableProperty] private bool _hasActiveOperations;
+
     // ── Collections ──
     public ObservableCollection<TrackedItemDisplay> ActiveTrackedItems { get; } = [];
+    public ObservableCollection<WorkflowExecution> ActiveOperations { get; } = [];
     public ObservableCollection<Shift> ShiftHistory { get; } = [];
     public ObservableCollection<ServiceProject> ServiceProjects { get; } = [];
     public ObservableCollection<PipelineConfig> AvailablePipelines { get; } = [];
@@ -95,6 +99,9 @@ public partial class ShiftsViewModel : ObservableObject
     [ObservableProperty] private bool _hasActiveTrackedItems;
     [ObservableProperty] private bool _hasShiftHistory;
     [ObservableProperty] private bool _hasRecentEvents;
+
+    /// <summary>Raised when the user clicks "Go to chat" on an operation card. Guid is the chat ID.</summary>
+    public event Action<Guid>? NavigateToChatRequested;
 
     public ShiftsViewModel(DataStore dataStore, AzureDevOpsService azureDevOpsService)
     {
@@ -145,6 +152,21 @@ public partial class ShiftsViewModel : ObservableObject
         HasActiveTrackedItems = ActiveTrackedItems.Count > 0;
         HasShiftHistory = ShiftHistory.Count > 0;
         HasRecentEvents = RecentEvents.Count > 0;
+
+        // Refresh active operations (workflow executions from chat)
+        ActiveOperations.Clear();
+        foreach (var op in _dataStore.Data.WorkflowExecutions
+                     .Where(w => w.Status is "Running" or "Pending")
+                     .OrderByDescending(w => w.UpdatedAt))
+            ActiveOperations.Add(op);
+        // Also show recently completed/failed (last 24h) so user sees them
+        foreach (var op in _dataStore.Data.WorkflowExecutions
+                     .Where(w => w.Status is "Completed" or "Failed" or "Canceled"
+                                 && w.CompletedAt > DateTimeOffset.Now.AddHours(-24))
+                     .OrderByDescending(w => w.CompletedAt)
+                     .Take(10))
+            ActiveOperations.Add(op);
+        HasActiveOperations = ActiveOperations.Count > 0;
 
         RefreshSummaryStats();
 
@@ -508,5 +530,22 @@ public partial class ShiftsViewModel : ObservableObject
             && SelectedPipelineConfig is not null
             && SelectedBuild is not null
             && !IsLoadingBuilds;
+    }
+
+    // ── Operation Commands ──
+
+    [RelayCommand]
+    private void GoToOperationChat(WorkflowExecution operation)
+    {
+        if (operation.OriginatingChatId is Guid chatId)
+            NavigateToChatRequested?.Invoke(chatId);
+    }
+
+    [RelayCommand]
+    private async Task DismissOperation(WorkflowExecution operation)
+    {
+        _dataStore.Data.WorkflowExecutions.Remove(operation);
+        await _dataStore.SaveAsync();
+        Refresh();
     }
 }

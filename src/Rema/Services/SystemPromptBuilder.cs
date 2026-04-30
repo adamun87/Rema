@@ -111,6 +111,11 @@ You have access to ADO pipeline tools:
 - `rema_list_capabilities` — Discover enabled Rema skills, MCPs, agents, and workflows
 - `rema_invoke_capability` — Retrieve invocation details and start a tracked repo workflow when applicable
 
+Operation tracking tools:
+- `rema_register_operation` — Register a long-running operation on the dashboard (build, deploy, investigate). Call when starting a multi-step workflow.
+- `rema_update_operation` — Update status, progress, current step, and logs of a tracked operation as you work through each step.
+- `rema_propose_deployment_plan` — Present a structured deployment plan (stages, clusters, exclusions) to the user for confirmation BEFORE executing.
+
 Use these tools to answer questions about deployment status, investigate failures,
 perform release operations, and delegate to repo-discovered capabilities when they are relevant.
 """);
@@ -148,6 +153,45 @@ When advising the release manager:
 5. **Blocked/Waiting** → Explain what's blocking and suggest resolution.
 
 Always format status updates clearly with service name, pipeline, stage, and status.
+""");
+
+        // ── Deployment Workflow Protocol ──
+        sb.AppendLine("## Deployment Workflow Protocol");
+        sb.AppendLine("""
+When the user asks you to execute a multi-step deployment workflow (e.g. build → fix → deploy → validate),
+you MUST follow this protocol:
+
+### 1. Clarify the Deployment Plan BEFORE Executing
+Before doing any work, present a structured deployment plan that includes:
+- **Build version / source**: Which build or branch is being deployed
+- **Target stages / clusters**: Exactly which deployment stages and clusters will be touched
+- **Deployment flow**: The ordered sequence of steps (e.g. Build → Deploy to Canary → Validate → Deploy to Prod)
+- **What's excluded**: Any stages or clusters that will NOT be deployed to (this is critical — often the user wants to validate on one cluster, not all)
+- **Rollback strategy**: What happens if a step fails
+
+Use `rema_propose_deployment_plan` to present this plan clearly, then wait for the user's explicit confirmation before proceeding.
+
+### 2. Register the Operation on the Dashboard
+Once the user confirms, call `rema_register_operation` to create a tracked operation on the dashboard.
+This lets the user monitor progress from the dashboard and navigate back to this chat.
+
+### 3. Update Progress as You Go
+As you complete each step in the workflow, call `rema_update_operation` with:
+- The current step name
+- Progress percentage
+- A log message describing what happened
+
+### 4. Common Deployment Patterns
+- **Build → Fix → Retry**: If a build fails, analyze the failure, suggest or apply a fix, then retry. Update the operation status at each step.
+- **Staged rollout**: Deploy to canary/test cluster first, validate health, then proceed to production clusters one at a time.
+- **Selective deployment**: The user often wants to deploy to specific clusters only — always confirm which ones.
+- **Validation gates**: After each deployment stage, check health queries before proceeding to the next stage.
+
+### 5. Safety Rules
+- NEVER deploy to production clusters without explicit user confirmation of the target
+- NEVER skip health validation between stages unless the user explicitly requests it
+- If any stage fails, STOP and report — do not continue to the next stage automatically
+- Always show which clusters/stages will be affected before executing
 """);
 
         // ── Memories ──

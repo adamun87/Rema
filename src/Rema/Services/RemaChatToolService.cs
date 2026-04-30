@@ -12,7 +12,7 @@ namespace Rema.Services;
 public static class RemaChatToolService
 {
     public static List<AIFunction> CreateTools(DataStore dataStore, AzureDevOpsService azureDevOpsService,
-        CopilotService? copilotService = null)
+        CopilotService? copilotService = null, Func<Guid?>? getCurrentChatId = null)
     {
         var safeFlyDiffService = new SafeFlyDiffService();
         var deploymentVersionDiscoveryService = new DeploymentVersionDiscoveryService(azureDevOpsService);
@@ -65,6 +65,7 @@ public static class RemaChatToolService
                         execution = new WorkflowExecution
                         {
                             CapabilityId = capability.Id,
+                            OriginatingChatId = getCurrentChatId?.Invoke(),
                             CapabilityName = capability.Name,
                             CapabilityKind = capability.Kind,
                             Goal = goal ?? "",
@@ -101,6 +102,120 @@ public static class RemaChatToolService
                 },
                 "rema_invoke_capability",
                 "Retrieve the full prompt/invocation details for an enabled Rema capability and start a tracked workflow when it represents an agent or long-running workflow."),
+
+            // ── Operation Tracking Tools ──
+
+            AIFunctionFactory.Create(
+                async (
+                    [Description("Short description of what this operation does (e.g. 'Deploy ServiceX v2.1 to canary').")] string goal,
+                    [Description("Optional name of the capability or workflow being executed.")] string? capabilityName = null,
+                    [Description("Optional kind: Deployment, Build, Investigation, Workflow.")] string? kind = null) =>
+                {
+                    var execution = new WorkflowExecution
+                    {
+                        OriginatingChatId = getCurrentChatId?.Invoke(),
+                        CapabilityName = capabilityName ?? "",
+                        CapabilityKind = kind ?? "Workflow",
+                        Goal = goal,
+                        Status = "Running",
+                        StartedAt = DateTimeOffset.Now,
+                        UpdatedAt = DateTimeOffset.Now,
+                    };
+                    dataStore.Data.WorkflowExecutions.Add(execution);
+                    await dataStore.SaveAsync();
+
+                    return JsonSerializer.Serialize(new
+                    {
+                        execution.Id,
+                        execution.Goal,
+                        execution.Status,
+                        execution.StartedAt,
+                        message = "Operation registered on dashboard.",
+                    });
+                },
+                "rema_register_operation",
+                "Register a long-running operation on the Rema dashboard so the user can track progress. Call this when starting a multi-step workflow (build, deploy, investigate). Returns the operation ID for subsequent updates."),
+
+            AIFunctionFactory.Create(
+                async (
+                    [Description("ID of the operation returned by rema_register_operation.")] string operationId,
+                    [Description("New status: Running, Completed, Failed, or Canceled.")] string? status = null,
+                    [Description("Progress percentage (0–100).")] int? progressPercent = null,
+                    [Description("Name of the current step being executed.")] string? currentStep = null,
+                    [Description("Log message describing what just happened.")] string? logMessage = null,
+                    [Description("Final result summary (set when status is Completed).")] string? result = null,
+                    [Description("Error details (set when status is Failed).")] string? error = null) =>
+                {
+                    if (!Guid.TryParse(operationId, out var id))
+                        throw new InvalidOperationException("Invalid operation ID.");
+
+                    var execution = dataStore.Data.WorkflowExecutions.FirstOrDefault(w => w.Id == id);
+                    if (execution is null)
+                        throw new InvalidOperationException($"Operation '{operationId}' not found.");
+
+                    if (status is not null) execution.Status = status;
+                    if (progressPercent.HasValue) execution.ProgressPercent = progressPercent.Value;
+                    if (currentStep is not null) execution.CurrentStep = currentStep;
+                    if (logMessage is not null) execution.LogMessages.Add($"[{DateTimeOffset.Now:HH:mm:ss}] {logMessage}");
+                    if (result is not null) execution.Result = result;
+                    if (error is not null) execution.Error = error;
+                    execution.UpdatedAt = DateTimeOffset.Now;
+
+                    if (status is "Completed" or "Failed" or "Canceled")
+                        execution.CompletedAt = DateTimeOffset.Now;
+
+                    await dataStore.SaveAsync();
+
+                    return JsonSerializer.Serialize(new
+                    {
+                        execution.Id,
+                        execution.Status,
+                        execution.ProgressPercent,
+                        execution.CurrentStep,
+                        execution.UpdatedAt,
+                    });
+                },
+                "rema_update_operation",
+                "Update the status, progress, or log of a tracked dashboard operation. Call this as you complete each step of a long-running workflow."),
+
+            AIFunctionFactory.Create(
+                (
+                    [Description("Name of the service project being deployed.")] string serviceProjectName,
+                    [Description("Build version or source branch being deployed.")] string buildVersion,
+                    [Description("Ordered list of deployment stages (e.g. ['Build', 'Deploy Canary', 'Validate Canary', 'Deploy Prod']).")] List<string> stages,
+                    [Description("List of target clusters or environments (e.g. ['canary-westus2', 'prod-eastus']).")] List<string> targetClusters,
+                    [Description("List of clusters or stages explicitly excluded from this deployment.")] List<string>? excludedTargets = null,
+                    [Description("Rollback strategy if a stage fails.")] string? rollbackStrategy = null,
+                    [Description("Any additional notes about this deployment.")] string? notes = null) =>
+                {
+                    var project = dataStore.Data.ServiceProjects.FirstOrDefault(p =>
+                        p.Name.Equals(serviceProjectName, StringComparison.OrdinalIgnoreCase));
+
+                    var plan = new
+                    {
+                        ServiceProject = serviceProjectName,
+                        BuildVersion = buildVersion,
+                        DeploymentFlow = stages.Select((stage, i) => new
+                        {
+                            Step = i + 1,
+                            Stage = stage,
+                        }).ToList(),
+                        TargetClusters = targetClusters,
+                        ExcludedTargets = excludedTargets ?? [],
+                        RollbackStrategy = rollbackStrategy ?? "Stop and alert on failure. No automatic rollback.",
+                        Notes = notes,
+                        ConfiguredPipelines = project?.PipelineConfigs.Select(p => new
+                        {
+                            p.DisplayName,
+                            p.DeploymentStages,
+                        }).ToList(),
+                        Warning = "⚠️ Review the target clusters carefully. Confirm this plan before proceeding.",
+                    };
+
+                    return JsonSerializer.Serialize(plan);
+                },
+                "rema_propose_deployment_plan",
+                "Present a structured deployment plan to the user for review BEFORE executing a multi-stage deployment. Shows stages, target clusters, exclusions, and rollback strategy. Always ask the user to confirm the plan before proceeding."),
 
             AIFunctionFactory.Create(
                 () =>
