@@ -419,12 +419,23 @@
                           IsVisible="{Binding HasActiveOperations}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="models:WorkflowExecution">
+                  <Button Padding="0" Margin="0,0,0,8"
+                          HorizontalContentAlignment="Stretch"
+                          Classes="subtle"
+                          IsEnabled="{Binding OriginatingChatId, Converter={x:Static ObjectConverters.IsNotNull}}"
+                          Command="{Binding $parent[ItemsControl].((vm:ShiftsViewModel)DataContext).GoToOperationChatCommand}"
+                          CommandParameter="{Binding}">
                   <Border Background="{DynamicResource Brush.Surface}"
                           BorderBrush="{DynamicResource Brush.Border}"
                           BorderThickness="1" CornerRadius="10"
-                          Padding="14,12" Margin="0,0,0,8">
+                          Padding="14,12">
                     <StackPanel Spacing="6">
                       <DockPanel>
+                        <!-- Unseen update indicator -->
+                        <Ellipse DockPanel.Dock="Left" Width="8" Height="8" Margin="0,4,8,0"
+                                 VerticalAlignment="Top"
+                                 Fill="{DynamicResource Brush.Accent}"
+                                 IsVisible="{Binding HasUnseenUpdate}" />
                         <!-- Status badge -->
                         <Border DockPanel.Dock="Right"
                                 CornerRadius="4" Padding="7,2"
@@ -465,23 +476,14 @@
                                  Foreground="#16A34A" TextWrapping="Wrap"
                                  IsVisible="{Binding Result, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
-                      <!-- Timestamps + actions -->
+                      <!-- Timestamps + dismiss -->
                       <DockPanel>
-                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6">
-                          <Button Classes="subtle" Padding="6,3" MinHeight="0" CornerRadius="4"
-                                  FontSize="11"
-                                  IsVisible="{Binding OriginatingChatId, Converter={x:Static ObjectConverters.IsNotNull}}"
-                                  Command="{Binding $parent[ItemsControl].((vm:ShiftsViewModel)DataContext).GoToOperationChatCommand}"
-                                  CommandParameter="{Binding}">
-                            <TextBlock Text="Go to chat →" Foreground="{DynamicResource Brush.Accent}" FontSize="11" />
-                          </Button>
-                          <Button Classes="subtle" Padding="6,3" MinHeight="0" CornerRadius="4"
-                                  FontSize="11"
-                                  Command="{Binding $parent[ItemsControl].((vm:ShiftsViewModel)DataContext).DismissOperationCommand}"
-                                  CommandParameter="{Binding}">
-                            <TextBlock Text="✕" FontSize="11" Foreground="{DynamicResource Brush.TextTertiary}" />
-                          </Button>
-                        </StackPanel>
+                        <Button DockPanel.Dock="Right" Classes="subtle" Padding="6,3" MinHeight="0" CornerRadius="4"
+                                FontSize="11"
+                                Command="{Binding $parent[ItemsControl].((vm:ShiftsViewModel)DataContext).DismissOperationCommand}"
+                                CommandParameter="{Binding}">
+                          <TextBlock Text="✕" FontSize="11" Foreground="{DynamicResource Brush.TextTertiary}" />
+                        </Button>
                         <TextBlock FontSize="11" Foreground="{DynamicResource Brush.TextTertiary}"
                                    VerticalAlignment="Center">
                           <Run Text="Started " />
@@ -492,6 +494,7 @@
                       </DockPanel>
                     </StackPanel>
                   </Border>
+                  </Button>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>

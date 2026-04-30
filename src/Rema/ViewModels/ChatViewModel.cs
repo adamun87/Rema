@@ -1109,13 +1109,32 @@ public sealed partial class ChatViewModel : ObservableObject
     /// <summary>
     /// Ensures no message items are left in a streaming state (which causes the
     /// chat to look stuck/frozen). Called when a turn ends, errors, or is cancelled.
+    /// Clears both the ChatMessageViewModel list AND the transcript items directly
+    /// to handle cases where PropertyChanged propagation fails.
     /// </summary>
     private void ClearStreamingState()
     {
+        // Clear ViewModel streaming flags (triggers PropertyChanged → transcript items)
         foreach (var msg in _messages)
         {
             if (msg.IsStreaming)
                 msg.IsStreaming = false;
+        }
+
+        // Belt-and-suspenders: also clear transcript items directly in case
+        // PropertyChanged handlers were GC'd or the propagation chain broke.
+        foreach (var turn in _transcriptBuilder.Turns)
+        {
+            foreach (var item in turn.Items)
+            {
+                if (item is AssistantMessageItem ami && ami.IsStreaming)
+                    ami.IsStreaming = false;
+                else if (item is ReasoningItem ri && ri.IsActive)
+                {
+                    ri.IsActive = false;
+                    ri.IsExpanded = false;
+                }
+            }
         }
     }
 

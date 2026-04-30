@@ -157,7 +157,13 @@ public partial class MainWindow : Window
 
         // Sync to ViewModel
         if (DataContext is MainViewModel vm)
+        {
             vm.SelectedNavIndex = index;
+
+            // Mark operations as viewed when user navigates to dashboard
+            if (index == 0)
+                vm.ShiftsVM.MarkOperationsViewed();
+        }
     }
 
     protected override void OnClosing(WindowClosingEventArgs e)

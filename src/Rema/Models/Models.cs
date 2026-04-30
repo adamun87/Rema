@@ -332,6 +332,7 @@ public class WorkflowExecution : INotifyPropertyChanged
     private string? _currentStep;
     private string? _result;
     private string? _error;
+    private bool _hasUnseenUpdate;
 
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid? CapabilityId { get; set; }
@@ -343,19 +344,19 @@ public class WorkflowExecution : INotifyPropertyChanged
     public string Status
     {
         get => _status;
-        set { if (_status == value) return; _status = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Status))); }
+        set { if (_status == value) return; _status = value; _hasUnseenUpdate = true; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Status))); PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasUnseenUpdate))); }
     }
 
     public int ProgressPercent
     {
         get => _progressPercent;
-        set { if (_progressPercent == value) return; _progressPercent = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ProgressPercent))); }
+        set { if (_progressPercent == value) return; _progressPercent = value; _hasUnseenUpdate = true; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ProgressPercent))); PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasUnseenUpdate))); }
     }
 
     public string? CurrentStep
     {
         get => _currentStep;
-        set { if (_currentStep == value) return; _currentStep = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CurrentStep))); }
+        set { if (_currentStep == value) return; _currentStep = value; _hasUnseenUpdate = true; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CurrentStep))); PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasUnseenUpdate))); }
     }
 
     public List<string> LogMessages { get; set; } = [];
@@ -370,6 +371,12 @@ public class WorkflowExecution : INotifyPropertyChanged
     {
         get => _error;
         set { if (_error == value) return; _error = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Error))); }
+    }
+
+    public bool HasUnseenUpdate
+    {
+        get => _hasUnseenUpdate;
+        set { if (_hasUnseenUpdate == value) return; _hasUnseenUpdate = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasUnseenUpdate))); }
     }
 
     public DateTimeOffset StartedAt { get; set; } = DateTimeOffset.Now;

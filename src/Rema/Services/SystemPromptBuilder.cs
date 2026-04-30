@@ -53,6 +53,8 @@ say so clearly. When things are on track, confirm briefly and move on.
         if (serviceProjects.Count > 0)
         {
             sb.AppendLine("## Onboarded Service Projects");
+            sb.AppendLine("These projects are already configured — use their metadata directly. Do NOT re-scan repos for info that is already here.");
+            sb.AppendLine();
             foreach (var project in serviceProjects)
             {
                 sb.AppendLine($"### {project.Name}");
@@ -64,9 +66,26 @@ say so clearly. When things are on track, confirm briefly and move on.
                     foreach (var pc in project.PipelineConfigs)
                     {
                         var stages = string.Join(" → ", pc.DeploymentStages);
-                        sb.AppendLine($"  - **{pc.Name}** ({pc.PipelineType}, ID {pc.AdoPipelineId}): {stages}");
+                        var approvals = pc.ApprovalRequired.Count > 0
+                            ? $" (approvals: {string.Join(", ", pc.ApprovalRequired.Where(a => a.Value).Select(a => a.Key))})"
+                            : "";
+                        sb.AppendLine($"  - **{pc.DisplayName}** ({pc.PipelineType}, ID {pc.AdoPipelineId}): {stages}{approvals}");
+                        if (!string.IsNullOrWhiteSpace(pc.Description))
+                            sb.AppendLine($"    Description: {pc.Description}");
                     }
                 }
+                if (!string.IsNullOrWhiteSpace(project.KustoCluster))
+                    sb.AppendLine($"- Kusto: `{project.KustoCluster}` / `{project.KustoDatabase}`");
+                if (project.HealthQueries.Count > 0)
+                {
+                    sb.AppendLine("- Health queries:");
+                    foreach (var hq in project.HealthQueries)
+                        sb.AppendLine($"  - **{hq.Name}** ({hq.Severity}, {hq.ThresholdType} {hq.ThresholdValue})");
+                }
+                if (project.McpServers.Count > 0)
+                    sb.AppendLine($"- MCP servers: {string.Join(", ", project.McpServers.Where(m => m.IsEnabled).Select(m => m.Name))}");
+                if (!string.IsNullOrWhiteSpace(project.DiscoveredAgentPath))
+                    sb.AppendLine($"- Discovered agent: `{project.DiscoveredAgentPath}`");
                 if (!string.IsNullOrWhiteSpace(project.Instructions))
                     sb.AppendLine($"- Instructions: {project.Instructions}");
                 sb.AppendLine();
@@ -122,6 +141,17 @@ perform release operations, and delegate to repo-discovered capabilities when th
 
         if (capabilities is { Count: > 0 })
         {
+            // List workflows prominently at the top
+            var workflows = capabilities.Where(c => c.IsEnabled && c.IsWorkflow).OrderBy(c => c.Name).ToList();
+            if (workflows.Count > 0)
+            {
+                sb.AppendLine("## Available Workflows");
+                sb.AppendLine("These are end-to-end workflows you can execute. Invoke them via `rema_invoke_capability` to get full instructions.");
+                foreach (var wf in workflows)
+                    sb.AppendLine($"- **{wf.Name}**: {wf.Description}");
+                sb.AppendLine();
+            }
+
             sb.AppendLine("## Configured Rema Capabilities");
             sb.AppendLine("""
 These are skills, tools, agents, and MCP servers available from onboarded service projects and the agency marketplace.

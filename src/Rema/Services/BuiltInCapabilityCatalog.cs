@@ -132,7 +132,8 @@ public static class BuiltInCapabilityCatalog
             This loop can run for multiple releases simultaneously — each gets its own dashboard operation.
             Always prefer using in-repo skills/tools/agents but validate their work independently.
             """,
-            ["release", "workflow", "production", "monitoring"]),
+            ["release", "workflow", "production", "monitoring"],
+            IsWorkflow: true),
 
         new("Skill", "Change Validation Workflow",
             "Analyze branch changes, buddy build, fix failures, deploy to INT, and validate — end-to-end change validation loop.",
@@ -190,7 +191,8 @@ public static class BuiltInCapabilityCatalog
             IMPORTANT: Do not assume — if you're unclear about something, ask the user.
             Prefer local environment validation over INT when possible.
             """,
-            ["validation", "build", "deploy", "workflow", "int"]),
+            ["validation", "build", "deploy", "workflow", "int"],
+            IsWorkflow: true),
 
         new("Skill", "Rema Dev Validation",
             "Validation checklist for AI agents making changes to the Rema codebase — ensures UI/code changes are tested with Avalonia MCP.",
@@ -254,6 +256,7 @@ public static class BuiltInCapabilityCatalog
                 existing.Tags = seed.Tags.ToList();
                 existing.Source = "agency marketplace";
                 existing.IsEnabled = true;
+                existing.IsWorkflow = seed.IsWorkflow;
                 continue;
             }
 
@@ -267,6 +270,7 @@ public static class BuiltInCapabilityCatalog
                 Source = "agency marketplace",
                 IsBuiltIn = true,
                 IsEnabled = true,
+                IsWorkflow = seed.IsWorkflow,
             });
         }
     }
@@ -276,5 +280,6 @@ public static class BuiltInCapabilityCatalog
         string Name,
         string Description,
         string Content,
-        IReadOnlyList<string> Tags);
+        IReadOnlyList<string> Tags,
+        bool IsWorkflow = false);
 }

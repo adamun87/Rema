@@ -197,10 +197,11 @@ public partial class ShiftsViewModel : ObservableObject
             i.Item.Status.Contains("failed", StringComparison.OrdinalIgnoreCase)
             || i.Item.Status.Contains("canceled", StringComparison.OrdinalIgnoreCase));
 
-        // Total pending attention = tracked items needing action + operations waiting for input + failed operations
+        // Total pending attention = tracked items needing action + operations waiting for input + failed ops + unseen updates
         var waitingOps = ActiveOperations.Count(o => o.Status is "WaitingForInput");
         var failedOps = ActiveOperations.Count(o => o.Status is "Failed");
-        PendingAttentionCount = NeedsActionCount + waitingOps + failedOps;
+        var unseenOps = ActiveOperations.Count(o => o.HasUnseenUpdate);
+        PendingAttentionCount = NeedsActionCount + waitingOps + failedOps + unseenOps;
         HasPendingAttention = PendingAttentionCount > 0;
 
         ServiceProjects.Clear();
@@ -558,5 +559,25 @@ public partial class ShiftsViewModel : ObservableObject
         _dataStore.Data.WorkflowExecutions.Remove(operation);
         await _dataStore.SaveAsync();
         Refresh();
+    }
+
+    /// <summary>
+    /// Marks all active operations as viewed, clearing unseen update flags and the badge.
+    /// Call this when the user navigates to the dashboard.
+    /// </summary>
+    public void MarkOperationsViewed()
+    {
+        var changed = false;
+        foreach (var op in ActiveOperations)
+        {
+            if (op.HasUnseenUpdate)
+            {
+                op.HasUnseenUpdate = false;
+                changed = true;
+            }
+        }
+        // Also clear attention for tracked items that were just viewed
+        if (changed || PendingAttentionCount > 0)
+            RefreshSummaryStats();
     }
 }
