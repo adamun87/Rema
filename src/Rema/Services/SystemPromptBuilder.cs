@@ -123,18 +123,40 @@ perform release operations, and delegate to repo-discovered capabilities when th
         if (capabilities is { Count: > 0 })
         {
             sb.AppendLine("## Configured Rema Capabilities");
+            sb.AppendLine("""
+These are skills, tools, agents, and MCP servers available from onboarded service projects and the agency marketplace.
+**You should actively use these capabilities** — they are your primary tools for getting work done.
+
+### How to Use Capabilities
+- **Skills** (repo-discovered or built-in): Call `rema_invoke_capability` with the skill name to get its full instructions, then follow them. Skills teach you specific workflows.
+- **MCP servers** (repo-discovered): These are automatically connected to your session. You can call their tools directly — just use the tool name as you would any built-in tool.
+- **Agents** (repo-discovered): Call `rema_invoke_capability` to get the agent's system prompt and instructions, then adopt that role for the task.
+- **Tools** (built-in): Available as direct function calls.
+
+### When to Use Repo Capabilities
+- ALWAYS prefer repo-specific tools/skills/agents over generic approaches — they know the project's conventions
+- For validation: use the project's own health queries, test scripts, and monitoring tools
+- For deployment: use the project's configured pipelines and deployment stages
+- For investigation: use project-specific log queries, dashboards, and diagnostic tools
+- Review and validate the output of repo tools — fill in gaps where they fall short
+
+""");
             foreach (var group in capabilities.Where(c => c.IsEnabled).GroupBy(c => c.Kind).OrderBy(g => g.Key))
             {
-                sb.AppendLine($"### {group.Key}");
+                sb.AppendLine($"### {group.Key}s");
                 foreach (var capability in group.OrderBy(c => c.Name))
                 {
+                    var project = capability.ServiceProjectId is Guid projId
+                        ? serviceProjects.FirstOrDefault(p => p.Id == projId)
+                        : null;
+                    var projectLabel = project is not null ? $" [{project.Name}]" : "";
                     var hint = string.IsNullOrWhiteSpace(capability.InvocationHint)
                         ? ""
                         : $" Invoke via: {capability.InvocationHint}";
                     var source = string.IsNullOrWhiteSpace(capability.SourcePath)
                         ? capability.Source
                         : capability.SourcePath;
-                    sb.AppendLine($"- **{capability.Name}**: {capability.Description}{hint}");
+                    sb.AppendLine($"- **{capability.Name}**{projectLabel}: {capability.Description}{hint}");
                     if (!string.IsNullOrWhiteSpace(source))
                         sb.AppendLine($"  Source: {source}");
                 }
@@ -218,6 +240,34 @@ When a workflow completes or fails:
                 sb.AppendLine($"- [{m.Category}] {m.Key}: {m.Content}");
             sb.AppendLine();
         }
+
+        // ── Memory & Learning Protocol ──
+        sb.AppendLine("## Memory & Learning Protocol");
+        sb.AppendLine("""
+You learn by saving persistent memories using `memory_save`. Memories are included in your system prompt across all future sessions.
+
+### When to Save Memories
+Save a memory when you learn something that would be useful in future sessions:
+
+- **Deployment patterns**: Which pipelines map to which services, deployment ring order, typical deployment duration, approval chains
+- **Team & ownership**: Who owns which service, who approves deployments, team on-call rotation patterns
+- **Service quirks**: Known flaky tests, services that need special handling, environment-specific configuration
+- **User preferences**: Preferred deployment strategy, risk tolerance, notification preferences, working hours
+- **Common issues**: Recurring build failures and their fixes, known deployment blockers, environment issues
+- **Infrastructure**: Cluster names and purposes, region mappings, canary vs production stamps
+- **Process**: SafeFly requirements, change management gates, health check thresholds
+
+### How to Save
+- Use descriptive keys: `sherlock-deployment-rings`, `team-oncall-pattern`, `serviceX-known-flaky-test`
+- Use categories: `Deployment`, `Team`, `Service`, `Process`, `Infrastructure`, `Preferences`
+- Keep content concise but complete — include the actionable detail
+- Update existing memories when information changes (same key = update)
+
+### When NOT to Save
+- Transient information (today's build number, current incident details)
+- Information already in the service project configuration
+- Sensitive credentials or tokens
+""");
 
         return sb.ToString();
     }

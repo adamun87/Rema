@@ -398,10 +398,25 @@
           </UniformGrid>
 
           <!-- Active Operations (from chat workflows) -->
-          <StackPanel Spacing="10" IsVisible="{Binding HasActiveOperations}">
+          <StackPanel Spacing="10">
             <TextBlock Text="Active operations" FontSize="16" FontWeight="SemiBold"
                        Foreground="{DynamicResource Brush.TextPrimary}" />
-            <ItemsControl ItemsSource="{Binding ActiveOperations}">
+            <!-- Empty state -->
+            <Border IsVisible="{Binding !HasActiveOperations}"
+                    Background="{DynamicResource Brush.Surface}"
+                    BorderBrush="{DynamicResource Brush.Border}"
+                    BorderThickness="1" CornerRadius="10"
+                    Padding="20,16">
+              <StackPanel HorizontalAlignment="Center" Spacing="6">
+                <TextBlock Text="📋" FontSize="24" HorizontalAlignment="Center" Opacity="0.5" />
+                <TextBlock Text="No active operations. Start a workflow from chat to track it here."
+                           FontSize="12" Foreground="{DynamicResource Brush.TextTertiary}"
+                           TextAlignment="Center" MaxWidth="320" TextWrapping="Wrap" />
+              </StackPanel>
+            </Border>
+            <!-- Operation cards -->
+            <ItemsControl ItemsSource="{Binding ActiveOperations}"
+                          IsVisible="{Binding HasActiveOperations}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="models:WorkflowExecution">
                   <Border Background="{DynamicResource Brush.Surface}"
