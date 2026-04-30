@@ -164,6 +164,130 @@ These are skills, tools, agents, and MCP servers available from onboarded servic
             sb.AppendLine();
         }
 
+        // ── Visualization & Presentation ──
+        sb.AppendLine("## Visualization & Presentation");
+        sb.AppendLine("""
+You can render rich inline visualizations using fenced code blocks with special language tags.
+**Use these aggressively** — telemetry data, metrics, comparisons, and status summaries should ALWAYS use visual formats.
+
+### Charts (`chart`)
+Use for metrics, trends, distributions, and comparisons.
+```chart
+{"type":"line","labels":["10:00","10:15","10:30","10:45","11:00"],"series":[{"name":"Error Rate","values":[0.1,0.2,0.15,0.8,0.3]}]}
+```
+Types: `line` (trends/time series), `bar` (comparisons), `donut` (distributions), `pie` (proportions).
+JSON fields: `type`, `labels` (array), `series` ([{`name`, `values`}]), optional: `showLegend`, `showGrid`, `height`, `donutCenterValue`, `donutCenterLabel`.
+
+### Tables (markdown tables)
+Use for structured data, query results, status lists, and comparisons.
+| Service | Version | Status | Error Rate |
+|---------|---------|--------|------------|
+| API     | 2.1.3   | ✅ Healthy | 0.02% |
+| Worker  | 2.1.3   | ⚠️ Degraded | 1.2% |
+
+### Diagrams (`mermaid`)
+Use for deployment flows, architecture, state machines, and timelines.
+```mermaid
+flowchart LR
+    Build --> Canary --> Prod-WUS2 --> Prod-EUS
+```
+
+### Info Cards (`card`)
+Use for health summaries, deployment status, or any structured factual answer.
+```card
+{"header":"Service Health — API v2.1.3","summary":"✅ Healthy — all metrics within thresholds","detail":"**Error rate:** 0.02% (threshold: 1%)\n**P99 latency:** 142ms (threshold: 500ms)\n**Availability:** 99.98%"}
+```
+
+### Confidence (`confidence`)
+Use when reporting health or validation results where certainty varies.
+```confidence
+{"label":"Deployment safety","value":85,"explanation":"3 of 4 health checks passed, 1 flaky test skipped"}
+```
+
+### Comparison (`comparison`)
+Use for before/after, A/B, or option comparison.
+```comparison
+{"optionA":{"title":"Before Deploy","content":"- Error rate: 0.01%\n- P99: 120ms"},"optionB":{"title":"After Deploy","content":"- Error rate: 0.03%\n- P99: 135ms"}}
+```
+
+### Formatting Rules
+- **ALWAYS use charts** for time-series metrics (error rates, latency, request counts)
+- **ALWAYS use tables** for multi-row query results and status listings
+- **ALWAYS use cards** for health check summaries
+- Use comparison blocks for before/after deployment analysis
+- Combine visualizations with brief text interpretation — never show raw data alone
+- Use markdown tables for structured data under 20 rows; for larger datasets, summarize and chart
+""");
+
+        // ── Telemetry & Evidence Protocol ──
+        sb.AppendLine("## Telemetry & Evidence Protocol");
+        sb.AppendLine("""
+When presenting telemetry, metrics, or query results, ALWAYS follow this format:
+
+### 1. Show the Query (Collapsible)
+Wrap the raw query in a collapsible details block so the user can inspect it:
+
+<details>
+<summary>📊 Kusto Query — Error Rate by Service</summary>
+
+```kql
+AppRequests
+| where TimeGenerated > ago(1h)
+| summarize ErrorRate = countif(ResultCode >= 500) * 100.0 / count() by bin(TimeGenerated, 5m), ServiceName
+| order by TimeGenerated asc
+```
+
+</details>
+
+### 2. Visualize the Results
+- Time-series data → `chart` with type `line`
+- Comparisons across services/regions → `chart` with type `bar`
+- Distribution breakdowns → `chart` with type `donut` or `pie`
+- Tabular results → markdown table
+- Health summaries → `card` block
+- Confidence in findings → `confidence` block
+
+### 3. Interpret the Results
+After the visualization, provide a brief interpretation:
+- What does this data tell us?
+- Is this normal or concerning?
+- What action should be taken?
+- How does it compare to baseline/thresholds?
+
+### Evidence-Based Decisions
+When recommending actions (approve deployment, rollback, investigate):
+- ALWAYS back up recommendations with telemetry evidence
+- Show the specific metrics that support your recommendation
+- Compare current metrics to baseline or thresholds
+- If health checks are configured, show each check's result with pass/fail
+- Use `confidence` blocks to indicate how certain you are about the assessment
+
+### Example: Post-Deployment Health Report
+
+<details>
+<summary>📊 Query — Error rate last 30 minutes</summary>
+
+```kql
+AppRequests | where TimeGenerated > ago(30m) | summarize ErrorRate = round(countif(ResultCode >= 500) * 100.0 / count(), 2) by bin(TimeGenerated, 5m)
+```
+
+</details>
+
+```chart
+{"type":"line","labels":["13:30","13:35","13:40","13:45","13:50","13:55"],"series":[{"name":"Error Rate %","values":[0.02,0.03,0.02,0.15,0.04,0.02]}]}
+```
+
+```card
+{"header":"Health Assessment — Post-Deploy","summary":"✅ Healthy — brief spike at 13:45, self-resolved","detail":"**Error rate:** 0.03% avg (threshold: 1%) — ✅ Pass\n**P99 latency:** 145ms (threshold: 500ms) — ✅ Pass\n**Version confirmed:** 2.1.3 across all instances — ✅ Pass\n**Brief spike at 13:45:** 0.15% — correlated with deployment rollout, self-resolved within 5 min"}
+```
+
+```confidence
+{"label":"Safe to proceed to next ring","value":92,"explanation":"All health checks passing, error spike was transient and deployment-correlated"}
+```
+
+**Recommendation:** Safe to proceed to the next deployment ring. The brief error spike at 13:45 correlates with the pod rollout and resolved within 5 minutes. All metrics are now within normal thresholds.
+""");
+
         // ── Guidance Protocol ──
         sb.AppendLine("## Guidance Protocol");
         sb.AppendLine("""
