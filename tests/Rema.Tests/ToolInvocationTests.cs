@@ -4,7 +4,7 @@ using Rema.Models;
 using Rema.Services;
 using Xunit;
 
-namespace Lumi.Tests;
+namespace Rema.Tests;
 
 public sealed class ToolInvocationTests
 {

@@ -4,7 +4,7 @@ using Rema.Services;
 using Rema.ViewModels;
 using Xunit;
 
-namespace Lumi.Tests;
+namespace Rema.Tests;
 
 public sealed class RemaServicesTests
 {

@@ -3,7 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Headless;
 
-namespace Lumi.Tests;
+namespace Rema.Tests;
 
 internal sealed class HeadlessTestSession : IDisposable
 {

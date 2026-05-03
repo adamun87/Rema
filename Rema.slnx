@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="src\Rema\Rema.csproj" />
+  <Project Path="src\Rema.Generators\Rema.Generators.csproj" />
+  <Project Path="tests\Rema.Tests\Rema.Tests.csproj" />
+</Solution>

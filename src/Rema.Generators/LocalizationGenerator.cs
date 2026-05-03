@@ -8,7 +8,7 @@ using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Text;
 
-namespace Lumi.Generators;
+namespace Rema.Generators;
 
 /// <summary>
 /// Source generator that reads JSON localization files (AdditionalFiles) and produces
@@ -30,7 +30,7 @@ public sealed class LocalizationGenerator : IIncrementalGenerator
 
         // Combine JSON files with the assembly name so we can derive the namespace
         var assemblyName = context.CompilationProvider
-            .Select(static (c, _) => c.AssemblyName ?? "Lumi");
+            .Select(static (c, _) => c.AssemblyName ?? "Rema");
 
         var combined = jsonFiles.Collect().Combine(assemblyName);
 

@@ -7,7 +7,7 @@ using Avalonia.VisualTree;
 using StrataTheme.Controls;
 using Xunit;
 
-namespace Lumi.Tests;
+namespace Rema.Tests;
 
 [Collection("Headless UI")]
 public sealed class MarkdownDuplicateTableHeaderTests

@@ -6,7 +6,7 @@
              x:DataType="vm:ServiceProjectsViewModel">
 
   <UserControl.Styles>
-    <!-- Fade-in when visible (matches Lumi motion-surface) -->
+    <!-- Fade-in when visible (motion-surface) -->
     <Style Selector="ScrollViewer.motion-surface, StackPanel.motion-surface">
       <Setter Property="Opacity" Value="0" />
       <Setter Property="Transitions">
@@ -43,7 +43,7 @@
       <Setter Property="Opacity" Value="1" />
     </Style>
 
-    <!-- Field label (Lumi pattern) -->
+    <!-- Field label -->
     <Style Selector="TextBlock.field-label">
       <Setter Property="FontSize" Value="12" />
       <Setter Property="FontWeight" Value="Medium" />

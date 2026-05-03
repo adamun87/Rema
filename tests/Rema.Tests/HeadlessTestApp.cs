@@ -1,6 +1,6 @@
 using Rema;
 
-namespace Lumi.Tests;
+namespace Rema.Tests;
 
 public sealed class HeadlessTestApp : App
 {

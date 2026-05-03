@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 
 namespace Rema.Models;
 
-// ── Chat (reused from Lumi pattern) ──
+// ── Chat ──
 
 public class ChatMessage
 {

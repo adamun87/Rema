@@ -1,17 +1,17 @@
-# Lumi ✨
+# Rema ✨
 
-A personal agentic desktop assistant powered by [GitHub Copilot SDK](https://github.com/features/copilot) and [Avalonia UI](https://avaloniaui.net/). Lumi is a cross-platform chat application with a modern, intuitive UX that feels alive.
+A personal agentic desktop assistant powered by [GitHub Copilot SDK](https://github.com/features/copilot) and [Avalonia UI](https://avaloniaui.net/). Rema is a cross-platform chat application with a modern, intuitive UX that feels alive.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ## Features
 
 - **Streaming chat** — Real-time streamed responses with tool call visualization, reasoning display, and typing indicators
-- **Agents (Lumis)** — Create custom agent personas with their own system prompts, skills, and tools
+- **Agents** — Create custom agent personas with their own system prompts, skills, and tools
 - **Skills** — Reusable capability definitions in markdown that teach the assistant new abilities
-- **Projects** — Organize chats with custom instructions that shape Lumi's behavior
+- **Projects** — Organize chats with custom instructions that shape Rema's behavior
 - **Memories** — Persistent facts extracted from conversations, remembered across all sessions
-- **Context awareness** — Lumi assembles context from the active project, agent, time of day, user name, skills, and memories into every interaction
+- **Context awareness** — Rema assembles context from the active project, agent, time of day, user name, skills, and memories into every interaction
 - **System tray** — Minimize to tray with global hotkey for instant access
 - **Charts** — Inline interactive charts (line, bar, donut, pie) rendered in chat
 - **Localization** — English and Hebrew, with easy extension to other languages
@@ -34,8 +34,8 @@ A personal agentic desktop assistant powered by [GitHub Copilot SDK](https://git
 ### Clone
 
 ```bash
-git clone --recurse-submodules https://github.com/adirh3/Lumi.git
-cd Lumi
+git clone --recurse-submodules https://github.com/adamun87/Rema.git
+cd Rema
 ```
 
 > **Note:** The `--recurse-submodules` flag is required to pull the [StrataTheme](https://github.com/adirh3/Strata) UI library.
@@ -49,8 +49,8 @@ git submodule update --init --recursive
 ### Build & Run
 
 ```bash
-dotnet build src/Lumi/Lumi.csproj
-cd src/Lumi && dotnet run
+dotnet build src/Rema/Rema.csproj
+cd src/Rema && dotnet run
 ```
 
 ### Local StrataTheme Development
@@ -59,21 +59,21 @@ If you have the [Strata](https://github.com/adirh3/Strata) repo cloned as a sibl
 
 ```
 Git/
-├── Lumi/      ← this repo
+├── Rema/      ← this repo
 └── Strata/    ← local Strata clone (optional, auto-detected)
 ```
 
 ## Architecture
 
 ```
-src/Lumi/
+src/Rema/
 ├── Models/          — Domain entities (Chat, Project, Skill, Agent, Memory)
 ├── Services/        — CopilotService, DataStore (JSON), SystemPromptBuilder
 ├── ViewModels/      — MVVM ViewModels with CommunityToolkit.Mvvm generators
 └── Views/           — Avalonia XAML views + code-behind
 ```
 
-Data is persisted as a single JSON file in `%AppData%/Lumi/data.json` — no database required.
+Data is persisted as a single JSON file in `%AppData%/Rema/data.json` — no database required.
 
 ## License
 

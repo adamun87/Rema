@@ -1,8 +1,8 @@
-# Lumi — Agent Guidelines
+# Rema — Agent Guidelines
 
 ## Project Summary
 
-Lumi is a cross-platform Avalonia desktop app — a personal agentic assistant that can do anything. It is a chat application with a modern, intuitive UX that feels alive. Lumi's main interface is a chat interface powered by GitHub Copilot SDK as the agentic backend. Single-project solution with MVVM architecture using CommunityToolkit.Mvvm source generators.
+Rema is a cross-platform Avalonia desktop app — a personal agentic assistant that can do anything. It is a chat application with a modern, intuitive UX that feels alive. Rema's main interface is a chat interface powered by GitHub Copilot SDK as the agentic backend. Single-project solution with MVVM architecture using CommunityToolkit.Mvvm source generators.
 
 ## Tech Stack
 
@@ -14,10 +14,10 @@ Lumi is a cross-platform Avalonia desktop app — a personal agentic assistant t
 
 ## Core Concepts
 
-- **Chat** — A chat session with Lumi. Primary interaction surface. Has message history and can be linked to a project and/or agent.
+- **Chat** — A chat session with Rema. Primary interaction surface. Has message history and can be linked to a project and/or agent.
 - **Project** — Named collection of chats with custom instructions injected into the system prompt.
 - **Skill** — Reusable capability definition in markdown (e.g., "Word creator" converts markdown to Word via Python). Listed in system prompt so the LLM knows what's available.
-- **Lumis (Agents)** — Custom agent personas combining system prompt, skills, and tools (e.g., "Daily Lumi" checks mail/todos and plans the day). Users create and select them.
+- **Agents** — Custom agent personas combining system prompt, skills, and tools (e.g., "Daily Agent" checks mail/todos and plans the day). Users create and select them.
 - **Memory** — Persistent facts extracted from conversations, included in system prompt across all sessions.
 
 ## User Flows
@@ -42,7 +42,7 @@ Lumi is a cross-platform Avalonia desktop app — a personal agentic assistant t
 
 ```
 App.axaml.cs
-  ├── DataStore          (JSON persistence → %AppData%/Lumi/data.json)
+  ├── DataStore          (JSON persistence → %AppData%/Rema/data.json)
   ├── CopilotService     (GitHub Copilot SDK wrapper)
   └── MainViewModel
         ├── ChatViewModel      → DataStore, CopilotService, SystemPromptBuilder
@@ -52,10 +52,10 @@ App.axaml.cs
         └── SettingsViewModel  → DataStore
 ```
 
-- **Models** (`src/Lumi/Models/Models.cs`): All domain entities in one file — `Chat`, `ChatMessage`, `Project`, `Skill`, `LumiAgent`, `Memory`, `UserSettings`, `AppData`
-- **Services** (`src/Lumi/Services/`): `CopilotService` (SDK wrapper with streaming events), `DataStore` (JSON persistence to `%AppData%/Lumi/data.json`), `SystemPromptBuilder` (composite system prompt)
-- **ViewModels** (`src/Lumi/ViewModels/`): `MainViewModel` (root), `ChatViewModel` (streaming chat), `AgentsViewModel`, `ProjectsViewModel`, `SkillsViewModel`, `SettingsViewModel` — all CRUD follows same pattern
-- **Views** (`src/Lumi/Views/`): Avalonia XAML + code-behind. `ChatView.axaml.cs` is the heaviest — builds transcript programmatically using Strata controls
+- **Models** (`src/Rema/Models/Models.cs`): All domain entities in one file — `Chat`, `ChatMessage`, `Project`, `Skill`, `RemaAgent`, `Memory`, `UserSettings`, `AppData`
+- **Services** (`src/Rema/Services/`): `CopilotService` (SDK wrapper with streaming events), `DataStore` (JSON persistence to `%AppData%/Rema/data.json`), `SystemPromptBuilder` (composite system prompt)
+- **ViewModels** (`src/Rema/ViewModels/`): `MainViewModel` (root), `ChatViewModel` (streaming chat), `AgentsViewModel`, `ProjectsViewModel`, `SkillsViewModel`, `SettingsViewModel` — all CRUD follows same pattern
+- **Views** (`src/Rema/Views/`): Avalonia XAML + code-behind. `ChatView.axaml.cs` is the heaviest — builds transcript programmatically using Strata controls
 - **External dependency**: StrataTheme UI library referenced as a git submodule at `Strata/` — provides `StrataChatShell`, `StrataChatMessage`, `StrataMarkdown`, `StrataThink`, `StrataAiToolCall`, etc. If a build fails because Strata files are missing, run `git submodule update --init --recursive Strata` from the repo root and retry.
 
 ### Key Patterns
@@ -77,8 +77,8 @@ App.axaml.cs
 ## Project Structure
 
 ```
-src/Lumi/
-  ├── Models/Models.cs         — All domain entities (Chat, Project, Skill, LumiAgent, Memory, etc.)
+src/Rema/
+  ├── Models/Models.cs         — All domain entities (Chat, Project, Skill, RemaAgent, Memory, etc.)
   ├── Services/
   │   ├── CopilotService.cs    — GitHub Copilot SDK integration
   │   ├── DataStore.cs         — JSON persistence
@@ -107,7 +107,7 @@ src/Lumi/
 | `Chat` | Conversation with message history, linked to project/agent |
 | `Project` | Collection of chats with custom instructions |
 | `Skill` | Reusable capability definition (markdown content) |
-| `LumiAgent` | Custom agent persona with system prompt, skills, tools |
+| `RemaAgent` | Custom agent persona with system prompt, skills, tools |
 | `Memory` | Persistent user fact extracted from conversations |
 | `UserSettings` | App preferences (name, theme, model) |
 | `AppData` | Root container for all persisted data |
@@ -164,10 +164,10 @@ For **chat/transcript** changes:
 
 #### Debug-only agent harnesses
 
-Lumi includes focused Debug-only harnesses for coding agents:
+Rema includes focused Debug-only harnesses for coding agents:
 
-- `dotnet run --project src\Lumi\Lumi.csproj -- --debug-agent-harness` opens Lumi directly into a synthetic transcript fixture chat. The fixture is not saved to normal chat history and exercises user/assistant messages, reasoning, tools, subagents, questions, errors, sources, attachments, plan content, token metadata, and generated files.
-- `dotnet run --project src\Lumi\Lumi.csproj -- --test-chat-stress` runs a headless real Copilot stress check. It requires a deterministic tool invocation and exits nonzero if the expected `LUMI_CHAT_STRESS_OK` response is not produced.
+- `dotnet run --project src\Rema\Rema.csproj -- --debug-agent-harness` opens Rema directly into a synthetic transcript fixture chat. The fixture is not saved to normal chat history and exercises user/assistant messages, reasoning, tools, subagents, questions, errors, sources, attachments, plan content, token metadata, and generated files.
+- `dotnet run --project src\Rema\Rema.csproj -- --test-chat-stress` runs a headless real Copilot stress check. It requires a deterministic tool invocation and exits nonzero if the expected `REMA_CHAT_STRESS_OK` response is not produced.
 - When running a Debug build, the top-right `#AgentDebugMap` overlay shows stable navigation indices, current page landmarks, chat control IDs, and an `Open fixture` button.
 - Stable MCP/UI automation landmarks are available by name: `#NavChat`, `#NavProjects`, `#NavSkills`, `#NavAgents`, `#NavMemories`, `#NavMcpServers`, `#NavSettings`, `#PageChat`, `#ChatShell`, `#Transcript`, and `#Composer`.
 

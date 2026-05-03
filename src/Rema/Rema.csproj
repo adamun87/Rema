@@ -37,12 +37,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Lumi.Generators\Lumi.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\Rema.Generators\Rema.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\..\Strata\src\StrataTheme\StrataTheme.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="Lumi.Tests" />
+    <InternalsVisibleTo Include="Rema.Tests" />
   </ItemGroup>
 
 </Project>

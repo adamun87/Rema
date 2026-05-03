@@ -1,15 +1,15 @@
 ---
 name: Publish New Version
-description: Bumps version and triggers a new Lumi release via GitHub Actions
+description: Bumps version and triggers a new Rema release via GitHub Actions
 ---
 
 # Publish New Version
 
-When the user asks to publish or release a new version of Lumi:
+When the user asks to publish or release a new version of Rema:
 
-1. **Check current version**: Read the `<Version>` tag in `src/Lumi/Lumi.csproj`
+1. **Check current version**: Read the `<Version>` tag in `src/Rema/Rema.csproj`
 2. **Determine new version**: Bump the patch version (e.g., 0.1.0 → 0.2.0), or ask the user if they want a specific version
-3. **Update csproj**: Edit the `<Version>` tag in `src/Lumi/Lumi.csproj` to the new version
+3. **Update csproj**: Edit the `<Version>` tag in `src/Rema/Rema.csproj` to the new version
 4. **Generate changelog**:
    - Get the commit diff since the last release tag: `git log <last-tag>..HEAD --oneline`
    - Read the raw commit messages and infer user-facing changes
@@ -21,7 +21,7 @@ When the user asks to publish or release a new version of Lumi:
    - Save the changelog text — it will be used as the GitHub Release body.
 5. **Commit and push**: 
    ```
-   git add src/Lumi/Lumi.csproj
+   git add src/Rema/Rema.csproj
    git commit -m "bump version to X.Y.Z"
    git push origin main
    ```

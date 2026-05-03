@@ -1,6 +1,6 @@
 using Xunit;
 
-namespace Lumi.Tests;
+namespace Rema.Tests;
 
 [CollectionDefinition("Headless UI", DisableParallelization = true)]
 public sealed class HeadlessUiTestCollection;

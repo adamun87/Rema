@@ -14,7 +14,7 @@
 
   <Grid ColumnDefinitions="220,*">
 
-    <!-- ═══ Sidebar (matches Lumi layout: top section content + bottom nav pill) ═══ -->
+    <!-- ═══ Sidebar (top section content + bottom nav pill) ═══ -->
     <Border Grid.Column="0"
             Background="{DynamicResource Brush.Surface0}"
             BorderBrush="{DynamicResource Brush.BorderSubtle}"
@@ -32,7 +32,7 @@
                      Margin="0,2,0,0" />
         </StackPanel>
 
-        <!-- ── Bottom: Nav pill (horizontal, Lumi-style) ── -->
+        <!-- ── Bottom: Nav pill (horizontal) ── -->
         <Border DockPanel.Dock="Bottom" Margin="14,4,14,12" ClipToBounds="False">
           <Border Classes="nav-pill"
                   BorderBrush="{DynamicResource Brush.BorderSubtle}"
@@ -199,7 +199,7 @@
             </DockPanel>
           </Panel>
 
-          <!-- Sidebar: Projects (3) — shows project list like Lumi -->
+          <!-- Sidebar: Projects (3) — shows project list -->
           <Panel x:Name="Sidebar3" IsVisible="False" DataContext="{Binding ServiceProjectsVM}">
             <DockPanel>
               <DockPanel DockPanel.Dock="Top" Margin="16,8,16,0">
