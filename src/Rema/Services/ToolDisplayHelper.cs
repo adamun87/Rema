@@ -57,14 +57,6 @@ public static class ToolDisplayHelper
             case "kusto_command" or "execute_command":
                 name = "Kusto command";
                 break;
-            case "ado_pipeline_status":
-                info = ExtractJsonField(argsJson, "pipeline_name");
-                name = "Pipeline status";
-                break;
-            case "ado_approve_stage":
-                info = ExtractJsonField(argsJson, "stage_name");
-                name = "Approve stage";
-                break;
             case "ado_trigger_pipeline":
                 info = ExtractJsonField(argsJson, "pipelineName") ?? ExtractJsonField(argsJson, "pipeline_name");
                 var branch = ExtractJsonField(argsJson, "sourceBranch") ?? ExtractJsonField(argsJson, "source_branch");
@@ -249,8 +241,7 @@ public static class ToolDisplayHelper
         "web_fetch" or "fetch_url" => "🌐",
         "kusto_query" or "execute_query" => "📊",
         "kusto_command" or "execute_command" => "⚡",
-        "ado_pipeline_status" or "ado_list_builds" or "ado_get_build_status" or "ado_get_build_by_branch" => "🔄",
-        "ado_approve_stage" => "✅",
+        "ado_list_builds" or "ado_get_build_status" or "ado_get_build_by_branch" => "🔄",
         "ado_trigger_pipeline" => "🚀",
         "open_ado_deep_link" => "🔗",
         "safefly_create_request_files" => "🛡️",

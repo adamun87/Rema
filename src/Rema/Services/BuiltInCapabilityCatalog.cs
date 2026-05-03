@@ -110,7 +110,7 @@ public static class BuiltInCapabilityCatalog
             - Identify all deployment rings/stages from the pipeline configuration
 
             ### 2. Track & Wait
-            - Monitor the current pipeline stage using ADO tools (`ado_pipeline_status`, `ado_get_build_status`)
+            - Monitor the current pipeline stage using ADO tools (`ado_get_build_status`)
             - Update the dashboard operation as stages progress (`rema_update_operation`)
             - If the stage is running, wait and check periodically — do not spam the user
 
