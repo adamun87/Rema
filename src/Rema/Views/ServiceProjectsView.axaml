@@ -244,6 +244,72 @@
 
         <Separator Margin="0,16,0,16" />
 
+        <!-- ── Pipeline Dependencies ── -->
+        <DockPanel Margin="0,0,0,8">
+          <Button DockPanel.Dock="Right" Classes="subtle" Padding="7,3" MinHeight="0"
+                  CornerRadius="6" Command="{Binding AddDependencyCommand}"
+                  ToolTip.Tip="Add dependency">
+            <TextBlock Text="+" FontSize="14" FontWeight="Bold" />
+          </Button>
+          <TextBlock Text="PIPELINE DEPENDENCIES" Classes="section-label" VerticalAlignment="Center" />
+        </DockPanel>
+
+        <TextBlock Text="Define execution order constraints between pipelines. For example, if pipeline A assigns a role that pipeline B needs, add A → B so Rema knows to wait for A before starting B."
+                   FontSize="11" Foreground="{DynamicResource Brush.TextTertiary}"
+                   TextWrapping="Wrap" Margin="0,0,0,8"
+                   IsVisible="{Binding !HasEditDependencies}" />
+
+        <ItemsControl ItemsSource="{Binding EditDependencies}" IsVisible="{Binding HasEditDependencies}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:DependencyEditItem">
+              <Border Background="{DynamicResource Brush.Surface1}" CornerRadius="8"
+                      Padding="12,10" Margin="0,0,0,8">
+                <StackPanel Spacing="6">
+                  <DockPanel>
+                    <Button DockPanel.Dock="Right" Classes="subtle" Padding="4,2" MinHeight="0"
+                            CornerRadius="4"
+                            Command="{Binding $parent[UserControl].((vm:ServiceProjectsViewModel)DataContext).RemoveDependencyCommand}"
+                            CommandParameter="{Binding}"
+                            ToolTip.Tip="Remove">
+                      <TextBlock Text="✕" FontSize="11" Opacity="0.6" />
+                    </Button>
+                    <TextBlock Text="Dependency rule" FontSize="12" FontWeight="Medium"
+                               Foreground="{DynamicResource Brush.TextPrimary}" VerticalAlignment="Center" />
+                  </DockPanel>
+                  <Grid ColumnDefinitions="*,Auto,*" Margin="0,4,0,0">
+                    <ComboBox Grid.Column="0"
+                              ItemsSource="{Binding $parent[UserControl].((vm:ServiceProjectsViewModel)DataContext).EditPipelines}"
+                              SelectedItem="{Binding SourcePipeline, Mode=TwoWay}"
+                              DisplayMemberBinding="{Binding DisplayName}"
+                              PlaceholderText="Must complete first…"
+                              MinHeight="0" Padding="8,4" FontSize="12" />
+                    <TextBlock Grid.Column="1" Text=" → " FontSize="14" FontWeight="Bold"
+                               Foreground="{DynamicResource Brush.Accent}"
+                               VerticalAlignment="Center" Margin="8,0" />
+                    <ComboBox Grid.Column="2"
+                              ItemsSource="{Binding $parent[UserControl].((vm:ServiceProjectsViewModel)DataContext).EditPipelines}"
+                              SelectedItem="{Binding TargetPipeline, Mode=TwoWay}"
+                              DisplayMemberBinding="{Binding DisplayName}"
+                              PlaceholderText="Then this can start…"
+                              MinHeight="0" Padding="8,4" FontSize="12" />
+                  </Grid>
+                  <Grid ColumnDefinitions="Auto,*">
+                    <ComboBox Grid.Column="0"
+                              ItemsSource="{x:Static vm:DependencyEditItem.DependencyTypes}"
+                              SelectedItem="{Binding DependencyType, Mode=TwoWay}"
+                              MinHeight="0" Padding="8,4" FontSize="12" Margin="0,0,8,0" />
+                    <TextBox Grid.Column="1" Text="{Binding Description, Mode=TwoWay}"
+                             PlaceholderText="Why? (e.g. assigns role needed by target app)"
+                             FontSize="12" TextWrapping="Wrap" />
+                  </Grid>
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <Separator Margin="0,16,0,16" />
+
         <!-- ── SafeFly ── -->
         <TextBlock Text="SAFEFLY REQUEST" Classes="section-label" />
         <Border Background="{DynamicResource Brush.Surface1}" CornerRadius="10"

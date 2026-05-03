@@ -110,6 +110,8 @@ public partial class ServiceProjectsViewModel : ObservableObject
         DiscoveryStatus = "";
         DiscoveryLog.Clear();
         EditPipelines.Clear();
+        EditDependencies.Clear();
+        HasEditDependencies = false;
         _pendingDiscoveredCapabilities = [];
         _pendingDiscoveredMcpServers = [];
     }
@@ -859,6 +861,7 @@ public partial class ServiceProjectsViewModel : ObservableObject
                 Description = p.Description,
             });
         }
+        LoadDependencies(project);
     }
 
     private void SavePipelines(ServiceProject project)
@@ -877,6 +880,69 @@ public partial class ServiceProjectsViewModel : ObservableObject
                 AdoUrl = item.AdoUrl?.Trim() ?? "",
                 AdoPipelineId = PipelineDefinitionIdResolver.Parse(item.AdoUrl),
                 PipelineType = item.PipelineType ?? "yaml",
+                Description = item.Description?.Trim() ?? "",
+            });
+        }
+        SaveDependencies(project);
+    }
+
+    // ── Dependency Management ──
+
+    public ObservableCollection<DependencyEditItem> EditDependencies { get; } = [];
+
+    [ObservableProperty] private bool _hasEditDependencies;
+
+    [RelayCommand]
+    private void AddDependency()
+    {
+        EditDependencies.Add(new DependencyEditItem());
+        HasEditDependencies = true;
+    }
+
+    [RelayCommand]
+    private void RemoveDependency(DependencyEditItem item)
+    {
+        EditDependencies.Remove(item);
+        HasEditDependencies = EditDependencies.Count > 0;
+    }
+
+    private void LoadDependencies(ServiceProject project)
+    {
+        EditDependencies.Clear();
+        foreach (var dep in project.Dependencies)
+        {
+            var source = EditPipelines.FirstOrDefault(p => p.Id == dep.SourcePipelineId);
+            var target = EditPipelines.FirstOrDefault(p => p.Id == dep.TargetPipelineId);
+            EditDependencies.Add(new DependencyEditItem
+            {
+                Id = dep.Id,
+                SourcePipeline = source,
+                TargetPipeline = target,
+                DependencyType = dep.DependencyType.ToString(),
+                Description = dep.Description,
+            });
+        }
+        HasEditDependencies = EditDependencies.Count > 0;
+    }
+
+    private void SaveDependencies(ServiceProject project)
+    {
+        project.Dependencies.Clear();
+        foreach (var item in EditDependencies)
+        {
+            if (item.SourcePipeline is null || item.TargetPipeline is null) continue;
+            if (item.SourcePipeline.Id == item.TargetPipeline.Id) continue; // no self-dependency
+
+            if (!Enum.TryParse<PipelineDependencyType>(item.DependencyType, out var depType))
+                depType = PipelineDependencyType.Custom;
+
+            project.Dependencies.Add(new PipelineDependency
+            {
+                Id = item.Id,
+                ServiceProjectId = project.Id,
+                SourcePipelineId = item.SourcePipeline.Id,
+                TargetPipelineId = item.TargetPipeline.Id,
+                DependencyType = depType,
                 Description = item.Description?.Trim() ?? "",
             });
         }
@@ -978,6 +1044,18 @@ public partial class PipelineEditItem : ObservableObject
     [ObservableProperty] private string _adoUrl = "";
     [ObservableProperty] private string _pipelineType = "yaml";
     [ObservableProperty] private string _description = "";
+}
+
+/// <summary>Editable dependency row for the UI.</summary>
+public partial class DependencyEditItem : ObservableObject
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    [ObservableProperty] private PipelineEditItem? _sourcePipeline;
+    [ObservableProperty] private PipelineEditItem? _targetPipeline;
+    [ObservableProperty] private string _dependencyType = "Custom";
+    [ObservableProperty] private string _description = "";
+
+    public static string[] DependencyTypes => ["RoleAssignment", "ArtifactPublish", "InfraProvisioning", "ConfigurationUpdate", "Custom"];
 }
 
 public sealed class DeploymentVersionEvidenceDisplay

@@ -588,6 +588,13 @@
                           <TextBlock Text="{Binding Item.ActionReason}" FontSize="12"
                                      Foreground="#D97706" TextWrapping="Wrap"
                                      IsVisible="{Binding Item.ActionReason, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                          <Border CornerRadius="4" Padding="6,3"
+                                  Background="#FECACA"
+                                  IsVisible="{Binding IsBlocked}"
+                                  HorizontalAlignment="Left" Margin="0,2,0,0">
+                            <TextBlock Text="{Binding BlockedReason}" FontSize="11" FontWeight="Medium"
+                                       Foreground="#991B1B" />
+                          </Border>
                           <TextBlock Text="Open in ADO ↗" FontSize="11"
                                      Foreground="{DynamicResource Brush.Accent}"
                                      IsVisible="{Binding HasAdoLink}"

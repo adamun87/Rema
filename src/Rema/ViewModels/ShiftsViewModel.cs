@@ -11,7 +11,7 @@ using Rema.Services;
 
 namespace Rema.ViewModels;
 
-public sealed record TrackedItemDisplay(TrackedItem Item, string ProjectName, string PipelineName)
+public sealed record TrackedItemDisplay(TrackedItem Item, string ProjectName, string PipelineName, bool IsBlocked = false, string? BlockedReason = null)
 {
     public bool HasAdoLink => !string.IsNullOrWhiteSpace(Item.AdoWebUrl);
     public string BuildLabel => string.IsNullOrWhiteSpace(Item.BuildVersion) ? "No build selected" : Item.BuildVersion;
@@ -57,6 +57,7 @@ public partial class ShiftsViewModel : ObservableObject
 {
     private readonly DataStore _dataStore;
     private readonly AzureDevOpsService _azureDevOpsService;
+    private readonly PipelineDependencyService _dependencyService;
     private CancellationTokenSource? _buildLoadCts;
     private int _buildLoadVersion;
 
@@ -88,6 +89,10 @@ public partial class ShiftsViewModel : ObservableObject
     [ObservableProperty] private bool _hasActiveOperations;
     [ObservableProperty] private bool _hasRecentOperations;
 
+    // ── Pipeline dependency tracking ──
+    [ObservableProperty] private int _blockedCount;
+    [ObservableProperty] private bool _hasBlockedItems;
+
     // ── Total pending attention count (for nav badge) ──
     [ObservableProperty] private int _pendingAttentionCount;
     [ObservableProperty] private bool _hasPendingAttention;
@@ -109,10 +114,14 @@ public partial class ShiftsViewModel : ObservableObject
     /// <summary>Raised when the user clicks "Go to chat" on an operation card. Guid is the chat ID.</summary>
     public event Action<Guid>? NavigateToChatRequested;
 
+    /// <summary>Raised when a tracked pipeline completes and unblocks other pipelines.</summary>
+    public event Action<string>? PipelineUnblocked;
+
     public ShiftsViewModel(DataStore dataStore, AzureDevOpsService azureDevOpsService)
     {
         _dataStore = dataStore;
         _azureDevOpsService = azureDevOpsService;
+        _dependencyService = new PipelineDependencyService(dataStore);
         Refresh();
     }
 
@@ -131,10 +140,20 @@ public partial class ShiftsViewModel : ObservableObject
             {
                 var proj = _dataStore.Data.ServiceProjects.FirstOrDefault(p => p.Id == item.ServiceProjectId);
                 var pipe = proj?.PipelineConfigs.FirstOrDefault(p => p.Id == item.PipelineConfigId);
+
+                // Check dependency blocking status
+                var blocking = _dependencyService.GetBlockingPipelines(item.PipelineConfigId, item.ServiceProjectId);
+                var isBlocked = blocking.Count > 0;
+                var blockedReason = isBlocked
+                    ? $"Blocked by: {string.Join(", ", blocking.Select(b => b.SourcePipeline.DisplayName))}"
+                    : null;
+
                 ActiveTrackedItems.Add(new TrackedItemDisplay(
                     item,
                     proj?.Name ?? "Unknown Project",
-                    pipe?.DisplayName ?? "Unknown Pipeline"));
+                    pipe?.DisplayName ?? "Unknown Pipeline",
+                    isBlocked,
+                    blockedReason));
             }
         }
 
@@ -201,12 +220,14 @@ public partial class ShiftsViewModel : ObservableObject
         FailedCount = ActiveTrackedItems.Count(i =>
             i.Item.Status.Contains("failed", StringComparison.OrdinalIgnoreCase)
             || i.Item.Status.Contains("canceled", StringComparison.OrdinalIgnoreCase));
+        BlockedCount = ActiveTrackedItems.Count(i => i.IsBlocked);
+        HasBlockedItems = BlockedCount > 0;
 
-        // Total pending attention = tracked items needing action + operations waiting for input + failed ops + unseen updates
+        // Total pending attention = tracked items needing action + blocked + operations waiting for input + failed ops + unseen updates
         var waitingOps = ActiveOperations.Count(o => o.Status is "WaitingForInput");
         var failedOps = ActiveOperations.Count(o => o.Status is "Failed");
         var unseenOps = ActiveOperations.Count(o => o.HasUnseenUpdate);
-        PendingAttentionCount = NeedsActionCount + waitingOps + failedOps + unseenOps;
+        PendingAttentionCount = NeedsActionCount + BlockedCount + waitingOps + failedOps + unseenOps;
         HasPendingAttention = PendingAttentionCount > 0;
 
         ServiceProjects.Clear();
@@ -489,8 +510,38 @@ public partial class ShiftsViewModel : ObservableObject
         var pipeline = project?.PipelineConfigs.FirstOrDefault(p => p.Id == item.PipelineConfigId);
         if (project is null || pipeline is null) return null;
 
+        var priorStatus = item.Status;
         var snapshot = await _azureDevOpsService.GetBuildAsync(project, pipeline, item.AdoRunId.Value);
         AzureDevOpsService.ApplySnapshot(item, snapshot);
+
+        // Check if this pipeline just completed and unblocks other pipelines
+        var justSucceeded = !priorStatus.Contains("succeeded", StringComparison.OrdinalIgnoreCase)
+            && !priorStatus.Contains("completed", StringComparison.OrdinalIgnoreCase)
+            && (item.Status.Contains("succeeded", StringComparison.OrdinalIgnoreCase)
+                || item.Status.Contains("completed", StringComparison.OrdinalIgnoreCase));
+
+        if (justSucceeded)
+        {
+            var unblocked = _dependencyService.GetUnblockedPipelines(item.PipelineConfigId, item.ServiceProjectId);
+            if (unblocked.Count > 0)
+            {
+                var names = string.Join(", ", unblocked.Select(u => u.Pipeline.DisplayName));
+                var message = $"{pipeline.DisplayName} completed — unblocked: {names}";
+                PipelineUnblocked?.Invoke(message);
+
+                if (ActiveShift is not null)
+                {
+                    return new ShiftEvent
+                    {
+                        ShiftId = ActiveShift.Id,
+                        TrackedItemId = item.Id,
+                        EventType = "StatusChange",
+                        Message = message,
+                        Severity = "Info",
+                    };
+                }
+            }
+        }
 
         if (ActiveShift is not null && item.RequiresAction)
         {

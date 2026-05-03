@@ -74,6 +74,18 @@ say so clearly. When things are on track, confirm briefly and move on.
                             sb.AppendLine($"    Description: {pc.Description}");
                     }
                 }
+                if (project.Dependencies.Count > 0)
+                {
+                    sb.AppendLine("- Pipeline dependencies:");
+                    foreach (var dep in project.Dependencies)
+                    {
+                        var source = project.PipelineConfigs.FirstOrDefault(p => p.Id == dep.SourcePipelineId);
+                        var target = project.PipelineConfigs.FirstOrDefault(p => p.Id == dep.TargetPipelineId);
+                        if (source is not null && target is not null)
+                            sb.AppendLine($"  - **{source.DisplayName}** → **{target.DisplayName}** ({dep.DependencyType}): {dep.Description}");
+                    }
+                    sb.AppendLine("  ⚠️ Always call `rema_check_deployment_readiness` before triggering a dependent pipeline.");
+                }
                 if (!string.IsNullOrWhiteSpace(project.KustoCluster))
                     sb.AppendLine($"- Kusto: `{project.KustoCluster}` / `{project.KustoDatabase}`");
                 if (project.HealthQueries.Count > 0)
@@ -134,12 +146,23 @@ Operation tracking tools:
 - `rema_update_operation` — Update status, progress, current step, and logs of a tracked operation as you work through each step.
 - `rema_propose_deployment_plan` — Present a structured deployment plan (stages, clusters, exclusions) to the user for confirmation BEFORE executing.
 
+Pipeline dependency tools:
+- `rema_get_pipeline_dependencies` — Show the full dependency graph for a service project including recommended execution order.
+- `rema_check_deployment_readiness` — **Always call this before triggering a pipeline that has configured dependencies.** Returns blocking pipelines and readiness status.
+
 ### Critical: Branch & Version Safety
 When the user asks to build or deploy:
 1. **Always confirm the source branch** before triggering a build. Never assume 'main' — ask explicitly.
 2. After triggering, **verify the BranchConfirmed field** in the response. If false, warn the user immediately.
 3. Before deploying, use `ado_get_build_by_branch` to confirm the correct build artifact exists for the intended branch.
 4. Include the BuildId and SourceBranch in the deployment plan so the user can verify the exact artifact.
+
+### Critical: Pipeline Dependencies
+When triggering or planning a multi-pipeline deployment:
+1. **Always call `rema_check_deployment_readiness`** before triggering a pipeline that has configured dependencies.
+2. If dependencies are unmet, **tell the user which pipelines must complete first** and wait for them.
+3. When a pipeline completes, **check if it unblocks other pipelines** and notify the user proactively.
+4. Use `rema_get_pipeline_dependencies` to show the full dependency graph when planning a deployment.
 
 Use these tools to answer questions about deployment status, investigate failures,
 perform release operations, and delegate to repo-discovered capabilities when they are relevant.

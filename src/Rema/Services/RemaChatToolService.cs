@@ -16,6 +16,7 @@ public static class RemaChatToolService
     {
         var safeFlyDiffService = new SafeFlyDiffService();
         var deploymentVersionDiscoveryService = new DeploymentVersionDiscoveryService(azureDevOpsService);
+        var dependencyService = new PipelineDependencyService(dataStore);
 
         List<AIFunction> tools =
         [
@@ -414,6 +415,77 @@ public static class RemaChatToolService
                 },
                 "safefly_create_request_files",
                 "Create SafeFly request markdown, changed-files inventory, and application diff patch for a saved service project."),
+
+            // ── Pipeline Dependency Tools ──
+
+            AIFunctionFactory.Create(
+                ([Description("Name of the saved Rema service project.")] string serviceProjectName) =>
+                {
+                    var project = dataStore.Data.ServiceProjects.FirstOrDefault(p =>
+                        p.Name.Equals(serviceProjectName, StringComparison.OrdinalIgnoreCase));
+                    if (project is null)
+                        throw new InvalidOperationException($"Service project '{serviceProjectName}' was not found.");
+
+                    var graph = dependencyService.GetDependencyGraph(project);
+                    var order = dependencyService.GetExecutionOrder(project);
+
+                    return JsonSerializer.Serialize(new
+                    {
+                        ServiceProject = project.Name,
+                        TotalDependencies = graph.Count,
+                        Dependencies = graph.Select(e => new
+                        {
+                            Source = e.Source?.DisplayName,
+                            Target = e.Target?.DisplayName,
+                            Type = e.Dependency.DependencyType.ToString(),
+                            e.Dependency.Description,
+                            e.Dependency.IsAutoDetected,
+                        }),
+                        RecommendedOrder = order?.Select(p => p.DisplayName).ToList(),
+                        HasCycle = order is null,
+                    });
+                },
+                "rema_get_pipeline_dependencies",
+                "Show the pipeline dependency graph for a service project. Returns all dependencies (source must complete before target) and the recommended execution order."),
+
+            AIFunctionFactory.Create(
+                ([Description("Name of the saved Rema service project.")] string serviceProjectName,
+                 [Description("Name or display name of the pipeline to check readiness for.")] string pipelineName) =>
+                {
+                    var project = dataStore.Data.ServiceProjects.FirstOrDefault(p =>
+                        p.Name.Equals(serviceProjectName, StringComparison.OrdinalIgnoreCase));
+                    if (project is null)
+                        throw new InvalidOperationException($"Service project '{serviceProjectName}' was not found.");
+
+                    var pipeline = project.PipelineConfigs.FirstOrDefault(p =>
+                        p.DisplayName.Equals(pipelineName, StringComparison.OrdinalIgnoreCase)
+                        || p.Name.Equals(pipelineName, StringComparison.OrdinalIgnoreCase));
+                    if (pipeline is null)
+                        throw new InvalidOperationException(
+                            $"Pipeline '{pipelineName}' was not found in project '{serviceProjectName}'.");
+
+                    var readiness = dependencyService.CheckDeploymentReadiness(pipeline.Id, project.Id);
+
+                    return JsonSerializer.Serialize(new
+                    {
+                        Pipeline = pipeline.DisplayName,
+                        readiness.IsReady,
+                        BlockingPipelines = readiness.BlockingPipelines.Select(b => new
+                        {
+                            Pipeline = b.SourcePipeline.DisplayName,
+                            DependencyType = b.Dependency.DependencyType.ToString(),
+                            b.Dependency.Description,
+                            CurrentStatus = b.LatestTrackedItem?.Status ?? "Not tracked in current shift",
+                        }),
+                        Recommendation = readiness.IsReady
+                            ? "✅ All dependencies are met. This pipeline is ready to proceed."
+                            : $"⛔ {readiness.BlockingPipelines.Count} blocking dependency/dependencies must complete first. "
+                              + string.Join("; ", readiness.BlockingPipelines.Select(b =>
+                                  $"Wait for '{b.SourcePipeline.DisplayName}' ({b.Dependency.DependencyType})")),
+                    });
+                },
+                "rema_check_deployment_readiness",
+                "Check whether a pipeline's dependencies are met before triggering it. Returns blocking pipelines and a readiness recommendation. Always call this before triggering a pipeline that has configured dependencies."),
 
             // ── Memory Tools ──
 
