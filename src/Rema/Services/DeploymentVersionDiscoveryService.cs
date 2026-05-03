@@ -12,6 +12,7 @@ public sealed record DeploymentVersionEvidence(
     string ServiceName,
     string PipelineOrQueryName,
     string? Version,
+    string? SourceBranch,
     string Status,
     string? Link,
     string Details);
@@ -46,6 +47,7 @@ public sealed class DeploymentVersionDiscoveryService
                     project.Name,
                     query.Name,
                     TryExtractLiteralVersion(query.Query),
+                    null,
                     "Telemetry query configured",
                     null,
                     "Use this Kusto telemetry query to verify the deployed application version alongside ADO release evidence."));
@@ -76,6 +78,7 @@ public sealed class DeploymentVersionDiscoveryService
                     project.Name,
                     pipeline.DisplayName,
                     null,
+                    null,
                     "No recent builds",
                     null,
                     "Azure DevOps returned no recent runs for this pipeline.");
@@ -86,6 +89,7 @@ public sealed class DeploymentVersionDiscoveryService
                 project.Name,
                 pipeline.DisplayName,
                 deployed.BuildNumber,
+                deployed.SourceBranch,
                 string.IsNullOrWhiteSpace(deployed.Result) ? deployed.Status : deployed.Result,
                 deployed.WebUrl,
                 $"{deployed.SucceededSteps} succeeded / {deployed.FailedSteps} failed / {deployed.SkippedSteps} skipped / {deployed.PendingSteps} pending");
@@ -96,6 +100,7 @@ public sealed class DeploymentVersionDiscoveryService
                 "ADO",
                 project.Name,
                 pipeline.DisplayName,
+                null,
                 null,
                 "ADO lookup failed",
                 null,

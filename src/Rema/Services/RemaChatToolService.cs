@@ -217,6 +217,129 @@ public static class RemaChatToolService
                 "rema_propose_deployment_plan",
                 "Present a structured deployment plan to the user for review BEFORE executing a multi-stage deployment. Shows stages, target clusters, exclusions, and rollback strategy. Always ask the user to confirm the plan before proceeding."),
 
+            // ── ADO Pipeline Trigger & Branch Verification Tools ──
+
+            AIFunctionFactory.Create(
+                async (
+                    [Description("Name of the saved Rema service project.")] string serviceProjectName,
+                    [Description("Name or display name of the pipeline to trigger.")] string pipelineName,
+                    [Description("Source branch to build (e.g. 'main', 'users/adam/my-fix', 'feature/xyz'). Do NOT omit — always confirm the branch with the user.")] string sourceBranch) =>
+                {
+                    var project = dataStore.Data.ServiceProjects.FirstOrDefault(p =>
+                        p.Name.Equals(serviceProjectName, StringComparison.OrdinalIgnoreCase));
+                    if (project is null)
+                        throw new InvalidOperationException($"Service project '{serviceProjectName}' was not found.");
+
+                    var pipeline = project.PipelineConfigs.FirstOrDefault(p =>
+                        p.DisplayName.Equals(pipelineName, StringComparison.OrdinalIgnoreCase)
+                        || p.Name.Equals(pipelineName, StringComparison.OrdinalIgnoreCase));
+                    if (pipeline is null)
+                        throw new InvalidOperationException(
+                            $"Pipeline '{pipelineName}' was not found in project '{serviceProjectName}'. " +
+                            $"Available: {string.Join(", ", project.PipelineConfigs.Select(p => p.DisplayName))}");
+
+                    // Queue the build on the exact branch.
+                    var snapshot = await azureDevOpsService.QueueBuildAsync(project, pipeline, sourceBranch);
+
+                    // Verify ADO actually queued it on the requested branch.
+                    var actualBranch = snapshot.SourceBranch ?? "";
+                    var expectedRef = sourceBranch.StartsWith("refs/", StringComparison.OrdinalIgnoreCase)
+                        ? sourceBranch
+                        : $"refs/heads/{sourceBranch}";
+                    var branchMatch = actualBranch.Equals(expectedRef, StringComparison.OrdinalIgnoreCase);
+
+                    // Auto-track the build in the active shift so polling picks it up.
+                    var activeShift = dataStore.Data.Shifts.FirstOrDefault(s => s.IsActive);
+                    TrackedItem? trackedItem = null;
+                    if (activeShift is not null)
+                    {
+                        trackedItem = new TrackedItem
+                        {
+                            ShiftId = activeShift.Id,
+                            ServiceProjectId = project.Id,
+                            PipelineConfigId = pipeline.Id,
+                        };
+                        AzureDevOpsService.ApplySnapshot(trackedItem, snapshot);
+                        dataStore.Data.TrackedItems.Add(trackedItem);
+                        await dataStore.SaveAsync();
+                    }
+
+                    return JsonSerializer.Serialize(new
+                    {
+                        Success = true,
+                        BuildId = snapshot.BuildId,
+                        BuildNumber = snapshot.BuildNumber,
+                        RequestedBranch = expectedRef,
+                        ActualBranch = actualBranch,
+                        BranchConfirmed = branchMatch,
+                        BranchWarning = branchMatch
+                            ? (string?)null
+                            : $"⚠️ BRANCH MISMATCH: Requested '{expectedRef}' but ADO queued on '{actualBranch}'. The wrong code may be built!",
+                        snapshot.Status,
+                        snapshot.WebUrl,
+                        TrackedItemId = trackedItem?.Id,
+                        Message = branchMatch
+                            ? $"✅ Build #{snapshot.BuildNumber} queued on {actualBranch}. Build ID {snapshot.BuildId} is now tracked."
+                            : $"⚠️ Build #{snapshot.BuildNumber} queued but branch mismatch detected! Expected {expectedRef}, got {actualBranch}.",
+                    });
+                },
+                "ado_trigger_pipeline",
+                "Trigger a new Azure DevOps pipeline run on a SPECIFIC branch. Always confirm the source branch with the user before calling. Returns the build ID and verifies the branch matches. The build is automatically tracked in the active shift."),
+
+            AIFunctionFactory.Create(
+                async (
+                    [Description("Name of the saved Rema service project.")] string serviceProjectName,
+                    [Description("Name or display name of the pipeline.")] string pipelineName,
+                    [Description("Branch to filter by (e.g. 'refs/heads/main', 'users/adam/my-fix'). Partial match is supported.")] string sourceBranch,
+                    [Description("Only return successful builds.")] bool successfulOnly = true) =>
+                {
+                    var project = dataStore.Data.ServiceProjects.FirstOrDefault(p =>
+                        p.Name.Equals(serviceProjectName, StringComparison.OrdinalIgnoreCase));
+                    if (project is null)
+                        throw new InvalidOperationException($"Service project '{serviceProjectName}' was not found.");
+
+                    var pipeline = project.PipelineConfigs.FirstOrDefault(p =>
+                        p.DisplayName.Equals(pipelineName, StringComparison.OrdinalIgnoreCase)
+                        || p.Name.Equals(pipelineName, StringComparison.OrdinalIgnoreCase));
+                    if (pipeline is null)
+                        throw new InvalidOperationException(
+                            $"Pipeline '{pipelineName}' was not found in project '{serviceProjectName}'.");
+
+                    var branchRef = sourceBranch.StartsWith("refs/", StringComparison.OrdinalIgnoreCase)
+                        ? sourceBranch
+                        : $"refs/heads/{sourceBranch}";
+
+                    var allBuilds = await azureDevOpsService.GetRecentBuildsAsync(project, pipeline, 50);
+                    var filtered = allBuilds
+                        .Where(b => (b.SourceBranch ?? "").Equals(branchRef, StringComparison.OrdinalIgnoreCase))
+                        .Where(b => !successfulOnly || b.Result.Contains("succeeded", StringComparison.OrdinalIgnoreCase))
+                        .Take(10)
+                        .Select(b => new
+                        {
+                            b.BuildId,
+                            b.BuildNumber,
+                            b.SourceBranch,
+                            b.Status,
+                            b.Result,
+                            b.QueueTime,
+                            b.FinishTime,
+                            b.WebUrl,
+                        })
+                        .ToList();
+
+                    return JsonSerializer.Serialize(new
+                    {
+                        RequestedBranch = branchRef,
+                        MatchCount = filtered.Count,
+                        Builds = filtered,
+                        Hint = filtered.Count == 0
+                            ? $"No {(successfulOnly ? "successful " : "")}builds found for branch '{branchRef}'. Check the branch name or trigger a new build first."
+                            : $"Found {filtered.Count} build(s). Use the BuildId to verify this is the correct artifact before deploying.",
+                    });
+                },
+                "ado_get_build_by_branch",
+                "Find recent builds for a specific branch. Use this to verify the correct build artifact exists before deploying. Returns build IDs, versions, and status filtered by the exact branch."),
+
             AIFunctionFactory.Create(
                 () =>
                 {

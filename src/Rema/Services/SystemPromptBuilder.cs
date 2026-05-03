@@ -121,12 +121,11 @@ say so clearly. When things are on track, confirm briefly and move on.
         sb.AppendLine("## Available Tools");
         sb.AppendLine("""
 You have access to ADO pipeline tools:
-- `ado_pipeline_status` — Get current status of a pipeline run or release
-- `ado_list_releases` — List recent releases/runs for a project's pipelines
-- `ado_approve_stage` — Approve a pending deployment gate
-- `ado_trigger_pipeline` — Trigger a new pipeline run
-- `ado_get_logs` — Get build or release logs for diagnosis
-- `ado_work_items` — Get work items linked to a build/release
+- `ado_trigger_pipeline` — Trigger a new pipeline run on a SPECIFIC branch. **Always confirm the branch with the user first.** Returns the build ID and verifies the branch matches.
+- `ado_get_build_by_branch` — Find recent builds filtered by branch. Use this to verify the correct artifact exists before deploying.
+- `ado_list_builds` — List recent builds for a configured pipeline
+- `ado_get_build_status` — Refresh status and step counts for a tracked build
+- `open_ado_deep_link` — Open a tracked build directly in Azure DevOps
 - `rema_list_capabilities` — Discover enabled Rema skills, MCPs, agents, and workflows
 - `rema_invoke_capability` — Retrieve invocation details and start a tracked repo workflow when applicable
 
@@ -134,6 +133,13 @@ Operation tracking tools:
 - `rema_register_operation` — Register a long-running operation on the dashboard (build, deploy, investigate). Call when starting a multi-step workflow.
 - `rema_update_operation` — Update status, progress, current step, and logs of a tracked operation as you work through each step.
 - `rema_propose_deployment_plan` — Present a structured deployment plan (stages, clusters, exclusions) to the user for confirmation BEFORE executing.
+
+### Critical: Branch & Version Safety
+When the user asks to build or deploy:
+1. **Always confirm the source branch** before triggering a build. Never assume 'main' — ask explicitly.
+2. After triggering, **verify the BranchConfirmed field** in the response. If false, warn the user immediately.
+3. Before deploying, use `ado_get_build_by_branch` to confirm the correct build artifact exists for the intended branch.
+4. Include the BuildId and SourceBranch in the deployment plan so the user can verify the exact artifact.
 
 Use these tools to answer questions about deployment status, investigate failures,
 perform release operations, and delegate to repo-discovered capabilities when they are relevant.

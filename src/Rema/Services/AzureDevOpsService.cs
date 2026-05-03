@@ -87,6 +87,49 @@ public sealed class AzureDevOpsService
         return await CreateSnapshotAsync(project, pipeline, build.RootElement, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Queue a new pipeline run on a specific branch. Returns the queued build snapshot
+    /// with the ADO-assigned build ID, so the caller can track this exact run.
+    /// Uses the Pipelines API (POST _apis/pipelines/{id}/runs) for YAML pipelines.
+    /// </summary>
+    public async Task<AdoBuildSnapshot> QueueBuildAsync(
+        ServiceProject project,
+        PipelineConfig pipeline,
+        string sourceBranch,
+        CancellationToken cancellationToken = default)
+    {
+        var definitionId = ValidateAndResolveBuildDefinitionId(project, pipeline);
+
+        // Normalize branch ref: ADO requires "refs/heads/..." for branch names.
+        if (!sourceBranch.StartsWith("refs/", StringComparison.OrdinalIgnoreCase))
+            sourceBranch = $"refs/heads/{sourceBranch}";
+
+        // POST to Pipelines Run API — this works for YAML pipelines.
+        var url = BuildApiUrl(project, $"_apis/pipelines/{definitionId}/runs?api-version=7.1");
+        var body = JsonSerializer.Serialize(new
+        {
+            resources = new
+            {
+                repositories = new
+                {
+                    self = new { refName = sourceBranch }
+                }
+            }
+        });
+
+        using var document = await PostJsonAsync(url, body, cancellationToken).ConfigureAwait(false);
+        var root = document.RootElement;
+
+        // The Pipelines Run API returns a run object — extract the underlying build ID.
+        var runId = GetInt(root, "id");
+        if (runId <= 0)
+            throw new InvalidOperationException("Azure DevOps accepted the pipeline run request but did not return a valid run ID.");
+
+        // Fetch the full build snapshot so we get timeline, branch confirmation, etc.
+        // The run ID from the Pipelines API maps 1:1 to a Build ID.
+        return await GetBuildAsync(project, pipeline, runId, cancellationToken).ConfigureAwait(false);
+    }
+
     public static void ApplySnapshot(TrackedItem item, AdoBuildSnapshot snapshot)
     {
         item.AdoRunId = snapshot.BuildId;
@@ -314,9 +357,21 @@ public sealed class AzureDevOpsService
 
     private async Task<JsonDocument> GetJsonAsync(string url, CancellationToken cancellationToken)
     {
+        return await SendJsonAsync(HttpMethod.Get, url, content: null, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<JsonDocument> PostJsonAsync(string url, string jsonBody, CancellationToken cancellationToken)
+    {
+        return await SendJsonAsync(HttpMethod.Post, url, jsonBody, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<JsonDocument> SendJsonAsync(HttpMethod method, string url, string? content, CancellationToken cancellationToken)
+    {
         for (var attempt = 0; attempt < 2; attempt++)
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            using var request = new HttpRequestMessage(method, url);
+            if (content is not null)
+                request.Content = new StringContent(content, Encoding.UTF8, "application/json");
             await ApplyAuthorizationAsync(request, cancellationToken).ConfigureAwait(false);
 
             using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);

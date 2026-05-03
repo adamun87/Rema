@@ -66,8 +66,15 @@ public static class ToolDisplayHelper
                 name = "Approve stage";
                 break;
             case "ado_trigger_pipeline":
-                info = ExtractJsonField(argsJson, "pipeline_name");
+                info = ExtractJsonField(argsJson, "pipelineName") ?? ExtractJsonField(argsJson, "pipeline_name");
+                var branch = ExtractJsonField(argsJson, "sourceBranch") ?? ExtractJsonField(argsJson, "source_branch");
+                if (!string.IsNullOrWhiteSpace(branch))
+                    info = $"{info} on {branch}";
                 name = "Trigger pipeline";
+                break;
+            case "ado_get_build_by_branch":
+                info = ExtractJsonField(argsJson, "sourceBranch") ?? ExtractJsonField(argsJson, "source_branch");
+                name = "Find build by branch";
                 break;
             case "ado_list_builds":
                 info = ExtractJsonField(argsJson, "definitionId") ?? ExtractJsonField(argsJson, "pipeline_name");
@@ -242,7 +249,7 @@ public static class ToolDisplayHelper
         "web_fetch" or "fetch_url" => "🌐",
         "kusto_query" or "execute_query" => "📊",
         "kusto_command" or "execute_command" => "⚡",
-        "ado_pipeline_status" or "ado_list_builds" or "ado_get_build_status" => "🔄",
+        "ado_pipeline_status" or "ado_list_builds" or "ado_get_build_status" or "ado_get_build_by_branch" => "🔄",
         "ado_approve_stage" => "✅",
         "ado_trigger_pipeline" => "🚀",
         "open_ado_deep_link" => "🔗",
