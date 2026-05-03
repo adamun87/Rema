@@ -141,6 +141,8 @@ public class DataStore
 
     private RemaAppData Load()
     {
+        MigrateFromLegacyDir();
+
         if (!File.Exists(DataFile))
             return new RemaAppData();
 
@@ -152,6 +154,56 @@ public class DataStore
         catch
         {
             return new RemaAppData();
+        }
+    }
+
+    /// <summary>
+    /// One-time migration from the legacy %AppData%/Lumi directory.
+    /// If the old directory has a newer data.json than the current one,
+    /// copy data.json + chats/ + skills/ + browser-data/ over.
+    /// </summary>
+    private static void MigrateFromLegacyDir()
+    {
+        var legacyDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Lumi");
+        var legacyDataFile = Path.Combine(legacyDir, "data.json");
+
+        if (!File.Exists(legacyDataFile))
+            return;
+
+        // Only migrate if the legacy data is newer or the current data.json doesn't exist.
+        if (File.Exists(DataFile))
+        {
+            var legacyTime = File.GetLastWriteTimeUtc(legacyDataFile);
+            var currentTime = File.GetLastWriteTimeUtc(DataFile);
+            if (currentTime >= legacyTime)
+                return;
+        }
+
+        try
+        {
+            // Copy data.json
+            File.Copy(legacyDataFile, DataFile, overwrite: true);
+
+            // Copy subdirectories that contain user data
+            foreach (var subDir in new[] { "chats", "skills", "browser-data" })
+            {
+                var source = Path.Combine(legacyDir, subDir);
+                if (!Directory.Exists(source))
+                    continue;
+
+                var target = Path.Combine(AppDir, subDir);
+                Directory.CreateDirectory(target);
+                foreach (var file in Directory.GetFiles(source))
+                {
+                    var dest = Path.Combine(target, Path.GetFileName(file));
+                    if (!File.Exists(dest) || File.GetLastWriteTimeUtc(file) > File.GetLastWriteTimeUtc(dest))
+                        File.Copy(file, dest, overwrite: true);
+                }
+            }
+        }
+        catch
+        {
+            // Migration is best-effort — don't crash the app if it fails.
         }
     }
 
