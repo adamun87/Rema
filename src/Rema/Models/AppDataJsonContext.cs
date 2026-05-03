@@ -17,6 +17,8 @@ namespace Rema.Models;
 [JsonSerializable(typeof(List<CapabilityDefinition>))]
 [JsonSerializable(typeof(McpServerConfig))]
 [JsonSerializable(typeof(List<McpServerConfig>))]
+[JsonSerializable(typeof(PipelineDependency))]
+[JsonSerializable(typeof(List<PipelineDependency>))]
 [JsonSerializable(typeof(WorkflowExecution))]
 [JsonSerializable(typeof(List<WorkflowExecution>))]
 [JsonSerializable(typeof(RemaConfigurationExport))]

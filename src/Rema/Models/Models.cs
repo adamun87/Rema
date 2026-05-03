@@ -68,6 +68,7 @@ public class ServiceProject
     public List<HealthQuery> HealthQueries { get; set; } = [];
     public McpServerConfig? McpServer { get; set; }
     public List<McpServerConfig> McpServers { get; set; } = [];
+    public List<PipelineDependency> Dependencies { get; set; } = [];
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
 }
 
@@ -84,6 +85,26 @@ public class PipelineConfig
     public List<string> DeploymentStages { get; set; } = [];
     public Dictionary<string, bool> ApprovalRequired { get; set; } = [];
     public bool HealthCheckEnabled { get; set; }
+}
+
+public enum PipelineDependencyType
+{
+    RoleAssignment,
+    ArtifactPublish,
+    InfraProvisioning,
+    ConfigurationUpdate,
+    Custom,
+}
+
+public class PipelineDependency
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid ServiceProjectId { get; set; }
+    public Guid SourcePipelineId { get; set; }
+    public Guid TargetPipelineId { get; set; }
+    public PipelineDependencyType DependencyType { get; set; } = PipelineDependencyType.Custom;
+    public string Description { get; set; } = "";
+    public bool IsAutoDetected { get; set; }
 }
 
 public class McpServerConfig
