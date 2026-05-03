@@ -86,6 +86,7 @@ public partial class ShiftsViewModel : ObservableObject
 
     // ── Active Operations (from chat workflows) ──
     [ObservableProperty] private bool _hasActiveOperations;
+    [ObservableProperty] private bool _hasRecentOperations;
 
     // ── Total pending attention count (for nav badge) ──
     [ObservableProperty] private int _pendingAttentionCount;
@@ -94,6 +95,7 @@ public partial class ShiftsViewModel : ObservableObject
     // ── Collections ──
     public ObservableCollection<TrackedItemDisplay> ActiveTrackedItems { get; } = [];
     public ObservableCollection<WorkflowExecution> ActiveOperations { get; } = [];
+    public ObservableCollection<WorkflowExecution> RecentOperations { get; } = [];
     public ObservableCollection<Shift> ShiftHistory { get; } = [];
     public ObservableCollection<ServiceProject> ServiceProjects { get; } = [];
     public ObservableCollection<PipelineConfig> AvailablePipelines { get; } = [];
@@ -157,21 +159,24 @@ public partial class ShiftsViewModel : ObservableObject
         HasShiftHistory = ShiftHistory.Count > 0;
         HasRecentEvents = RecentEvents.Count > 0;
 
-        // Refresh active operations (workflow executions from chat)
+        // Refresh active operations (running/pending only)
         ActiveOperations.Clear();
         foreach (var op in _dataStore.Data.WorkflowExecutions
                      .Where(w => w.Status is "Running" or "Pending" or "WaitingForInput")
-                     .OrderByDescending(w => w.Status == "WaitingForInput") // Show waiting-for-input first
+                     .OrderByDescending(w => w.Status == "WaitingForInput")
                      .ThenByDescending(w => w.UpdatedAt))
             ActiveOperations.Add(op);
-        // Also show recently completed/failed (last 24h) so user sees them
+        HasActiveOperations = ActiveOperations.Count > 0;
+
+        // Recently completed/failed/canceled (last 24h)
+        RecentOperations.Clear();
         foreach (var op in _dataStore.Data.WorkflowExecutions
                      .Where(w => w.Status is "Completed" or "Failed" or "Canceled"
                                  && w.CompletedAt > DateTimeOffset.Now.AddHours(-24))
                      .OrderByDescending(w => w.CompletedAt)
                      .Take(10))
-            ActiveOperations.Add(op);
-        HasActiveOperations = ActiveOperations.Count > 0;
+            RecentOperations.Add(op);
+        HasRecentOperations = RecentOperations.Count > 0;
 
         RefreshSummaryStats();
 
@@ -557,6 +562,18 @@ public partial class ShiftsViewModel : ObservableObject
     private async Task DismissOperation(WorkflowExecution operation)
     {
         _dataStore.Data.WorkflowExecutions.Remove(operation);
+        await _dataStore.SaveAsync();
+        Refresh();
+    }
+
+    [RelayCommand]
+    private async Task ClearRecentOperations()
+    {
+        var toRemove = _dataStore.Data.WorkflowExecutions
+            .Where(w => w.Status is "Completed" or "Failed" or "Canceled")
+            .ToList();
+        foreach (var op in toRemove)
+            _dataStore.Data.WorkflowExecutions.Remove(op);
         await _dataStore.SaveAsync();
         Refresh();
     }

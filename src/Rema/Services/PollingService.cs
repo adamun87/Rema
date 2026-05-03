@@ -144,6 +144,18 @@ public sealed class PollingService : IAsyncDisposable
                 NotificationService.ShowIfInactive("📊 Rema — Shift Update", body));
         }
 
+        // Clean up stale completed operations (older than 24h)
+        var staleOps = _dataStore.Data.WorkflowExecutions
+            .Where(w => w.Status is "Completed" or "Failed" or "Canceled"
+                        && w.CompletedAt < DateTimeOffset.Now.AddHours(-24))
+            .ToList();
+        if (staleOps.Count > 0)
+        {
+            foreach (var op in staleOps)
+                _dataStore.Data.WorkflowExecutions.Remove(op);
+            await _dataStore.SaveAsync(ct).ConfigureAwait(false);
+        }
+
         // Notify for operations waiting for user input or that failed/completed
         NotifyOperationStatusChanges(settings);
     }

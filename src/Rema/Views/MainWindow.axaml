@@ -476,25 +476,65 @@
                                  Foreground="#16A34A" TextWrapping="Wrap"
                                  IsVisible="{Binding Result, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
-                      <!-- Timestamps + dismiss -->
-                      <DockPanel>
-                        <Button DockPanel.Dock="Right" Classes="subtle" Padding="6,3" MinHeight="0" CornerRadius="4"
-                                FontSize="11"
-                                Command="{Binding $parent[ItemsControl].((vm:ShiftsViewModel)DataContext).DismissOperationCommand}"
-                                CommandParameter="{Binding}">
-                          <TextBlock Text="✕" FontSize="11" Foreground="{DynamicResource Brush.TextTertiary}" />
-                        </Button>
-                        <TextBlock FontSize="11" Foreground="{DynamicResource Brush.TextTertiary}"
-                                   VerticalAlignment="Center">
-                          <Run Text="Started " />
-                          <Run Text="{Binding StartedAt, StringFormat='{}{0:HH:mm}'}" />
-                          <Run Text=" · Updated " />
-                          <Run Text="{Binding UpdatedAt, StringFormat='{}{0:HH:mm}'}" />
-                        </TextBlock>
-                      </DockPanel>
+                      <!-- Timestamps -->
+                      <TextBlock FontSize="11" Foreground="{DynamicResource Brush.TextTertiary}"
+                                 VerticalAlignment="Center">
+                        <Run Text="Started " />
+                        <Run Text="{Binding StartedAt, StringFormat='{}{0:HH:mm}'}" />
+                        <Run Text=" · Updated " />
+                        <Run Text="{Binding UpdatedAt, StringFormat='{}{0:HH:mm}'}" />
+                      </TextBlock>
                     </StackPanel>
                   </Border>
                   </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+
+          <!-- Recently completed operations -->
+          <StackPanel Spacing="10" IsVisible="{Binding HasRecentOperations}">
+            <DockPanel>
+              <Button DockPanel.Dock="Right" Classes="subtle" Padding="8,4" MinHeight="0"
+                      Command="{Binding ClearRecentOperationsCommand}">
+                <TextBlock Text="Clear all" FontSize="11" Foreground="{DynamicResource Brush.TextTertiary}" />
+              </Button>
+              <TextBlock Text="Recently completed" FontSize="14" FontWeight="Medium"
+                         Foreground="{DynamicResource Brush.TextSecondary}" VerticalAlignment="Center" />
+            </DockPanel>
+            <ItemsControl ItemsSource="{Binding RecentOperations}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="models:WorkflowExecution">
+                  <Border Background="{DynamicResource Brush.Surface}"
+                          BorderBrush="{DynamicResource Brush.Border}"
+                          BorderThickness="1" CornerRadius="8"
+                          Padding="12,10" Margin="0,0,0,6" Opacity="0.75">
+                    <DockPanel>
+                      <Button DockPanel.Dock="Right" Classes="subtle" Padding="6,3" MinHeight="0" CornerRadius="4"
+                              Command="{Binding $parent[ItemsControl].((vm:ShiftsViewModel)DataContext).DismissOperationCommand}"
+                              CommandParameter="{Binding}">
+                        <TextBlock Text="✕" FontSize="11" Foreground="{DynamicResource Brush.TextTertiary}" />
+                      </Button>
+                      <StackPanel Spacing="3">
+                        <DockPanel>
+                          <Border DockPanel.Dock="Right" CornerRadius="4" Padding="6,2"
+                                  Background="{DynamicResource Brush.SurfaceVariant}">
+                            <TextBlock Text="{Binding Status}" FontSize="10" />
+                          </Border>
+                          <TextBlock Text="{Binding Goal}" FontSize="13" FontWeight="Medium"
+                                     Foreground="{DynamicResource Brush.TextPrimary}"
+                                     TextTrimming="CharacterEllipsis" />
+                        </DockPanel>
+                        <TextBlock FontSize="11" Foreground="{DynamicResource Brush.TextTertiary}">
+                          <Run Text="{Binding Result}" />
+                        </TextBlock>
+                        <TextBlock FontSize="10" Foreground="{DynamicResource Brush.TextTertiary}">
+                          <Run Text="Completed " />
+                          <Run Text="{Binding CompletedAt, StringFormat='{}{0:HH:mm}'}" />
+                        </TextBlock>
+                      </StackPanel>
+                    </DockPanel>
+                  </Border>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
