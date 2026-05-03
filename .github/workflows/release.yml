@@ -29,7 +29,7 @@ jobs:
 
       - name: Publish (Single-file, trimmed, win-x64)
         run: >
-          dotnet publish src/Lumi/Lumi.csproj
+          dotnet publish src/Rema/Rema.csproj
           -c Release
           -r win-x64
           -o publish
@@ -45,10 +45,10 @@ jobs:
       - name: Install sign CLI
         run: dotnet tool install --global sign --version 0.9.1-beta.25330.2
 
-      - name: Sign Lumi.exe
+      - name: Sign Rema.exe
         shell: pwsh
         run: |
-          sign code trusted-signing "${{ github.workspace }}\publish\Lumi.exe" `
+          sign code trusted-signing "${{ github.workspace }}\publish\Rema.exe" `
             -tse "https://wus2.codesigning.azure.net/" `
             -tsa "acsfluentsearch" `
             -tscp "profileFluentSearch1" `
@@ -68,16 +68,15 @@ jobs:
       - name: Pack Velopack release
         run: >
           vpk pack
-          -u Lumi
+          -u Rema
           -v ${{ inputs.version }}
           -p publish
-          --mainExe Lumi.exe
-          --icon src/Lumi/Assets/lumi-icon.ico
+          --mainExe Rema.exe
 
       - name: Sign Setup.exe
         shell: pwsh
         run: |
-          sign code trusted-signing "${{ github.workspace }}\Releases\Lumi-win-Setup.exe" `
+          sign code trusted-signing "${{ github.workspace }}\Releases\Rema-win-Setup.exe" `
             -tse "https://wus2.codesigning.azure.net/" `
             -tsa "acsfluentsearch" `
             -tscp "profileFluentSearch1" `
@@ -90,5 +89,5 @@ jobs:
           --repoUrl https://github.com/${{ github.repository }}
           --token ${{ secrets.GITHUB_TOKEN }}
           --publish
-          --releaseName "Lumi v${{ inputs.version }}"
+          --releaseName "Rema v${{ inputs.version }}"
           --tag v${{ inputs.version }}
