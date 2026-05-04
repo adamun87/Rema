@@ -15,6 +15,8 @@ permissions:
 jobs:
   release-windows:
     runs-on: windows-latest
+    env:
+      HAS_SIGNING: ${{ secrets.AZURE_CLIENT_ID != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -37,18 +39,18 @@ jobs:
 
       - name: Azure login
         uses: azure/login@v2
-        if: ${{ secrets.AZURE_CLIENT_ID != '' }}
+        if: env.HAS_SIGNING == 'true'
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Install sign CLI
-        if: ${{ secrets.AZURE_CLIENT_ID != '' }}
+        if: env.HAS_SIGNING == 'true'
         run: dotnet tool install --global sign --version 0.9.1-beta.25330.2
 
       - name: Sign Rema.exe
-        if: ${{ secrets.AZURE_CLIENT_ID != '' }}
+        if: env.HAS_SIGNING == 'true'
         shell: pwsh
         run: |
           sign code trusted-signing "${{ github.workspace }}\publish\Rema.exe" `
@@ -78,7 +80,7 @@ jobs:
           --icon src/Rema/Assets/rema-icon.ico
 
       - name: Sign Setup.exe
-        if: ${{ secrets.AZURE_CLIENT_ID != '' }}
+        if: env.HAS_SIGNING == 'true'
         shell: pwsh
         run: |
           sign code trusted-signing "${{ github.workspace }}\Releases\Rema-win-Setup.exe" `
