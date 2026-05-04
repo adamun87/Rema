@@ -5,12 +5,16 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
@@ -63,6 +67,17 @@ public partial class ChatView : UserControl
     private static readonly string ClipboardImagesDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "Lumi", "clipboard-images");
+    private static readonly DataFormat<string> LumiChatContextClipboardFormat =
+        DataFormat.CreateStringApplicationFormat("lumi-chat-context-v1");
+
+    private sealed record ClipboardCopyPayload(
+        string Text,
+        List<string> AttachmentPaths,
+        List<string> SkillNames,
+        List<string> Sources);
+
+    [JsonSerializable(typeof(ClipboardCopyPayload))]
+    private partial class ClipboardJsonContext : JsonSerializerContext;
 
     private sealed record ScrollAnchorState(string StableId, double ViewportY);
 
@@ -77,6 +92,8 @@ public partial class ChatView : UserControl
 
         _chatShell = this.FindControl<StrataChatShell>("ChatShell");
         _composer = this.FindControl<StrataChatComposer>("Composer");
+        if (_composer is not null)
+            _composer.ClipboardPasteInterceptFormats = new DataFormat[] { LumiChatContextClipboardFormat, DataFormat.Text };
         _composerSpacer = this.FindControl<Panel>("ComposerSpacer");
         _dropOverlay = this.FindControl<Panel>("DropOverlay");
         _transcript = this.FindControl<ItemsControl>("Transcript");
@@ -115,6 +132,7 @@ public partial class ChatView : UserControl
         AddHandler(DragDrop.DragLeaveEvent, OnDragLeave);
         AddHandler(DragDrop.DropEvent, OnDrop);
         AddHandler(StrataFileAttachment.OpenRequestedEvent, OnFileAttachmentOpenRequested);
+        AddHandler(StrataChatMessage.CopyRequestedEvent, OnCopyMessageRequested);
         AddHandler(StrataChatMessage.CopyTurnRequestedEvent, OnCopyTurnRequested);
         SizeChanged += OnChatViewSizeChanged;
 
@@ -747,16 +765,43 @@ public partial class ChatView : UserControl
             var dataTransfer = await clipboard.TryGetDataAsync();
             if (dataTransfer is null) return;
 
+            if (await TryPasteLumiChatContextAsync(vm, dataTransfer))
+            {
+                FocusComposer();
+                return;
+            }
+
+            var clipboardText = await ClipboardExtensions.TryGetTextAsync(clipboard);
+            if (TryPasteFormattedChatContext(vm, clipboardText))
+            {
+                FocusComposer();
+                return;
+            }
+
+            if (await TryPasteClipboardFilesAsync(vm, dataTransfer))
+            {
+                FocusComposer();
+                return;
+            }
+
             using var bitmap = await dataTransfer.TryGetBitmapAsync();
-            if (bitmap is null) return;
+            if (bitmap is not null)
+            {
+                Directory.CreateDirectory(ClipboardImagesDir);
+                var fileName = $"clipboard-{DateTime.UtcNow:yyyyMMdd-HHmmssfff}-{Guid.NewGuid():N}.png";
+                var filePath = Path.Combine(ClipboardImagesDir, fileName);
+                bitmap.Save(filePath);
 
-            Directory.CreateDirectory(ClipboardImagesDir);
-            var fileName = $"clipboard-{DateTime.UtcNow:yyyyMMdd-HHmmssfff}-{Guid.NewGuid():N}.png";
-            var filePath = Path.Combine(ClipboardImagesDir, fileName);
-            bitmap.Save(filePath);
+                vm.AddAttachment(filePath);
+                FocusComposer();
+                return;
+            }
 
-            vm.AddAttachment(filePath);
-            FocusComposer();
+            if (!string.IsNullOrEmpty(clipboardText))
+            {
+                _composer?.InsertTextAtSelection(clipboardText);
+                FocusComposer();
+            }
         }
         catch
         {
@@ -764,9 +809,173 @@ public partial class ChatView : UserControl
         }
     }
 
+    private async Task<bool> TryPasteLumiChatContextAsync(ChatViewModel vm, IAsyncDataTransfer dataTransfer)
+    {
+        var json = await dataTransfer.TryGetValueAsync(LumiChatContextClipboardFormat);
+        if (string.IsNullOrWhiteSpace(json))
+            return false;
+
+        ClipboardCopyPayload? payload;
+        try
+        {
+            payload = JsonSerializer.Deserialize(json, ClipboardJsonContext.Default.ClipboardCopyPayload);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+
+        if (payload is null)
+            return false;
+
+        if (!string.IsNullOrEmpty(payload.Text))
+            _composer?.InsertTextAtSelection(payload.Text);
+
+        foreach (var path in payload.AttachmentPaths.Where(static p => File.Exists(p) || Directory.Exists(p)))
+            vm.AddAttachment(path);
+
+        foreach (var skillName in payload.SkillNames.Where(static s => !string.IsNullOrWhiteSpace(s)))
+            vm.AddSkillByName(skillName);
+
+        return true;
+    }
+
+    private bool TryPasteFormattedChatContext(ChatViewModel vm, string? clipboardText)
+    {
+        if (string.IsNullOrWhiteSpace(clipboardText))
+            return false;
+
+        if (!TryParseFormattedClipboardPayload(vm, clipboardText, out var payload))
+            return false;
+
+        if (!string.IsNullOrEmpty(payload.Text))
+            _composer?.InsertTextAtSelection(payload.Text);
+
+        foreach (var path in payload.AttachmentPaths)
+            vm.AddAttachment(path);
+
+        foreach (var skillName in payload.SkillNames)
+            vm.AddSkillByName(skillName);
+
+        return true;
+    }
+
+    private static bool TryParseFormattedClipboardPayload(
+        ChatViewModel vm,
+        string clipboardText,
+        out ClipboardCopyPayload payload)
+    {
+        payload = new ClipboardCopyPayload(string.Empty, [], [], []);
+
+        var normalized = clipboardText.Replace("\r\n", "\n").Replace('\r', '\n');
+        var lines = normalized.Split('\n');
+        var promptLines = new List<string>();
+        var attachmentPaths = new List<string>();
+        var skillNames = new List<string>();
+        var sources = new List<string>();
+        var section = ClipboardTextSection.None;
+        var sawSection = false;
+
+        foreach (var rawLine in lines)
+        {
+            var trimmed = rawLine.Trim();
+            if (IsClipboardSection(trimmed, out var nextSection))
+            {
+                section = nextSection;
+                sawSection = true;
+                continue;
+            }
+
+            if (!sawSection)
+            {
+                promptLines.Add(rawLine);
+                continue;
+            }
+
+            if (trimmed.Length == 0 || !trimmed.StartsWith("- ", StringComparison.Ordinal))
+                continue;
+
+            var value = trimmed[2..].Trim();
+            if (value.Length == 0)
+                continue;
+
+            switch (section)
+            {
+                case ClipboardTextSection.Files:
+                    if (File.Exists(value) || Directory.Exists(value))
+                        attachmentPaths.Add(value);
+                    break;
+                case ClipboardTextSection.UsedSkills:
+                    if (vm.FindSkillReferenceByName(value) is not null)
+                        skillNames.Add(value);
+                    break;
+                case ClipboardTextSection.Sources:
+                    sources.Add(value);
+                    break;
+            }
+        }
+
+        if (attachmentPaths.Count == 0 && skillNames.Count == 0)
+            return false;
+
+        payload = new ClipboardCopyPayload(
+            string.Join('\n', promptLines).Trim(),
+            DistinctNonEmpty(attachmentPaths),
+            DistinctNonEmpty(skillNames),
+            DistinctNonEmpty(sources));
+        return true;
+    }
+
+    private static bool IsClipboardSection(string line, out ClipboardTextSection section)
+    {
+        section = line.ToLowerInvariant() switch
+        {
+            "files:" => ClipboardTextSection.Files,
+            "used skills:" => ClipboardTextSection.UsedSkills,
+            "sources:" => ClipboardTextSection.Sources,
+            _ => ClipboardTextSection.None
+        };
+
+        return section != ClipboardTextSection.None;
+    }
+
+    private enum ClipboardTextSection
+    {
+        None,
+        Files,
+        UsedSkills,
+        Sources
+    }
+
+    private static async Task<bool> TryPasteClipboardFilesAsync(ChatViewModel vm, IAsyncDataTransfer dataTransfer)
+    {
+        var files = await dataTransfer.TryGetFilesAsync();
+        if (files is null || files.Length == 0)
+            return false;
+
+        var added = false;
+        foreach (var file in files)
+        {
+            var path = file.TryGetLocalPath();
+            if (string.IsNullOrWhiteSpace(path))
+                continue;
+
+            if (!File.Exists(path) && !Directory.Exists(path))
+                continue;
+
+            vm.AddAttachment(path);
+            added = true;
+        }
+
+        return added;
+    }
+
     // ── Copy to clipboard (ViewModel raises event, View handles clipboard API) ──
 
     private async void OnCopyToClipboardRequested(string text)
+        => await SetClipboardTextAsync(text);
+
+    private async Task SetClipboardTextAsync(string text, ClipboardCopyPayload? payload = null)
     {
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
         if (clipboard is null) return;
@@ -774,9 +983,58 @@ public partial class ChatView : UserControl
         {
             var data = new Avalonia.Input.DataTransfer();
             data.Add(Avalonia.Input.DataTransferItem.CreateText(text));
+            if (payload is not null && HasCopyContext(payload))
+            {
+                data.Add(Avalonia.Input.DataTransferItem.Create(
+                    LumiChatContextClipboardFormat,
+                    JsonSerializer.Serialize(payload, ClipboardJsonContext.Default.ClipboardCopyPayload)));
+
+                var storageProvider = TopLevel.GetTopLevel(this)?.StorageProvider;
+                if (storageProvider is not null)
+                {
+                    foreach (var path in payload.AttachmentPaths.Where(static p => File.Exists(p) || Directory.Exists(p)))
+                    {
+                        IStorageItem? storageItem;
+                        if (File.Exists(path))
+                            storageItem = await storageProvider.TryGetFileFromPathAsync(path);
+                        else
+                            storageItem = await storageProvider.TryGetFolderFromPathAsync(path);
+
+                        if (storageItem is not null)
+                            data.Add(Avalonia.Input.DataTransferItem.CreateFile(storageItem));
+                    }
+                }
+            }
             await clipboard.SetDataAsync(data);
         }
         catch { /* ignore */ }
+    }
+
+    private static bool HasCopyContext(ClipboardCopyPayload payload)
+        => payload.AttachmentPaths.Count > 0 || payload.SkillNames.Count > 0 || payload.Sources.Count > 0;
+
+    private async void OnCopyMessageRequested(object? sender, StrataCopyRequestedEventArgs e)
+    {
+        if (e.Source is not StrataChatMessage message)
+            return;
+
+        e.Handled = true;
+
+        if (e.IsSelection && !string.IsNullOrEmpty(e.Text))
+        {
+            await SetClipboardTextAsync(e.Text);
+            return;
+        }
+
+        var payload = BuildMessageCopyPayload(message.DataContext, message.Content);
+        if (payload is null)
+            return;
+
+        var text = FormatClipboardText(payload);
+        if (string.IsNullOrWhiteSpace(text))
+            return;
+
+        await SetClipboardTextAsync(text, payload);
     }
 
     // ── Copy turn (context menu on assistant messages) ───
@@ -799,29 +1057,113 @@ public partial class ChatView : UserControl
 
         if (turn is null) return;
 
-        var sb = new System.Text.StringBuilder();
-        foreach (var item in turn.Items ?? Enumerable.Empty<TranscriptItem>())
+        var payload = BuildTurnCopyPayload(turn.Items ?? Enumerable.Empty<TranscriptItem>());
+        if (payload is null) return;
+
+        var text = FormatClipboardText(payload);
+        if (string.IsNullOrWhiteSpace(text)) return;
+
+        await SetClipboardTextAsync(text, payload);
+    }
+
+    private static ClipboardCopyPayload? BuildMessageCopyPayload(object? dataContext, object? content)
+    {
+        return dataContext switch
         {
-            if (item is AssistantMessageItem assistantMsg)
-            {
-                var text = assistantMsg.Content;
-                if (string.IsNullOrWhiteSpace(text)) continue;
-                if (sb.Length > 0) sb.Append(Environment.NewLine).Append(Environment.NewLine);
-                sb.Append(text);
-            }
+            UserMessageItem user => CreatePayload(
+                user.Content,
+                user.Attachments.Select(static a => a.FilePath),
+                user.Skills.Select(static s => s.Name),
+                []),
+            AssistantMessageItem assistant => CreatePayload(
+                assistant.Content,
+                assistant.FileAttachments.Select(static a => a.FilePath),
+                assistant.Skills.Select(static s => s.Name),
+                assistant.Sources.Select(static s => string.IsNullOrWhiteSpace(s.Url) ? s.Title : $"{s.Title} - {s.Url}")),
+            _ => CreatePayload(
+                ChatContentExtractor.ExtractText(content).Trim(),
+                [],
+                [],
+                [])
+        };
+    }
+
+    private static ClipboardCopyPayload? BuildTurnCopyPayload(IEnumerable<TranscriptItem> items)
+    {
+        var textParts = new List<string>();
+        var attachmentPaths = new List<string>();
+        var skillNames = new List<string>();
+        var sources = new List<string>();
+
+        foreach (var item in items)
+        {
+            if (item is not AssistantMessageItem assistant)
+                continue;
+
+            if (!string.IsNullOrWhiteSpace(assistant.Content))
+                textParts.Add(assistant.Content.Trim());
+
+            attachmentPaths.AddRange(assistant.FileAttachments.Select(static a => a.FilePath));
+            skillNames.AddRange(assistant.Skills.Select(static s => s.Name));
+            sources.AddRange(assistant.Sources.Select(static s =>
+                string.IsNullOrWhiteSpace(s.Url) ? s.Title : $"{s.Title} - {s.Url}"));
         }
 
-        if (sb.Length == 0) return;
+        return CreatePayload(
+            string.Join($"{Environment.NewLine}{Environment.NewLine}", textParts),
+            attachmentPaths,
+            skillNames,
+            sources);
+    }
 
-        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
-        if (clipboard is null) return;
-        try
-        {
-            var data = new Avalonia.Input.DataTransfer();
-            data.Add(Avalonia.Input.DataTransferItem.CreateText(sb.ToString()));
-            await clipboard.SetDataAsync(data);
-        }
-        catch { /* ignore */ }
+    private static ClipboardCopyPayload? CreatePayload(
+        string? text,
+        IEnumerable<string> attachmentPaths,
+        IEnumerable<string> skillNames,
+        IEnumerable<string> sources)
+    {
+        var payload = new ClipboardCopyPayload(
+            text?.Trim() ?? string.Empty,
+            DistinctNonEmpty(attachmentPaths),
+            DistinctNonEmpty(skillNames),
+            DistinctNonEmpty(sources));
+
+        return string.IsNullOrWhiteSpace(payload.Text) && !HasCopyContext(payload)
+            ? null
+            : payload;
+    }
+
+    private static List<string> DistinctNonEmpty(IEnumerable<string> values)
+        => values
+            .Where(static value => !string.IsNullOrWhiteSpace(value))
+            .Select(static value => value.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private static string FormatClipboardText(ClipboardCopyPayload payload)
+    {
+        var sb = new StringBuilder();
+        if (!string.IsNullOrWhiteSpace(payload.Text))
+            sb.Append(payload.Text.Trim());
+
+        AppendClipboardSection(sb, "Files", payload.AttachmentPaths);
+        AppendClipboardSection(sb, "Used skills", payload.SkillNames);
+        AppendClipboardSection(sb, "Sources", payload.Sources);
+
+        return sb.ToString();
+    }
+
+    private static void AppendClipboardSection(StringBuilder sb, string heading, IReadOnlyList<string> values)
+    {
+        if (values.Count == 0)
+            return;
+
+        if (sb.Length > 0)
+            sb.AppendLine().AppendLine();
+
+        sb.AppendLine($"{heading}:");
+        foreach (var value in values)
+            sb.Append("- ").AppendLine(value);
     }
 
     // ── Drag & drop ──────────────────────────────────────

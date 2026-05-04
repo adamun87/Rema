@@ -59,7 +59,7 @@ public sealed class TranscriptTextContent : ContentControl
     private static long _diagnosticPlainTextCount;
     private static long _diagnosticPlainTextCharacterCount;
 
-    private readonly TextBlock _textBlock;
+    private readonly SelectableTextBlock _textBlock;
     private readonly StrataMarkdown _markdown;
 
     static TranscriptTextContent()
@@ -73,7 +73,7 @@ public sealed class TranscriptTextContent : ContentControl
     {
         System.Threading.Interlocked.Increment(ref _diagnosticInstanceCount);
 
-        _textBlock = new TextBlock
+        _textBlock = new SelectableTextBlock
         {
             TextWrapping = TextWrapping.Wrap,
             HorizontalAlignment = HorizontalAlignment.Stretch,
