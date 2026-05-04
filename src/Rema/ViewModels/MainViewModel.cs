@@ -39,6 +39,8 @@ public partial class MainViewModel : ObservableObject
     public CapabilitiesViewModel ToolsVM { get; }
     public CapabilitiesViewModel AgentsVM { get; }
 
+    public ObservableCollection<McpServerSummary> AllMcpServers { get; } = [];
+
     // ── Global Search (Ctrl+K) ──
     [ObservableProperty] private bool _isGlobalSearchOpen;
     [ObservableProperty] private string _globalSearchQuery = "";
@@ -65,6 +67,8 @@ public partial class MainViewModel : ObservableObject
         McpServersVM = new CapabilitiesViewModel(dataStore, "Mcp");
         ToolsVM = new CapabilitiesViewModel(dataStore, "Tool");
         AgentsVM = new CapabilitiesViewModel(dataStore, "Agent");
+
+        RefreshMcpServerList();
 
         _pollingService.TrackedItemsUpdated += () => ShiftsVM.Refresh();
         ShiftsVM.NavigateToChatRequested += NavigateToChat;
@@ -129,6 +133,39 @@ public partial class MainViewModel : ObservableObject
         McpServersVM.Refresh();
         ToolsVM.Refresh();
         AgentsVM.Refresh();
+        RefreshMcpServerList();
+    }
+
+    public void RefreshMcpServerList()
+    {
+        AllMcpServers.Clear();
+        foreach (var project in _dataStore.Data.ServiceProjects)
+        {
+            foreach (var mcp in project.McpServers)
+            {
+                AllMcpServers.Add(new McpServerSummary
+                {
+                    Name = mcp.Name,
+                    ServerType = mcp.ServerType,
+                    Command = mcp.Command,
+                    Url = mcp.Url,
+                    IsEnabled = mcp.IsEnabled,
+                    ProjectName = project.Name,
+                    ProjectId = project.Id,
+                });
+            }
+        }
+        foreach (var cap in _dataStore.Data.Capabilities.Where(c => c.Kind == "Mcp" && c.IsEnabled && c.ServiceProjectId is null))
+        {
+            AllMcpServers.Add(new McpServerSummary
+            {
+                Name = cap.Name,
+                ServerType = "capability",
+                Command = cap.Content,
+                IsEnabled = cap.IsEnabled,
+                ProjectName = "Global",
+            });
+        }
     }
 
     public async Task InitializeAsync()
@@ -268,4 +305,26 @@ public partial class GlobalSearchResult : ObservableObject
     {
         Action?.Invoke();
     }
+}
+
+public class McpServerSummary
+{
+    public string Name { get; set; } = "";
+    public string ServerType { get; set; } = "";
+    public string Command { get; set; } = "";
+    public string Url { get; set; } = "";
+    public bool IsEnabled { get; set; }
+    public string ProjectName { get; set; } = "";
+    public Guid? ProjectId { get; set; }
+
+    public string TypeIcon => ServerType switch
+    {
+        "local" => "💻",
+        "remote" => "🌐",
+        _ => "🔌",
+    };
+
+    public string ConnectionInfo => ServerType == "remote"
+        ? Url
+        : string.IsNullOrWhiteSpace(Command) ? "Not configured" : Command;
 }

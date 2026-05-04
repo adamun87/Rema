@@ -634,6 +634,40 @@
               </ItemsControl>
             </StackPanel>
           </Grid>
+
+          <!-- MCP Servers Overview -->
+          <StackPanel Spacing="8" Margin="0,16,0,0">
+            <TextBlock Text="Connected MCP servers" FontSize="14" FontWeight="Medium"
+                       Foreground="{DynamicResource Brush.TextSecondary}" />
+            <TextBlock Text="No MCP servers configured."
+                       IsVisible="{Binding !$parent[Window].((vm:MainViewModel)DataContext).AllMcpServers.Count}"
+                       Foreground="{DynamicResource Brush.TextTertiary}" FontSize="12" />
+            <ItemsControl ItemsSource="{Binding $parent[Window].((vm:MainViewModel)DataContext).AllMcpServers}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:McpServerSummary">
+                  <Border Background="{DynamicResource Brush.Surface}"
+                          BorderBrush="{DynamicResource Brush.Border}"
+                          BorderThickness="1" CornerRadius="8"
+                          Padding="12,8" Margin="0,0,0,4">
+                    <DockPanel>
+                      <TextBlock DockPanel.Dock="Left" Text="{Binding TypeIcon}" FontSize="16"
+                                 VerticalAlignment="Center" Margin="0,0,10,0" />
+                      <TextBlock DockPanel.Dock="Right" Text="{Binding ProjectName}"
+                                 FontSize="11" Foreground="{DynamicResource Brush.TextTertiary}"
+                                 VerticalAlignment="Center" />
+                      <StackPanel Spacing="1">
+                        <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="Medium"
+                                   Foreground="{DynamicResource Brush.TextPrimary}" />
+                        <TextBlock Text="{Binding ConnectionInfo}" FontSize="11"
+                                   Foreground="{DynamicResource Brush.TextSecondary}"
+                                   TextTrimming="CharacterEllipsis" />
+                      </StackPanel>
+                    </DockPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
         </StackPanel>
       </ScrollViewer>
 
