@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -27,6 +28,7 @@ public class DataStore
         _data = Load();
         BuiltInCapabilityCatalog.EnsureBuiltIns(_data);
         NormalizeLoadedData(_data);
+        CleanOrphanedChats();
     }
 
     internal DataStore(RemaAppData data)
@@ -85,6 +87,98 @@ public class DataStore
         finally
         {
             _writeLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Searches chat messages across all chats for a query string.
+    /// Loads messages on-demand and returns matching chats with preview context.
+    /// </summary>
+    public async Task<List<ChatSearchResult>> SearchChatsAsync(string query, int maxResults = 20, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(query) || query.Length < 2)
+            return [];
+
+        var results = new List<ChatSearchResult>();
+        var q = query.Trim();
+
+        foreach (var chat in _data.Chats)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            // First check title
+            if (chat.Title.Contains(q, StringComparison.OrdinalIgnoreCase))
+            {
+                results.Add(new ChatSearchResult(chat, "Title match", chat.Title));
+                if (results.Count >= maxResults) break;
+                continue;
+            }
+
+            // Then search message content (load if needed)
+            var path = Path.Combine(ChatsDir, $"{chat.Id}.json");
+            if (!File.Exists(path)) continue;
+
+            try
+            {
+                // Quick file scan without full deserialization
+                var content = await File.ReadAllTextAsync(path, ct);
+                var idx = content.IndexOf(q, StringComparison.OrdinalIgnoreCase);
+                if (idx >= 0)
+                {
+                    // Extract a preview around the match
+                    var start = Math.Max(0, idx - 50);
+                    var end = Math.Min(content.Length, idx + q.Length + 50);
+                    var preview = content[start..end]
+                        .Replace('\n', ' ')
+                        .Replace('\r', ' ')
+                        .Trim();
+                    if (start > 0) preview = "…" + preview;
+                    if (end < content.Length) preview += "…";
+
+                    results.Add(new ChatSearchResult(chat, "Message match", preview));
+                    if (results.Count >= maxResults) break;
+                }
+            }
+            catch { /* Skip unreadable chats */ }
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// Removes chat message files that have no corresponding Chat entry.
+    /// Call during initialization for housekeeping.
+    /// </summary>
+    public void CleanOrphanedChats()
+    {
+        try
+        {
+            if (!Directory.Exists(ChatsDir)) return;
+
+            var validIds = new HashSet<string>(_data.Chats.Select(c => c.Id.ToString()), StringComparer.OrdinalIgnoreCase);
+            var chatFiles = Directory.GetFiles(ChatsDir, "*.json");
+            var removed = 0;
+
+            foreach (var file in chatFiles)
+            {
+                var fileName = Path.GetFileNameWithoutExtension(file);
+                if (!validIds.Contains(fileName))
+                {
+                    try
+                    {
+                        File.Delete(file);
+                        removed++;
+                    }
+                    catch { }
+                }
+            }
+
+            if (removed > 0)
+                System.Diagnostics.Trace.TraceInformation($"[DataStore] Cleaned {removed} orphaned chat file(s).");
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Trace.TraceWarning($"[DataStore] Orphan cleanup failed: {ex.Message}");
         }
     }
 
@@ -267,3 +361,5 @@ public class DataStore
             : overrideDir;
     }
 }
+
+public sealed record ChatSearchResult(Chat Chat, string MatchType, string Preview);

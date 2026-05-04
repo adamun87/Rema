@@ -263,6 +263,32 @@ public partial class MainViewModel : ObservableObject
             });
         }
 
+        // Search chat message content (async, fire-and-forget to avoid blocking UI)
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var contentResults = await _dataStore.SearchChatsAsync(q, 5);
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                {
+                    foreach (var result in contentResults)
+                    {
+                        if (GlobalSearchResults.Any(r => r.Title == result.Chat.Title && r.Category == "Chat"))
+                            continue;
+
+                        GlobalSearchResults.Add(new GlobalSearchResult
+                        {
+                            Icon = "🔍",
+                            Title = result.Chat.Title,
+                            Category = "Chat (content)",
+                            Action = () => { ChatVM.SelectChatCommand.Execute(result.Chat); }
+                        });
+                    }
+                });
+            }
+            catch { }
+        });
+
         // Search memories
         foreach (var mem in _dataStore.Data.Memories
             .Where(m => m.Key.Contains(q, StringComparison.OrdinalIgnoreCase)
