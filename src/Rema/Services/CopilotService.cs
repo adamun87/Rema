@@ -159,6 +159,12 @@ public class CopilotService : IAsyncDisposable
         return await _client.GetAuthStatusAsync(ct);
     }
 
+    public async Task DeleteSessionAsync(string sessionId, CancellationToken ct = default)
+    {
+        if (_client is null) throw new InvalidOperationException("Not connected");
+        await _client.DeleteSessionAsync(sessionId, ct);
+    }
+
     public async Task<CopilotSignInResult> SignInAsync(
         Action<string, string>? onDeviceCode = null,
         CancellationToken ct = default)
@@ -281,12 +287,26 @@ public class CopilotService : IAsyncDisposable
             if (!File.Exists(configPath)) return null;
 
             using var doc = JsonDocument.Parse(File.ReadAllText(configPath));
-            if (doc.RootElement.TryGetProperty("last_logged_in_user", out var lastUser)
-                && lastUser.TryGetProperty("login", out var login))
+            if (!TryGetUserElement(doc.RootElement, out var lastUser))
+                return null;
+            if (lastUser.TryGetProperty("login", out var login))
                 return login.GetString();
         }
         catch { }
         return null;
+    }
+
+    /// <summary>
+    /// Reads the last-logged-in user element, checking both snake_case and camelCase keys.
+    /// </summary>
+    private static bool TryGetUserElement(JsonElement root, out JsonElement user)
+    {
+        if (root.TryGetProperty("last_logged_in_user", out user) && user.ValueKind == JsonValueKind.Object)
+            return true;
+        if (root.TryGetProperty("lastLoggedInUser", out user) && user.ValueKind == JsonValueKind.Object)
+            return true;
+        user = default;
+        return false;
     }
 
     private static void ParseDeviceCodeLine(string line, ref string? deviceCode, ref string? verificationUrl)
@@ -390,7 +410,9 @@ public class CopilotService : IAsyncDisposable
     {
         try { await ForceReconnectAsync(); }
         catch { }
-        CliProcessExited?.Invoke(exitedGeneration);
+
+        try { CliProcessExited?.Invoke(exitedGeneration); }
+        catch { }
     }
 
     private static string? FindCliPath()
@@ -443,8 +465,7 @@ public class CopilotService : IAsyncDisposable
             if (!File.Exists(configPath)) return null;
 
             using var doc = JsonDocument.Parse(File.ReadAllText(configPath));
-            if (!doc.RootElement.TryGetProperty("last_logged_in_user", out var lastUser)
-                || lastUser.ValueKind != JsonValueKind.Object)
+            if (!TryGetUserElement(doc.RootElement, out var lastUser))
                 return null;
 
             var login = lastUser.TryGetProperty("login", out var l) ? l.GetString() : null;
@@ -459,6 +480,44 @@ public class CopilotService : IAsyncDisposable
         catch
         {
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Attempts a graceful shutdown of the CLI process with a timeout,
+    /// then falls back to force disposal.
+    /// </summary>
+    public async Task StopAsync(TimeSpan? timeout = null)
+    {
+        timeout ??= TimeSpan.FromSeconds(5);
+        try
+        {
+            if (_client is not null)
+            {
+                using var cts = new CancellationTokenSource(timeout.Value);
+                try { await _client.StopAsync().WaitAsync(cts.Token); }
+                catch (OperationCanceledException) { await ForceDisposeAsync(); }
+            }
+        }
+        catch
+        {
+            try { await ForceDisposeAsync(); }
+            catch { }
+        }
+        finally
+        {
+            _client = null;
+            _models = null;
+            _fastestModelId = null;
+        }
+    }
+
+    private async ValueTask ForceDisposeAsync()
+    {
+        if (_client is not null)
+        {
+            try { await _client.DisposeAsync(); }
+            catch { }
         }
     }
 
