@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
-    <Version>0.1.0</Version>
+    <Version>0.7.0</Version>
   </PropertyGroup>
 
   <!-- Windows: target Windows TFM so WinRT toast types are available in-process -->
