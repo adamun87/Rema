@@ -11,6 +11,10 @@ namespace Rema.ViewModels;
 /// </summary>
 public sealed class TranscriptBuilder
 {
+    private const int DefaultPageSize = 30;
+    private readonly List<TranscriptTurn> _allTurns = [];
+    private int _mountedFromIndex;
+
     private readonly ObservableCollection<TranscriptTurn> _target = [];
 
     /// <summary>
@@ -18,6 +22,9 @@ public sealed class TranscriptBuilder
     /// ChatViewModel binds MountedTranscriptTurns directly to this reference.
     /// </summary>
     public ObservableCollection<TranscriptTurn> Turns => _target;
+
+    public bool HasOlderTurns { get; private set; }
+
     private TranscriptTurn? _currentTurn;
     private ToolGroupItem? _currentToolGroup;
     private readonly Dictionary<string, ToolCallItemBase> _toolCallsById = new(StringComparer.Ordinal);
@@ -54,12 +61,33 @@ public sealed class TranscriptBuilder
         _lastRole = null;
         _turnCounter = 0;
         _itemCounter = 0;
+        _allTurns.Clear();
+        _mountedFromIndex = 0;
 
         foreach (var msg in messages)
             ProcessMessageToTranscript(msg);
 
         CloseCurrentToolGroup();
         CloseCurrentFileChanges();
+
+        // If there are many turns from history, only mount the recent page
+        // to avoid rendering overhead. The user can load older ones.
+        if (_target.Count > DefaultPageSize)
+        {
+            _allTurns.Clear();
+            _allTurns.AddRange(_target);
+            _target.Clear();
+            _mountedFromIndex = Math.Max(0, _allTurns.Count - DefaultPageSize);
+            for (var i = _mountedFromIndex; i < _allTurns.Count; i++)
+                _target.Add(_allTurns[i]);
+            HasOlderTurns = _mountedFromIndex > 0;
+        }
+        else
+        {
+            _allTurns.Clear();
+            _allTurns.AddRange(_target);
+            HasOlderTurns = false;
+        }
     }
 
     /// <summary>Resets the transcript to empty (used when starting a new chat).</summary>
@@ -74,6 +102,23 @@ public sealed class TranscriptBuilder
         _lastRole = null;
         _turnCounter = 0;
         _itemCounter = 0;
+        _allTurns.Clear();
+        _mountedFromIndex = 0;
+        HasOlderTurns = false;
+    }
+
+    public void LoadOlderTurns(int count = 20)
+    {
+        if (_mountedFromIndex <= 0 || _allTurns.Count == 0) return;
+
+        var loadFrom = Math.Max(0, _mountedFromIndex - count);
+        var turnsToInsert = _allTurns.GetRange(loadFrom, _mountedFromIndex - loadFrom);
+        _mountedFromIndex = loadFrom;
+
+        for (var i = turnsToInsert.Count - 1; i >= 0; i--)
+            _target.Insert(0, turnsToInsert[i]);
+
+        HasOlderTurns = _mountedFromIndex > 0;
     }
 
     public void ProcessMessageToTranscript(ChatMessageViewModel msgVm,

@@ -386,6 +386,18 @@
           </ItemsControl>
         </StackPanel>
 
+        <!-- Load older messages -->
+        <Button HorizontalAlignment="Center"
+                Margin="0,8"
+                Padding="12,6"
+                MinHeight="0"
+                Classes="subtle"
+                IsVisible="{Binding HasOlderTurns}"
+                Command="{Binding LoadOlderTurnsCommand}">
+          <TextBlock Text="Load older messages…" FontSize="12"
+                     Foreground="{DynamicResource Brush.TextSecondary}" />
+        </Button>
+
         <!-- Transcript items -->
         <ItemsControl x:Name="TranscriptList"
                       ItemsSource="{Binding MountedTranscriptTurns}"

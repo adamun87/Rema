@@ -59,6 +59,9 @@ public sealed partial class ChatViewModel : ObservableObject
     [ObservableProperty] private string _searchQuery = "";
     [ObservableProperty] private string _searchResultText = "";
 
+    // ── Transcript Paging ──
+    public bool HasOlderTurns => _transcriptBuilder.HasOlderTurns;
+
     // ── Voice Input ──
     [ObservableProperty] private bool _isRecording;
     private VoiceInputService? _voiceService;
@@ -243,6 +246,7 @@ public sealed partial class ChatViewModel : ObservableObject
     {
         _transcriptBuilder.ApplySettings(_dataStore.Data.Settings);
         _transcriptBuilder.Rebuild(_messages);
+        OnPropertyChanged(nameof(HasOlderTurns));
         TranscriptRebuilt?.Invoke();
         OnPropertyChanged(nameof(ChatFontSize));
     }
@@ -254,6 +258,15 @@ public sealed partial class ChatViewModel : ObservableObject
     {
         PromptText = chip;
         return SendMessageAsync();
+    }
+
+    // ── Transcript Paging ──
+
+    [RelayCommand]
+    private void LoadOlderTurns()
+    {
+        _transcriptBuilder.LoadOlderTurns();
+        OnPropertyChanged(nameof(HasOlderTurns));
     }
 
     // ── Send Message ──
@@ -957,6 +970,7 @@ public sealed partial class ChatViewModel : ObservableObject
             _messages.Add(new ChatMessageViewModel(msg));
 
         _transcriptBuilder.Rebuild(_messages);
+        OnPropertyChanged(nameof(HasOlderTurns));
         TranscriptRebuilt?.Invoke();
         ScrollToEndRequested?.Invoke();
     }
@@ -1005,6 +1019,7 @@ public sealed partial class ChatViewModel : ObservableObject
             _messages.Add(new ChatMessageViewModel(msg));
 
         _transcriptBuilder.Rebuild(_messages);
+        OnPropertyChanged(nameof(HasOlderTurns));
         TranscriptRebuilt?.Invoke();
 
         // Send the edited text as a new message
