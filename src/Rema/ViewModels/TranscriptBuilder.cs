@@ -632,4 +632,46 @@ public sealed class TranscriptBuilder
 
     private string TimestampOrEmpty(ChatMessageViewModel msgVm) =>
         _settings.ShowTimestamps ? msgVm.TimestampText : "";
+
+    // ── Connection lost ──
+
+    public ConnectionLostItem AddConnectionLostError(string message, System.Windows.Input.ICommand? retryCommand = null)
+    {
+        EnsureTurn("connection-lost");
+        var item = new ConnectionLostItem($"conn-lost-{_itemCounter++}")
+        {
+            Message = message,
+            RetryCommand = retryCommand,
+        };
+        _currentTurn!.Items.Add(item);
+        return item;
+    }
+
+    // ── Plan card ──
+
+    public PlanCardItem AddPlanCard(string title, string content)
+    {
+        EnsureTurn("plan");
+        var item = new PlanCardItem($"plan-{_itemCounter++}")
+        {
+            Title = title,
+            Content = content,
+        };
+        _currentTurn!.Items.Add(item);
+        return item;
+    }
+
+    // ── Collapse completed blocks ──
+
+    public void CollapseCompletedBlocksInCurrentTurn()
+    {
+        if (_currentTurn is null) return;
+        foreach (var item in _currentTurn.Items)
+        {
+            if (item is ToolGroupItem tg && !tg.IsActive)
+                tg.IsExpanded = false;
+            else if (item is ReasoningItem r && !r.IsActive)
+                r.IsExpanded = false;
+        }
+    }
 }

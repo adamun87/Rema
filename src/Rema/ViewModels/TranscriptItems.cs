@@ -368,3 +368,40 @@ public sealed partial class FileAttachmentItem : TranscriptItem
         catch { }
     }
 }
+
+// ── Turn Summary (collapsed view of completed turns) ──
+
+public sealed partial class TurnSummaryItem : TranscriptItem
+{
+    public TurnSummaryItem(string stableId) : base(stableId) { }
+
+    [ObservableProperty] private string _summary = "";
+    [ObservableProperty] private int _messageCount;
+    [ObservableProperty] private int _toolCallCount;
+    [ObservableProperty] private bool _isExpanded;
+
+    public string CompactLabel => ToolCallCount > 0
+        ? $"{MessageCount} messages, {ToolCallCount} tool calls"
+        : $"{MessageCount} messages";
+}
+
+// ── Plan Card (structured plan content) ──
+
+public sealed partial class PlanCardItem : TranscriptItem
+{
+    public PlanCardItem(string stableId) : base(stableId) { }
+
+    [ObservableProperty] private string _title = "";
+    [ObservableProperty] private string _content = "";
+    [ObservableProperty] private bool _isExpanded = true;
+}
+
+// ── Connection Lost Error (with retry) ──
+
+public sealed partial class ConnectionLostItem : TranscriptItem
+{
+    public ConnectionLostItem(string stableId) : base(stableId) { }
+
+    [ObservableProperty] private string _message = "Connection to Copilot was lost.";
+    public System.Windows.Input.ICommand? RetryCommand { get; set; }
+}
