@@ -1,6 +1,7 @@
 using Avalonia;
 using System;
 using System.Diagnostics;
+using Velopack;
 #if DEBUG
 using AvaloniaMcp.Diagnostics;
 #endif
@@ -12,6 +13,8 @@ class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        VelopackApp.Build().Run();
+
         // Global unhandled exception handler — prevents silent crashes
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         {
