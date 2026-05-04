@@ -26,6 +26,7 @@ public sealed partial class ChatViewModel : ObservableObject
     private TypingIndicatorItem? _typingIndicator;
     private string? _lastUserPrompt;
     private bool _activeSessionWasRecreated;
+    private bool _manualStopRequested;
     private int _questionCounter;
 
     // ── Observable Properties ──
@@ -268,6 +269,7 @@ public sealed partial class ChatViewModel : ObservableObject
         SuggestionB = "";
         SuggestionC = "";
         IsBusy = true;
+        _manualStopRequested = false;
         StatusText = "Thinking…";
 
         try
@@ -363,7 +365,15 @@ public sealed partial class ChatViewModel : ObservableObject
 
             await _dataStore.SaveChatAsync(targetChat);
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            if (_manualStopRequested)
+            {
+                RemoveTypingIndicator();
+                _transcriptBuilder.CloseCurrentToolGroup();
+                _transcriptBuilder.AddTurnModelLabel(CurrentChat?.LastModelUsed);
+            }
+        }
         catch (Exception ex)
         {
             RemoveTypingIndicator();
@@ -379,11 +389,22 @@ public sealed partial class ChatViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void StopGeneration()
+    private async Task StopGeneration()
     {
+        _manualStopRequested = true;
         _sendCts?.Cancel();
+
+        // Abort the active SDK session to stop server-side work
+        if (_activeSession is not null)
+        {
+            try { await _activeSession.AbortAsync(); }
+            catch { /* Best-effort abort */ }
+        }
+
         RemoveTypingIndicator();
         ClearStreamingState();
+        _transcriptBuilder.CloseCurrentToolGroup();
+
         IsBusy = false;
         IsStreaming = false;
         StatusText = "";

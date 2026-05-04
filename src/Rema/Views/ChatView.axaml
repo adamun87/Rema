@@ -461,6 +461,7 @@
         <sc:StrataChatComposer x:Name="Composer"
                                PromptText="{Binding PromptText, Mode=TwoWay}"
                                IsBusy="{Binding IsBusy}"
+                               StopCommand="{Binding StopGenerationCommand}"
                                Placeholder="Ask Rema…"
                                CanAttach="False"
                                Models="{Binding AvailableModels}"

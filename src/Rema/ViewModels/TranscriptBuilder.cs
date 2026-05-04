@@ -488,7 +488,7 @@ public sealed class TranscriptBuilder
 
     // ── Group management ──
 
-    private void CloseCurrentToolGroup()
+    internal void CloseCurrentToolGroup()
     {
         if (_currentToolGroup is null) return;
 
