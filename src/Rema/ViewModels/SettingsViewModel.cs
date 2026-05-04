@@ -16,6 +16,7 @@ public partial class SettingsViewModel : ObservableObject
 {
     private readonly DataStore _dataStore;
     private readonly CopilotService _copilotService;
+    private readonly UpdateService _updateService = new();
     private bool _isRefreshingSettingsFromStore;
 
     [ObservableProperty] private string? _userName;
@@ -39,6 +40,14 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool _isImportingConfiguration;
     [ObservableProperty] private bool _isLoadingModels;
     [ObservableProperty] private string _modelLoadStatus = "";
+
+    // ── Updates ──
+    [ObservableProperty] private string _updateStatusText = "";
+    [ObservableProperty] private bool _isUpdateAvailable;
+    [ObservableProperty] private bool _isCheckingForUpdates;
+    [ObservableProperty] private bool _isUpdateReadyToRestart;
+    [ObservableProperty] private string _availableVersion = "";
+    [ObservableProperty] private int _updateDownloadProgress;
 
     public event Action? ExportConfigurationRequested;
     public event Action? ImportConfigurationRequested;
@@ -72,6 +81,10 @@ public partial class SettingsViewModel : ObservableObject
         _preferredModel = !string.IsNullOrWhiteSpace(s.PreferredModel) ? s.PreferredModel : "claude-sonnet-4";
         _reasoningEffort = s.ReasoningEffort;
         SeedAvailableModels();
+
+        _updateService.Initialize();
+        _updateService.StatusChanged += OnUpdateStatusChanged;
+        _updateService.StartPeriodicChecks();
     }
 
     partial void OnUserNameChanged(string? value) => SaveSetting(s => s.UserName = value);
@@ -274,6 +287,59 @@ public partial class SettingsViewModel : ObservableObject
         {
             _isRefreshingSettingsFromStore = false;
         }
+    }
+
+    // ── Update Commands ──
+
+    [RelayCommand]
+    private async Task CheckForUpdates()
+    {
+        IsCheckingForUpdates = true;
+        try
+        {
+            await _updateService.CheckForUpdateAsync();
+        }
+        finally
+        {
+            IsCheckingForUpdates = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task DownloadUpdate()
+    {
+        await _updateService.DownloadUpdateAsync();
+    }
+
+    [RelayCommand]
+    private void InstallUpdateAndRestart()
+    {
+        _updateService.ApplyUpdateAndRestart();
+    }
+
+    private void OnUpdateStatusChanged(UpdateStatus status)
+    {
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            AvailableVersion = _updateService.AvailableVersion ?? "";
+            UpdateDownloadProgress = _updateService.DownloadProgress;
+            IsUpdateAvailable = status == UpdateStatus.UpdateAvailable;
+            IsUpdateReadyToRestart = status == UpdateStatus.ReadyToRestart;
+            IsCheckingForUpdates = status == UpdateStatus.Checking;
+
+            UpdateStatusText = status switch
+            {
+                UpdateStatus.Idle => "",
+                UpdateStatus.Checking => "Checking for updates…",
+                UpdateStatus.UpToDate => "You're up to date.",
+                UpdateStatus.UpdateAvailable => $"Version {AvailableVersion} is available.",
+                UpdateStatus.Downloading => $"Downloading… {UpdateDownloadProgress}%",
+                UpdateStatus.ReadyToRestart => $"Version {AvailableVersion} is ready. Restart to apply.",
+                UpdateStatus.Error => "Update check failed. Try again later.",
+                UpdateStatus.NotInstalled => "Updates are only available in installed builds.",
+                _ => "",
+            };
+        });
     }
 
     private void SaveSetting(Action<RemaSettings> apply)

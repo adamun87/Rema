@@ -178,6 +178,37 @@
                   IsChecked="{Binding NotificationsEnabled, Mode=TwoWay}" />
       </StackPanel>
 
+      <!-- Updates -->
+      <StackPanel Spacing="8">
+        <TextBlock Text="UPDATES" Classes="section-label" />
+        <TextBlock Text="{Binding UpdateStatusText}"
+                   FontSize="12"
+                   Foreground="{DynamicResource Brush.TextSecondary}"
+                   TextWrapping="Wrap"
+                   IsVisible="{Binding UpdateStatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button Classes="subtle" Padding="12,6" MinHeight="0"
+                  Command="{Binding CheckForUpdatesCommand}"
+                  IsEnabled="{Binding !IsCheckingForUpdates}">
+            <TextBlock Text="Check for updates" FontSize="12" />
+          </Button>
+          <Button Classes="accent" Padding="12,6" MinHeight="0"
+                  IsVisible="{Binding IsUpdateAvailable}"
+                  Command="{Binding DownloadUpdateCommand}">
+            <TextBlock Text="Download update" FontSize="12" />
+          </Button>
+          <Button Classes="accent" Padding="12,6" MinHeight="0"
+                  IsVisible="{Binding IsUpdateReadyToRestart}"
+                  Command="{Binding InstallUpdateAndRestartCommand}">
+            <TextBlock Text="Restart to update" FontSize="12" />
+          </Button>
+        </StackPanel>
+        <ProgressBar Value="{Binding UpdateDownloadProgress}" Maximum="100"
+                     Height="4" CornerRadius="2"
+                     IsVisible="{Binding IsCheckingForUpdates}"
+                     IsIndeterminate="True" />
+      </StackPanel>
+
     </StackPanel>
   </ScrollViewer>
 
