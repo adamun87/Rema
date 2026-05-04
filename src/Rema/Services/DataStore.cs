@@ -45,18 +45,20 @@ public class DataStore
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            await using var stream = new FileStream(
-                DataFile,
-                FileMode.Create,
-                FileAccess.Write,
-                FileShare.None,
-                81920,
-                FileOptions.Asynchronous);
+            // Create a backup of the current data file before overwriting
+            if (File.Exists(DataFile))
+            {
+                try { File.Copy(DataFile, DataFile + ".bak", overwrite: true); }
+                catch { /* Best-effort backup */ }
+            }
 
-            await JsonSerializer.SerializeAsync(
-                stream,
-                _data,
-                AppDataJsonContext.Default.RemaAppData,
+            await WriteWithRetryAsync(
+                DataFile,
+                async stream => await JsonSerializer.SerializeAsync(
+                    stream,
+                    _data,
+                    AppDataJsonContext.Default.RemaAppData,
+                    cancellationToken).ConfigureAwait(false),
                 cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -71,18 +73,13 @@ public class DataStore
         try
         {
             var path = Path.Combine(ChatsDir, $"{chat.Id}.json");
-            await using var stream = new FileStream(
+            await WriteWithRetryAsync(
                 path,
-                FileMode.Create,
-                FileAccess.Write,
-                FileShare.None,
-                81920,
-                FileOptions.Asynchronous);
-
-            await JsonSerializer.SerializeAsync(
-                stream,
-                chat.Messages,
-                AppDataJsonContext.Default.ListChatMessage,
+                async stream => await JsonSerializer.SerializeAsync(
+                    stream,
+                    chat.Messages,
+                    AppDataJsonContext.Default.ListChatMessage,
+                    cancellationToken).ConfigureAwait(false),
                 cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -146,15 +143,35 @@ public class DataStore
         if (!File.Exists(DataFile))
             return new RemaAppData();
 
-        try
+        for (var attempt = 0; attempt < 3; attempt++)
         {
-            var json = File.ReadAllText(DataFile);
-            return JsonSerializer.Deserialize(json, AppDataJsonContext.Default.RemaAppData) ?? new RemaAppData();
+            try
+            {
+                var json = File.ReadAllText(DataFile);
+                return JsonSerializer.Deserialize(json, AppDataJsonContext.Default.RemaAppData) ?? new RemaAppData();
+            }
+            catch (IOException) when (attempt < 2)
+            {
+                Thread.Sleep(35);
+            }
+            catch
+            {
+                // Try backup file
+                var backupFile = DataFile + ".bak";
+                if (File.Exists(backupFile))
+                {
+                    try
+                    {
+                        var json = File.ReadAllText(backupFile);
+                        return JsonSerializer.Deserialize(json, AppDataJsonContext.Default.RemaAppData) ?? new RemaAppData();
+                    }
+                    catch { }
+                }
+                return new RemaAppData();
+            }
         }
-        catch
-        {
-            return new RemaAppData();
-        }
+
+        return new RemaAppData();
     }
 
     /// <summary>
@@ -211,6 +228,35 @@ public class DataStore
     {
         foreach (var project in data.ServiceProjects)
             PipelineDefinitionIdResolver.Normalize(project);
+    }
+
+    private static async Task WriteWithRetryAsync(
+        string path,
+        Func<FileStream, Task> writeAction,
+        CancellationToken ct,
+        int maxRetries = 3,
+        int retryDelayMs = 35)
+    {
+        for (var attempt = 0; attempt < maxRetries; attempt++)
+        {
+            try
+            {
+                await using var stream = new FileStream(
+                    path,
+                    FileMode.Create,
+                    FileAccess.Write,
+                    FileShare.Read,
+                    81920,
+                    FileOptions.Asynchronous);
+
+                await writeAction(stream).ConfigureAwait(false);
+                return;
+            }
+            catch (IOException) when (attempt < maxRetries - 1 && !ct.IsCancellationRequested)
+            {
+                await Task.Delay(retryDelayMs, ct).ConfigureAwait(false);
+            }
+        }
     }
 
     private static string ResolveAppDir()
