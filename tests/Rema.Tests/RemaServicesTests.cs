@@ -237,8 +237,8 @@ public sealed class RemaServicesTests
             var output = Path.Combine(repo, "safefly-output");
             var evidence = new[]
             {
-                new DeploymentVersionEvidence("ADO", "Demo Service", "Official Release", "20260427.5", "succeeded", "https://dev.azure.com/example", "ADO release evidence"),
-                new DeploymentVersionEvidence("Telemetry", "Demo Service", "ApplicationVersion", "20260427.5", "Telemetry query configured", null, "Kusto version evidence"),
+                new DeploymentVersionEvidence("ADO", "Demo Service", "Official Release", "20260427.5", "refs/heads/main", "succeeded", "https://dev.azure.com/example", "ADO release evidence"),
+                new DeploymentVersionEvidence("Telemetry", "Demo Service", "ApplicationVersion", "20260427.5", null, "Telemetry query configured", null, "Kusto version evidence"),
             };
 
             await new SafeFlyDiffService().CreateRequestFilesAsync(project, "v1", "v2", output, evidence);
