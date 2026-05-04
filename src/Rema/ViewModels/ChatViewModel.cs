@@ -25,6 +25,8 @@ public sealed partial class ChatViewModel : ObservableObject
     private CancellationTokenSource? _sendCts;
     private TypingIndicatorItem? _typingIndicator;
     private string? _lastUserPrompt;
+    private System.Timers.Timer? _stallTimer;
+    private static readonly TimeSpan StallTimeout = TimeSpan.FromSeconds(45);
     private bool _activeSessionWasRecreated;
     private bool _manualStopRequested;
     private int _questionCounter;
@@ -271,6 +273,7 @@ public sealed partial class ChatViewModel : ObservableObject
         IsBusy = true;
         _manualStopRequested = false;
         StatusText = "Thinking…";
+        StartStallTimer();
 
         try
         {
@@ -381,6 +384,7 @@ public sealed partial class ChatViewModel : ObservableObject
         }
         finally
         {
+            StopStallTimer();
             IsBusy = false;
             IsStreaming = false;
             StatusText = "";
@@ -391,6 +395,7 @@ public sealed partial class ChatViewModel : ObservableObject
     [RelayCommand]
     private async Task StopGeneration()
     {
+        StopStallTimer();
         _manualStopRequested = true;
         _sendCts?.Cancel();
 
@@ -408,6 +413,45 @@ public sealed partial class ChatViewModel : ObservableObject
         IsBusy = false;
         IsStreaming = false;
         StatusText = "";
+    }
+
+    private void ResetStallTimer()
+    {
+        _stallTimer?.Stop();
+        _stallTimer?.Start();
+    }
+
+    private void StopStallTimer()
+    {
+        _stallTimer?.Stop();
+    }
+
+    private void StartStallTimer()
+    {
+        _stallTimer?.Dispose();
+        _stallTimer = new System.Timers.Timer(StallTimeout.TotalMilliseconds)
+        {
+            AutoReset = false,
+        };
+        _stallTimer.Elapsed += (_, _) => OnStallDetected();
+        _stallTimer.Start();
+    }
+
+    private void OnStallDetected()
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (!IsBusy) return;
+
+            RemoveTypingIndicator();
+            ClearStreamingState();
+            _transcriptBuilder.CloseCurrentToolGroup();
+            IsBusy = false;
+            IsStreaming = false;
+            StatusText = "";
+
+            AddErrorMessage("Copilot stopped responding. The session may have disconnected — try sending your message again.");
+        });
     }
 
     // ── Session Management ──
@@ -504,6 +548,7 @@ public sealed partial class ChatViewModel : ObservableObject
         // Store the subscription to prevent GC from collecting and unsubscribing the handler
         _sessionSubscription = session.On(ev =>
         {
+            ResetStallTimer();
             switch (ev)
             {
                 case AssistantTurnStartEvent:
