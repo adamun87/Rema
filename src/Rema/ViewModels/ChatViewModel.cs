@@ -16,6 +16,7 @@ public sealed partial class ChatViewModel : ObservableObject
     private readonly DataStore _dataStore;
     private readonly CopilotService _copilotService;
     private readonly AzureDevOpsService _azureDevOpsService;
+    private readonly MemoryAgentService _memoryAgent;
     private readonly GitStatusService _gitStatus = new();
 
     private readonly TranscriptBuilder _transcriptBuilder = new();
@@ -160,6 +161,7 @@ public sealed partial class ChatViewModel : ObservableObject
         _dataStore = dataStore;
         _copilotService = copilotService;
         _azureDevOpsService = azureDevOpsService;
+        _memoryAgent = new MemoryAgentService(dataStore, copilotService);
         _transcriptBuilder.ApplySettings(_dataStore.Data.Settings);
         _transcriptBuilder.OnUserEditConfirmed = OnUserEditConfirmedAsync;
 
@@ -378,6 +380,9 @@ public sealed partial class ChatViewModel : ObservableObject
 
             // Add model label at end of turn
             _transcriptBuilder.AddTurnModelLabel(targetChat.LastModelUsed);
+
+            // Background memory extraction (fire-and-forget)
+            _ = Task.Run(() => _memoryAgent.ProcessTurnAsync(targetChat));
 
             await _dataStore.SaveChatAsync(targetChat);
         }
