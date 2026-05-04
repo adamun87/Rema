@@ -43,6 +43,8 @@ public partial class ServiceProjectsViewModel : ObservableObject
     [ObservableProperty] private bool _isCreatingSafeFlyRequest;
     [ObservableProperty] private bool _isDiscoveringSafeFlyVersions;
     [ObservableProperty] private bool _hasSafeFlyVersionEvidence;
+    [ObservableProperty] private string _safeFlyDiffPreview = "";
+    [ObservableProperty] private bool _hasSafeFlyDiffPreview;
 
     public ObservableCollection<ServiceProject> Projects { get; } = [];
     public ObservableCollection<string> DiscoveryLog { get; } = [];
@@ -91,6 +93,18 @@ public partial class ServiceProjectsViewModel : ObservableObject
     [RelayCommand]
     private void BrowseSafeFlyOutput() => BrowseSafeFlyOutputRequested?.Invoke();
 
+    [RelayCommand]
+    private void OpenSafeFlyOutput()
+    {
+        if (string.IsNullOrWhiteSpace(SafeFlyOutputDirectory) || !Directory.Exists(SafeFlyOutputDirectory))
+            return;
+
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(SafeFlyOutputDirectory)
+        {
+            UseShellExecute = true,
+        });
+    }
+
     private void ClearEditFields()
     {
         EditName = "";
@@ -107,6 +121,8 @@ public partial class ServiceProjectsViewModel : ObservableObject
         SafeFlyVersionStatus = "";
         SafeFlyVersionEvidence.Clear();
         HasSafeFlyVersionEvidence = false;
+        SafeFlyDiffPreview = "";
+        HasSafeFlyDiffPreview = false;
         DiscoveryStatus = "";
         DiscoveryLog.Clear();
         EditPipelines.Clear();
@@ -735,6 +751,8 @@ public partial class ServiceProjectsViewModel : ObservableObject
         SafeFlyVersionStatus = "";
         SafeFlyVersionEvidence.Clear();
         HasSafeFlyVersionEvidence = false;
+        SafeFlyDiffPreview = "";
+        HasSafeFlyDiffPreview = false;
         DiscoveryLog.Clear();
         DiscoveryStatus = "";
         LoadPipelines(value);
@@ -1015,6 +1033,26 @@ public partial class ServiceProjectsViewModel : ObservableObject
 
             SafeFlyOutputDirectory = result.OutputDirectory;
             SafeFlyStatus = $"Created {result.Files.Count} SafeFly files for {result.ChangedFileCount} changed files.";
+
+            // Load the diff for inline preview
+            var diffPath = result.Files.FirstOrDefault(f => f.EndsWith(".patch", StringComparison.OrdinalIgnoreCase))
+                         ?? result.Files.FirstOrDefault(f => f.Contains("diff", StringComparison.OrdinalIgnoreCase));
+            if (diffPath is not null && File.Exists(diffPath))
+            {
+                try
+                {
+                    var diffContent = await File.ReadAllTextAsync(diffPath);
+                    SafeFlyDiffPreview = diffContent.Length > 50_000
+                        ? diffContent[..50_000] + "\n\n… (truncated — open full file for complete diff)"
+                        : diffContent;
+                    HasSafeFlyDiffPreview = true;
+                }
+                catch
+                {
+                    SafeFlyDiffPreview = "";
+                    HasSafeFlyDiffPreview = false;
+                }
+            }
         }
         catch (InvalidOperationException ex)
         {
