@@ -21,6 +21,8 @@ public class CopilotService : IAsyncDisposable
     private string? _fastestModelId;
     private long _connectionGeneration;
     private readonly SemaphoreSlim _connectGate = new(1, 1);
+    private CopilotSession? _suggestionSession;
+    private readonly SemaphoreSlim _suggestionGate = new(1, 1);
     private Action? _cleanupProcessHandlers;
     private IDisposable? _lifecycleSub;
 
@@ -41,6 +43,7 @@ public class CopilotService : IAsyncDisposable
     private async Task ConnectCoreAsync(bool forceReconnect, CancellationToken ct)
     {
         CopilotClient? oldClient = null;
+        CopilotSession? oldSuggestionSession = null;
         var generationBeforeWait = Interlocked.Read(ref _connectionGeneration);
 
         await _connectGate.WaitAsync(ct);
@@ -55,6 +58,8 @@ public class CopilotService : IAsyncDisposable
                 return;
 
             oldClient = _client;
+            oldSuggestionSession = _suggestionSession;
+            _suggestionSession = null;
             var clientOptions = new CopilotClientOptions
             {
                 CliPath = FindCliPath() ?? "copilot",
@@ -93,6 +98,12 @@ public class CopilotService : IAsyncDisposable
         {
             Reconnected?.Invoke();
             try { await oldClient.DisposeAsync(); }
+            catch { }
+        }
+
+        if (oldSuggestionSession is not null)
+        {
+            try { await _client!.DeleteSessionAsync(oldSuggestionSession.SessionId); }
             catch { }
         }
     }
@@ -151,6 +162,91 @@ public class CopilotService : IAsyncDisposable
     {
         if (_client is null) throw new InvalidOperationException("Not connected");
         return await _client.ResumeSessionAsync(sessionId, config, ct);
+    }
+
+    /// <summary>
+    /// Runs a callback against a short-lived lightweight session.
+    /// Used for title generation, suggestions, and memory extraction.
+    /// </summary>
+    public async Task<string> UseLightweightSessionAsync(
+        string systemPrompt,
+        string prompt,
+        string? model = null,
+        CancellationToken ct = default)
+    {
+        if (_client is null) throw new InvalidOperationException("Not connected");
+
+        model ??= await GetFastestModelIdAsync(ct) ?? "claude-haiku-4.5";
+
+        return await UseLightweightSessionAsync(
+            new LightweightSessionOptions
+            {
+                SystemPrompt = systemPrompt,
+                Model = model,
+                Streaming = false,
+            },
+            async (session, token) =>
+            {
+                var response = await session.SendAndWaitAsync(
+                    new MessageOptions { Prompt = prompt },
+                    TimeSpan.FromSeconds(30), token);
+                return response?.Data?.Content ?? "";
+            },
+            ct);
+    }
+
+    public async Task<string?> GenerateTitleAsync(string userMessage, CancellationToken ct = default)
+    {
+        if (_client is null || string.IsNullOrWhiteSpace(userMessage)) return null;
+
+        try
+        {
+            var truncated = userMessage.Length > 500 ? userMessage[..500] : userMessage;
+            var result = await UseLightweightSessionAsync(
+                "Generate a brief, descriptive title (3-7 words) for a chat that starts with this message. Return ONLY the title text, no quotes or explanation.",
+                truncated,
+                ct: ct);
+
+            var title = result.Trim().Trim('"', '\'', '*');
+            return string.IsNullOrWhiteSpace(title) || title.Length > 80 ? null : title;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<List<string>> GenerateSuggestionsAsync(
+        string lastAssistantMessage,
+        string? lastUserMessage = null,
+        CancellationToken ct = default)
+    {
+        if (_client is null || string.IsNullOrWhiteSpace(lastAssistantMessage))
+            return [];
+
+        try
+        {
+            var context = string.IsNullOrWhiteSpace(lastUserMessage)
+                ? $"Assistant's last response:\n{Truncate(lastAssistantMessage, 800)}"
+                : $"User asked:\n{Truncate(lastUserMessage, 300)}\n\nAssistant responded:\n{Truncate(lastAssistantMessage, 800)}";
+
+            var result = await UseLightweightSessionAsync(
+                "Generate exactly 3 short follow-up questions or actions the user might want to take based on this conversation. Return as a JSON array of 3 strings. Each should be 5-15 words. Be specific and actionable, not generic.",
+                context,
+                ct: ct);
+
+            var trimmed = result.Trim();
+            if (trimmed.StartsWith('[') && trimmed.EndsWith(']'))
+            {
+                var suggestions = JsonSerializer.Deserialize<List<string>>(trimmed);
+                return suggestions?.Where(s => !string.IsNullOrWhiteSpace(s)).Take(3).ToList() ?? [];
+            }
+        }
+        catch { }
+        return [];
+
+        static string Truncate(string text, int maxLength)
+            => text.Length > maxLength ? text[..maxLength] + "…" : text;
     }
 
     public async Task<GetAuthStatusResponse> GetAuthStatusAsync(CancellationToken ct = default)
