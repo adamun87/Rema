@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -25,6 +26,7 @@ public partial class ChatViewModel
     private bool _suppressActiveMcpCollectionSync;
     private CancellationTokenSource? _fileSearchCts;
     private readonly VoiceInputService _voiceService = new();
+    private Chat? _currentChatTitleSource;
     private string _textBeforeVoice = "";
     private bool _voiceStarting;
 
@@ -545,6 +547,13 @@ public partial class ChatViewModel
 
     partial void OnCurrentChatChanged(Chat? value)
     {
+        if (_currentChatTitleSource is not null)
+            _currentChatTitleSource.PropertyChanged -= OnCurrentChatPropertyChanged;
+
+        _currentChatTitleSource = value;
+        if (_currentChatTitleSource is not null)
+            _currentChatTitleSource.PropertyChanged += OnCurrentChatPropertyChanged;
+
         OnPropertyChanged(nameof(IsWelcomeVisible));
         OnPropertyChanged(nameof(IsChatVisible));
         OnPropertyChanged(nameof(IsWorktreeLocked));
@@ -557,6 +566,12 @@ public partial class ChatViewModel
             ClearSuggestions();
             RefreshComposerCatalogs(); // Re-scan for welcome state (no project)
         }
+    }
+
+    private void OnCurrentChatPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(Chat.Title))
+            OnPropertyChanged(nameof(CurrentChatTitle));
     }
 
     partial void OnActiveAgentChanged(LumiAgent? value)

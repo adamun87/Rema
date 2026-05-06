@@ -45,13 +45,24 @@ public class SearchSource
 
 public class Chat : INotifyPropertyChanged
 {
+    private string _title = "New Chat";
     private bool _isRunning;
     private bool _hasUnreadMessages;
     private List<string> _activeExternalSkillNames = [];
     private List<string> _followUpSuggestions = [];
 
     public Guid Id { get; set; } = Guid.NewGuid();
-    public string Title { get; set; } = "New Chat";
+    public string Title
+    {
+        get => _title;
+        set
+        {
+            var title = value ?? "";
+            if (_title == title) return;
+            _title = title;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Title)));
+        }
+    }
     public Guid? ProjectId { get; set; }
     public Guid? AgentId { get; set; }
     public string? CopilotSessionId { get; set; }
